@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { formatClassLabel } from '../utils/classFormat'
 import { dateKey, formatDateLabel } from '../utils/dates'
 import SearchableSelect from './SearchableSelect'
@@ -25,6 +25,19 @@ export default function AttendanceSheet({ classes, attendance, setAttendance, se
   const sortedStudents = selectedClass
     ? [...selectedClass.students].sort((a, b) => a.name.localeCompare(b.name))
     : []
+
+  useEffect(() => {
+    if (classes.length === 0) {
+      setSelectedClassId('')
+      return
+    }
+    if (!classes.some((c) => c.id === selectedClassId)) {
+      const sorted = [...classes].sort((a, b) =>
+        formatClassLabel(a).localeCompare(formatClassLabel(b)),
+      )
+      setSelectedClassId(sorted[0]?.id ?? '')
+    }
+  }, [classes, selectedClassId])
 
   const dayRecords = getSessionRecords(attendance, selectedClassId, selectedDate)
   const sessionMeta = getSessionMeta(attendance, selectedClassId, selectedDate)

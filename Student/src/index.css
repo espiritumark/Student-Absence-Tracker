@@ -62,10 +62,27 @@ body {
 
 .loading-screen {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   min-height: 40vh;
   color: var(--muted);
+  gap: 1rem;
+}
+
+.loading-spinner {
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 3px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .auth-panel {
@@ -75,51 +92,200 @@ body {
   flex-wrap: wrap;
 }
 
-.auth-panel-form {
-  flex-direction: column;
-  align-items: stretch;
-  min-width: 220px;
-}
-
-.auth-form {
-  display: flex;
-  flex-direction: column;
+.auth-panel-signed-out {
   gap: 0.4rem;
 }
 
-.auth-form input {
-  padding: 0.45rem 0.6rem;
+.auth-panel-signed-in {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+}
+
+.auth-user-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.auth-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.auth-status {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.65rem;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  font: inherit;
-  font-size: 0.9rem;
+  border-radius: 999px;
+  background: #f8fafc;
+  font-size: 0.85rem;
+}
+
+.auth-status-text {
+  color: var(--muted);
+}
+
+.status-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot-cloud {
+  background: var(--success-text);
+}
+
+.status-dot-local {
+  background: var(--warning);
 }
 
 .auth-email {
   font-size: 0.85rem;
-  color: var(--muted);
+  color: var(--text);
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .auth-error {
   color: var(--critical);
-  font-size: 0.85rem;
-  margin: 0.35rem 0 0;
+  font-size: 0.88rem;
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  background: var(--critical-bg);
+  border-radius: 6px;
 }
 
 .auth-message {
   color: var(--success-text);
-  font-size: 0.85rem;
-  margin: 0.35rem 0 0;
+  font-size: 0.88rem;
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  background: var(--success-bg);
+  border-radius: 6px;
 }
 
-.auth-panel-local {
-  max-width: 280px;
+.auth-migrate-msg {
   text-align: right;
+  width: 100%;
+}
+
+.auth-modal {
+  max-width: 420px;
+}
+
+.auth-modal-sub {
+  margin: 0.25rem 0 0;
+  font-size: 0.88rem;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.auth-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.field-label input {
+  font-weight: 400;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.field-label input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.field-hint {
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.password-field {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.password-field input {
+  flex: 1;
+}
+
+.password-toggle {
+  flex-shrink: 0;
+}
+
+.auth-switch {
+  margin: 0;
+  text-align: center;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.app-banner {
+  margin-top: 0.75rem;
+}
+
+.banner-dismissible {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.banner-dismiss {
+  flex-shrink: 0;
+  color: inherit;
 }
 
 @media (max-width: 640px) {
-  .auth-panel-local {
-    text-align: left;
+  .app-header-row {
+    flex-direction: column;
+  }
+
+  .auth-panel-signed-in {
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  .auth-actions {
+    justify-content: flex-start;
+  }
+
+  .auth-email {
+    max-width: 100%;
   }
 }
 

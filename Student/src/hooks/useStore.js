@@ -465,16 +465,20 @@ export function useStore() {
     const local = loadLocalState()
     if (!local.classes.length) return
     setLoading(true)
+    setSyncError('')
     try {
       await dbMigrateLocalState(user.id, local)
       localStorage.removeItem(STORAGE_KEY)
       await refreshFromCloud()
     } catch (e) {
       setSyncError(e.message || 'Migration failed')
+      throw e
     } finally {
       setLoading(false)
     }
   }, [user, refreshFromCloud])
+
+  const clearSyncError = useCallback(() => setSyncError(''), [])
 
   return {
     classes: state.classes,
@@ -483,6 +487,7 @@ export function useStore() {
     syncError,
     useCloud,
     hasLocalData: hasLocalData(),
+    clearSyncError,
     addClass,
     removeClass,
     addStudent,
