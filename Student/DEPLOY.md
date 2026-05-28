@@ -125,6 +125,7 @@ Each user only sees their own classes and attendance (Row Level Security).
 | Issue | Fix |
 |-------|-----|
 | "Running in local mode" | Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to `.env` or Vercel env vars, then rebuild |
+| Sign up shows "Network error" | Use the **Project URL** for `VITE_SUPABASE_URL` (e.g. `https://xxx.supabase.co`), not the REST URL ending in `/rest/v1/` |
 | Sign up doesn't work | Check Supabase Auth settings; disable email confirmation for testing |
 | RLS / permission errors | Re-run `supabase/schema.sql` |
 | Blank page after deploy | Check Vercel build logs; ensure root directory is `Student` |
