@@ -1,15 +1,19 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { formatClassLabel } from '../utils/classFormat'
 import { dateKey, formatDateLabel } from '../utils/dates'
 import {
   buildImportPayload,
   computeOverwriteSummary,
 } from '../utils/importReview'
-import { parseAttendanceJson } from '../utils/parseAttendanceJson'
 import {
-  fileToDataUrl,
-  parseAttendanceScreenshot,
-} from '../utils/parseScreenshot'
+  cancelOcrJob,
+  consumeOcrResult,
+  prewarmOcr,
+  runOcrJob,
+  subscribeOcr,
+} from '../utils/ocrSession'
+import { buildPortalJson, parseAttendanceJson } from '../utils/parseAttendanceJson'
+import { fileToDataUrl, isCloudOcrConfigured, isRoboflowCheckboxConfigured } from '../utils/parseScreenshot'
 import ConfirmOverwriteModal from './ConfirmOverwriteModal'
 
 const emptyMeta = {
@@ -23,7 +27,13 @@ const emptyMeta = {
   duration: '',
 }
 
-function OcrSpinner({ progress }) {
+function formatElapsed(seconds) {
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return m > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${s}s`
+}
+
+function OcrSpinner({ progress, stageLabel, elapsedSeconds = 0, progressStalled = false, onCancel }) {
   const pct = Math.round((progress ?? 0) * 100)
   return (
     <div className="ocr-spinner" aria-live="polite">
@@ -41,8 +51,28 @@ function OcrSpinner({ progress }) {
         </svg>
       </div>
       <div className="ocr-spinner-text">
-        <strong>Reading screenshot…</strong>
-        <span>{pct > 0 ? `${pct}%` : 'Loading OCR — first run may take ~1 min'}</span>
+        <strong>{stageLabel || 'Reading screenshot…'}</strong>
+        <span>
+          {pct}% complete · {formatElapsed(elapsedSeconds)} elapsed
+        </span>
+        <div className="ocr-progress-bar" aria-hidden="true">
+          <div className="ocr-progress-fill" style={{ width: `${pct}%` }} />
+        </div>
+        {pct < 62 && (
+          <span className="ocr-progress-hint">
+            First run downloads OCR files — this can take about a minute.
+          </span>
+        )}
+        {progressStalled && (
+          <span className="ocr-progress-hint">
+            Still working — add a cloud OCR key in .env for much faster scans.
+          </span>
+        )}
+        {onCancel && (
+          <button type="button" className="btn btn-secondary btn-sm ocr-cancel-btn" onClick={onCancel}>
+            Cancel scan
+          </button>
+        )}
       </div>
     </div>
   )
@@ -85,11 +115,19 @@ export default function AttendanceImport({
   attendance,
   onGoToWarnings,
 }) {
-  const [importMode, setImportMode] = useState('json')
+  const [importMode, setImportMode] = useState('screenshot')
   const [jsonText, setJsonText] = useState('')
+  const [pendingScreenshot, setPendingScreenshot] = useState(null)
+  const pasteZoneRef = useRef(null)
   const [processing, setProcessing] = useState(false)
   const [ocrProgress, setOcrProgress] = useState(0)
+  const [ocrStageLabel, setOcrStageLabel] = useState('')
+  const [ocrElapsedSeconds, setOcrElapsedSeconds] = useState(0)
+  const [ocrProgressStalled, setOcrProgressStalled] = useState(false)
+  const ocrStartedAtRef = useRef(null)
+  const ocrProgressAtRef = useRef(0)
   const [highAccuracy, setHighAccuracy] = useState(false)
+  const [scanMode, setScanMode] = useState('full')
   const [error, setError] = useState('')
   const [meta, setMeta] = useState(emptyMeta)
   const [students, setStudents] = useState([])
@@ -99,6 +137,10 @@ export default function AttendanceImport({
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingImport, setPendingImport] = useState(null)
   const [confirmSummary, setConfirmSummary] = useState(null)
+  const [confirmError, setConfirmError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [parseMessage, setParseMessage] = useState('')
+  const [jsonExportMessage, setJsonExportMessage] = useState('')
 
   const applyParsed = useCallback((parsed) => {
     const cm = parsed.meta.classMeta
@@ -117,10 +159,116 @@ export default function AttendanceImport({
     )
     if (parsed.previewUrl) setPreviewUrl(parsed.previewUrl)
     setError('')
+    setParseMessage(
+      `Parsed ${parsed.students.length} student${parsed.students.length === 1 ? '' : 's'}. Review details below, then save.`,
+    )
   }, [])
+
+  useEffect(() => {
+    if (!processing) return undefined
+
+    const tick = setInterval(() => {
+      if (ocrStartedAtRef.current) {
+        setOcrElapsedSeconds(Math.floor((Date.now() - ocrStartedAtRef.current) / 1000))
+      }
+      setOcrProgressStalled(Date.now() - ocrProgressAtRef.current > 8000)
+    }, 1000)
+
+    return () => clearInterval(tick)
+  }, [processing])
+
+  useEffect(() => {
+    return subscribeOcr((snap) => {
+      if (snap) {
+        setProcessing(true)
+        setImportMode('screenshot')
+        setOcrProgress(snap.progress)
+        setOcrStageLabel(snap.label)
+        ocrStartedAtRef.current = snap.startedAt
+        ocrProgressAtRef.current = Date.now()
+        if (snap.previewUrl) setPreviewUrl(snap.previewUrl)
+        return
+      }
+
+      const result = consumeOcrResult()
+      if (result) {
+        applyParsed(result)
+      }
+      setProcessing(false)
+    })
+  }, [applyParsed])
+
+  useEffect(() => {
+    if (importMode === 'screenshot' && !isCloudOcrConfigured()) {
+      prewarmOcr()
+    }
+    if (importMode === 'screenshot') {
+      setTimeout(() => pasteZoneRef.current?.focus(), 50)
+    }
+  }, [importMode])
+
+  const stageScreenshot = useCallback(async (file) => {
+    if (!file?.type.startsWith('image/')) {
+      setError('Please use an image file (PNG, JPG, etc.).')
+      return
+    }
+    const dataUrl = await fileToDataUrl(file)
+    setPendingScreenshot(dataUrl)
+    setPreviewUrl(dataUrl)
+    setStudents([])
+    setParseMessage('')
+    setSaved(false)
+    setError('')
+  }, [])
+
+  const handlePasteImageEvent = useCallback(
+    (e) => {
+      const items = e.clipboardData?.items
+      if (!items) return
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault()
+          const file = item.getAsFile()
+          if (file) stageScreenshot(file)
+          return
+        }
+      }
+    },
+    [stageScreenshot],
+  )
+
+  async function pasteScreenshotFromClipboard() {
+    pasteZoneRef.current?.focus()
+    if (navigator.clipboard?.read) {
+      try {
+        const items = await navigator.clipboard.read()
+        for (const item of items) {
+          for (const type of item.types) {
+            if (type.startsWith('image/')) {
+              const blob = await item.getAsType(type)
+              await stageScreenshot(new File([blob], 'clipboard.png', { type }))
+              return
+            }
+          }
+        }
+        setError('No image on clipboard. Take a screenshot with Win+Shift+S, then try again.')
+      } catch {
+        setError('Click the paste area below, then press Ctrl+V. Or use Choose image.')
+      }
+      return
+    }
+    setError('Click the paste area below, then press Ctrl+V.')
+  }
+
+  function clearPendingScreenshot() {
+    setPendingScreenshot(null)
+    setPreviewUrl(null)
+    setError('')
+  }
 
   function handleParseJson() {
     setError('')
+    setParseMessage('')
     setSaved(false)
     try {
       const parsed = parseAttendanceJson(jsonText)
@@ -128,6 +276,7 @@ export default function AttendanceImport({
     } catch (e) {
       setError(e.message || 'Failed to parse JSON.')
       setStudents([])
+      setParseMessage('')
     }
   }
 
@@ -137,52 +286,52 @@ export default function AttendanceImport({
     reader.onload = () => {
       setJsonText(String(reader.result || ''))
       setError('')
+      setParseMessage('')
     }
     reader.onerror = () => setError('Could not read JSON file.')
     reader.readAsText(file)
   }
 
+  async function handleCancelOcr() {
+    await cancelOcrJob()
+    setError('Scan cancelled.')
+  }
+
+  async function handleScanScreenshot() {
+    if (!pendingScreenshot || processing) return
+    await processImage(pendingScreenshot)
+  }
+
   async function processImage(source) {
-    setProcessing(true)
-    setOcrProgress(0)
+    setImportMode('screenshot')
+    setOcrElapsedSeconds(0)
+    setOcrProgressStalled(false)
     setError('')
     setSaved(false)
     try {
-      const parsed = await parseAttendanceScreenshot(source, setOcrProgress, {
-        highAccuracy,
-      })
-      applyParsed(parsed)
+      await runOcrJob(
+        source,
+        ({ progress, label }) => {
+          setOcrProgress(progress)
+          setOcrStageLabel(label)
+          ocrProgressAtRef.current = Date.now()
+          setOcrProgressStalled(false)
+        },
+        { highAccuracy, scanMode },
+      )
     } catch (e) {
       setError(e.message || 'Failed to read screenshot.')
-    } finally {
-      setProcessing(false)
     }
-  }
-
-  async function handleImageFile(file) {
-    if (!file?.type.startsWith('image/')) {
-      setError('Please upload an image file.')
-      return
-    }
-    const dataUrl = await fileToDataUrl(file)
-    setPreviewUrl(dataUrl)
-    await processImage(dataUrl)
   }
 
   useEffect(() => {
-    if (importMode !== 'screenshot') return
+    if (importMode !== 'screenshot' || processing) return
     function onPaste(e) {
-      const item = [...(e.clipboardData?.items || [])].find((i) =>
-        i.type.startsWith('image/'),
-      )
-      if (!item) return
-      e.preventDefault()
-      const file = item.getAsFile()
-      if (file) handleImageFile(file)
+      handlePasteImageEvent(e)
     }
-    window.addEventListener('paste', onPaste)
-    return () => window.removeEventListener('paste', onPaste)
-  }, [importMode, highAccuracy])
+    document.addEventListener('paste', onPaste)
+    return () => document.removeEventListener('paste', onPaste)
+  }, [importMode, processing, handlePasteImageEvent])
 
   function togglePresent(name) {
     setStudents((rows) =>
@@ -206,13 +355,17 @@ export default function AttendanceImport({
     setStudents([])
     setPreviewUrl(null)
     setJsonText('')
+    setParseMessage('')
+    setError('')
     setConfirmOpen(false)
     setPendingImport(null)
     setConfirmSummary(null)
+    setConfirmError('')
   }
 
   async function handleSave(e) {
     e.preventDefault()
+    if (saving) return
     if (!students.length) {
       setError('No students to save.')
       return
@@ -227,13 +380,18 @@ export default function AttendanceImport({
     if (summary.needsConfirm) {
       setPendingImport(payload)
       setConfirmSummary(summary)
+      setConfirmError('')
       setConfirmOpen(true)
       return
     }
+    setSaving(true)
+    setError('')
     try {
       await commitImport(payload)
     } catch {
       setError('Failed to save attendance. Check your connection and try again.')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -244,6 +402,32 @@ export default function AttendanceImport({
     setPreviewUrl(null)
     setJsonText('')
     setError('')
+    setParseMessage('')
+    setJsonExportMessage('')
+  }
+
+  async function handleCopyJson() {
+    if (!students.length) return
+    const json = buildPortalJson(meta, students)
+    try {
+      await navigator.clipboard.writeText(json)
+      setJsonExportMessage('JSON copied to clipboard.')
+    } catch {
+      setJsonExportMessage('Could not copy JSON. Try downloading instead.')
+    }
+  }
+
+  function handleDownloadJson() {
+    if (!students.length) return
+    const json = buildPortalJson(meta, students)
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `attendance-${meta.date || 'export'}.json`
+    anchor.click()
+    URL.revokeObjectURL(url)
+    setJsonExportMessage('JSON file downloaded.')
   }
 
   const classLabel =
@@ -273,11 +457,24 @@ export default function AttendanceImport({
       <header className="panel-header">
         <h2>Record attendance</h2>
         <p className="panel-desc">
-          Import from JSON (recommended) or use a screenshot with OCR.
+          Upload or paste a screenshot, preview it, then scan. JSON import is instant if your
+          portal exports a file.
+          {isCloudOcrConfigured() && (
+            <> Cloud OCR is enabled for fast scans (usually a few seconds).</>
+          )}
         </p>
       </header>
 
       <div className="import-mode-tabs" role="tablist" aria-label="Import method">
+        <button
+          type="button"
+          role="tab"
+          className={`import-mode-tab ${importMode === 'screenshot' ? 'import-mode-active' : ''}`}
+          aria-selected={importMode === 'screenshot'}
+          onClick={() => setImportMode('screenshot')}
+        >
+          Screenshot
+        </button>
         <button
           type="button"
           role="tab"
@@ -286,15 +483,6 @@ export default function AttendanceImport({
           onClick={() => setImportMode('json')}
         >
           JSON
-        </button>
-        <button
-          type="button"
-          role="tab"
-          className={`import-mode-tab ${importMode === 'screenshot' ? 'import-mode-active' : ''}`}
-          aria-selected={importMode === 'screenshot'}
-          onClick={() => setImportMode('screenshot')}
-        >
-          Screenshot (OCR)
         </button>
       </div>
 
@@ -308,7 +496,10 @@ export default function AttendanceImport({
             rows={12}
             placeholder={'Paste JSON here…\n\nExpected keys: session_details, attendance[]'}
             value={jsonText}
-            onChange={(e) => setJsonText(e.target.value)}
+            onChange={(e) => {
+              setJsonText(e.target.value)
+              if (parseMessage) setParseMessage('')
+            }}
             spellCheck={false}
           />
           <div className="json-actions">
@@ -336,53 +527,145 @@ export default function AttendanceImport({
         </div>
       ) : (
         <>
-          {!processing ? (
-            <div
-              className="drop-zone"
-              onDragOver={(e) => {
-                e.preventDefault()
-                e.currentTarget.classList.add('drop-zone-active')
-              }}
-              onDragLeave={(e) => e.currentTarget.classList.remove('drop-zone-active')}
-              onDrop={(e) => {
-                e.preventDefault()
-                e.currentTarget.classList.remove('drop-zone-active')
-                handleImageFile(e.dataTransfer.files?.[0])
-              }}
-            >
-              <input
-                type="file"
-                accept="image/*"
-                id="screenshot-file"
-                className="sr-only"
-                onChange={(e) => {
-                  handleImageFile(e.target.files?.[0])
-                  e.target.value = ''
-                }}
-              />
-              <label htmlFor="screenshot-file" className="drop-zone-label">
-                <strong>Click to choose</strong> or drag an image here
-                <br />
-                <span className="muted">Or paste screenshot (Ctrl+V)</span>
-              </label>
-            </div>
+          {isCloudOcrConfigured() ? (
+            <p className="auth-message cloud-ocr-banner" role="status">
+              Cloud OCR active — fast and full scans use OCR.space.
+              {isRoboflowCheckboxConfigured()
+                ? ' Full scan uses Roboflow AI for checkbox detection.'
+                : ' Full scan uses local pixel detection for checkboxes; add VITE_ROBOFLOW_API_KEY for better accuracy.'}
+            </p>
           ) : (
-            <OcrSpinner progress={ocrProgress} />
+            <p className="info-banner">
+              For faster scans, add a free <strong>OCR.space</strong> API key to your{' '}
+              <code>.env</code> as <code>VITE_OCR_SPACE_API_KEY</code>. Without it, scanning runs
+              slowly in your browser.
+            </p>
+          )}
+
+          {!processing ? (
+            <>
+              <div
+                ref={pasteZoneRef}
+                tabIndex={0}
+                role="button"
+                aria-label="Paste screenshot area. Click here then Ctrl+V, or use the buttons below."
+                className={`drop-zone drop-zone-paste ${pendingScreenshot ? 'drop-zone-has-preview' : ''}`}
+                onPaste={handlePasteImageEvent}
+                onClick={() => pasteZoneRef.current?.focus()}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  e.currentTarget.classList.add('drop-zone-active')
+                }}
+                onDragLeave={(e) => e.currentTarget.classList.remove('drop-zone-active')}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  e.currentTarget.classList.remove('drop-zone-active')
+                  stageScreenshot(e.dataTransfer.files?.[0])
+                }}
+              >
+                {pendingScreenshot ? (
+                  <div className="drop-zone-preview-wrap">
+                    <img
+                      src={pendingScreenshot}
+                      alt="Screenshot preview"
+                      className="drop-zone-preview"
+                    />
+                    <p className="drop-zone-preview-caption">
+                      Preview ready — click <strong>Scan screenshot</strong> when it looks correct.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="drop-zone-label">
+                    <strong>Click here to paste</strong> (Ctrl+V)
+                    <br />
+                    <span className="muted">Or drag an image onto this area</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="json-actions screenshot-actions">
+                <label className="btn btn-secondary file-label">
+                  Choose image
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="sr-only"
+                    onChange={(e) => {
+                      stageScreenshot(e.target.files?.[0])
+                      e.target.value = ''
+                    }}
+                  />
+                </label>
+                <button type="button" className="btn btn-secondary" onClick={pasteScreenshotFromClipboard}>
+                  Paste screenshot
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={!pendingScreenshot}
+                  onClick={handleScanScreenshot}
+                >
+                  Scan screenshot
+                </button>
+                {pendingScreenshot && (
+                  <button type="button" className="btn btn-ghost" onClick={clearPendingScreenshot}>
+                    Clear
+                  </button>
+                )}
+              </div>
+            </>
+          ) : (
+            <OcrSpinner
+              progress={ocrProgress}
+              stageLabel={ocrStageLabel}
+              elapsedSeconds={ocrElapsedSeconds}
+              progressStalled={ocrProgressStalled}
+              onCancel={handleCancelOcr}
+            />
           )}
           <div className="import-options">
-            <label className="notice-inline">
-              <input
-                type="checkbox"
-                checked={highAccuracy}
-                onChange={(e) => setHighAccuracy(e.target.checked)}
-              />
-              High accuracy OCR (slower)
-            </label>
+            <fieldset className="scan-mode-fieldset">
+              <legend className="sr-only">Screenshot scan mode</legend>
+              <label className="notice-inline">
+                <input
+                  type="radio"
+                  name="scanMode"
+                  checked={scanMode === 'full'}
+                  onChange={() => setScanMode('full')}
+                />
+                Full — detect present/absent from checkboxes
+                {isCloudOcrConfigured() && ' (recommended)'}
+              </label>
+              <label className="notice-inline">
+                <input
+                  type="radio"
+                  name="scanMode"
+                  checked={scanMode === 'fast'}
+                  onChange={() => setScanMode('fast')}
+                />
+                Fast — names only; mark absences yourself
+              </label>
+            </fieldset>
+            {scanMode === 'full' && (
+              <label className="notice-inline">
+                <input
+                  type="checkbox"
+                  checked={highAccuracy}
+                  onChange={(e) => setHighAccuracy(e.target.checked)}
+                />
+                High resolution checkbox scan (slower)
+              </label>
+            )}
           </div>
         </>
       )}
 
-      {error && <p className="error-banner">{error}</p>}
+      {error && <p className="error-banner" role="alert">{error}</p>}
+      {parseMessage && !error && (
+        <p className="auth-message" role="status">
+          {parseMessage}
+        </p>
+      )}
 
       {students.length > 0 && !processing && (
         <>
@@ -471,8 +754,19 @@ export default function AttendanceImport({
               <button type="button" className="btn btn-secondary" onClick={() => setAllPresent(false)}>
                 Uncheck all
               </button>
+              <button type="button" className="btn btn-secondary" onClick={handleCopyJson}>
+                Copy as JSON
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={handleDownloadJson}>
+                Download JSON
+              </button>
               <span className="muted">Checked = present · Unchecked = absent</span>
             </div>
+            {jsonExportMessage && (
+              <p className="auth-message" role="status">
+                {jsonExportMessage}
+              </p>
+            )}
 
             <ol className="portal-student-list">
               {students.map((row) => (
@@ -495,8 +789,8 @@ export default function AttendanceImport({
               <strong>{students.filter((s) => !s.present).length} absent</strong>
             </p>
 
-            <button type="submit" className="btn btn-primary btn-submit">
-              Save daily attendance
+            <button type="submit" className="btn btn-primary btn-submit" disabled={saving}>
+              {saving ? 'Saving attendance…' : 'Save daily attendance'}
             </button>
           </form>
         </>
@@ -505,18 +799,27 @@ export default function AttendanceImport({
       <ConfirmOverwriteModal
         open={confirmOpen}
         summary={confirmSummary}
+        error={confirmError}
+        busy={saving}
         onCancel={() => {
+          if (saving) return
           setConfirmOpen(false)
           setPendingImport(null)
           setConfirmSummary(null)
+          setConfirmError('')
         }}
         onConfirm={async () => {
-          if (pendingImport) {
-            try {
-              await commitImport(pendingImport)
-            } catch {
-              setError('Failed to save attendance. Check your connection and try again.')
-            }
+          if (!pendingImport || saving) return
+          setSaving(true)
+          setConfirmError('')
+          try {
+            await commitImport(pendingImport)
+          } catch {
+            setConfirmError(
+              'Failed to save attendance. Check your connection and try again.',
+            )
+          } finally {
+            setSaving(false)
           }
         }}
       />

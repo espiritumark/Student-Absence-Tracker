@@ -1,12 +1,11 @@
-import { classMatchKey, formatClassLabel } from './classFormat'
+import { findMatchingClass, formatClassLabel } from './classFormat'
 
 export function normalizeName(name) {
   return name.trim().replace(/\s+/g, ' ').toUpperCase()
 }
 
 export function computeOverwriteSummary({ classMeta, date, students: incoming }, classes, attendance) {
-  const key = classMatchKey(classMeta)
-  const cls = classes.find((c) => classMatchKey(c) === key)
+  const cls = findMatchingClass(classes, classMeta)
   const classId = cls?.id ?? null
   const existingSession = classId ? attendance?.[classId]?.[date] : null
   const existingRecords = existingSession?.records ?? null

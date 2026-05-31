@@ -1,10 +1,80 @@
-import { parseClassHeader } from './classFormat'
-import { parsePortalDate } from './dates'
+import { parseClassHeader, formatClassLabel } from './classFormat'
+import { formatPortalDate, parsePortalDate } from './dates'
 
 function normalizeStatus(status) {
   const s = String(status ?? '').trim().toLowerCase()
   if (s === 'absent' || s === 'a' || s === 'false' || s === '0') return 'absent'
   return 'present'
+}
+
+function pickNumber(value) {
+  if (value == null || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+function parseClassMetaFromSession(session, classText) {
+  const fromHeader = parseClassHeader(classText)
+  if (fromHeader) return fromHeader
+
+  const intake = pickNumber(session.intake ?? session.Intake)
+  const level = pickNumber(session.level ?? session.Level)
+  const group = pickNumber(session.group ?? session.Group ?? session.class_group)
+  const qualification = String(
+    session.qualification ?? session.programme ?? session.course ?? classText ?? '',
+  ).trim()
+
+  if (intake != null && level != null && group != null) {
+    return {
+      intake,
+      level,
+      group,
+      qualification: qualification || 'Unknown programme',
+    }
+  }
+
+  if (qualification) {
+    const fromQual = parseClassHeader(qualification)
+    if (fromQual) return fromQual
+    return { intake, level, group, qualification }
+  }
+
+  return null
+}
+
+/**
+ * Build portal-style JSON from parsed import data (e.g. after OCR).
+ */
+export function buildPortalJson(meta, students) {
+  const classMeta = {
+    intake: Number(meta.intake) || null,
+    level: Number(meta.level) || null,
+    qualification: meta.qualification?.trim() || '',
+    group: Number(meta.group) || null,
+  }
+  const classLabel =
+    classMeta.intake != null && classMeta.level != null && classMeta.group != null
+      ? formatClassLabel(classMeta)
+      : classMeta.qualification || meta.classLabel || ''
+
+  return JSON.stringify(
+    {
+      session_details: {
+        class: classLabel,
+        date: formatPortalDate(meta.date),
+        module: meta.module || '',
+        start_time: meta.startTime || '',
+        duration: meta.duration || '',
+      },
+      attendance: students.map((row) => ({
+        no: row.index,
+        name: row.name,
+        status: row.present ? 'present' : 'absent',
+      })),
+    },
+    null,
+    2,
+  )
 }
 
 /**
@@ -24,7 +94,7 @@ export function parseAttendanceJson(raw) {
 
   const session = data.session_details ?? data.sessionDetails ?? data.session ?? {}
   const classText = session.class ?? session.class_name ?? session.className ?? ''
-  const classMeta = parseClassHeader(classText)
+  const classMeta = parseClassMetaFromSession(session, classText)
 
   const dateRaw = session.date ?? session.session_date ?? ''
   const date = parsePortalDate(String(dateRaw)) || parsePortalDate(classText)

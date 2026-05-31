@@ -1,6 +1,13 @@
 import { formatDateLabel } from '../utils/dates'
 
-export default function ConfirmOverwriteModal({ open, summary, onCancel, onConfirm }) {
+export default function ConfirmOverwriteModal({
+  open,
+  summary,
+  onCancel,
+  onConfirm,
+  error = '',
+  busy = false,
+}) {
   if (!open || !summary) return null
 
   return (
@@ -8,7 +15,13 @@ export default function ConfirmOverwriteModal({ open, summary, onCancel, onConfi
       <div className="modal">
         <div className="modal-header">
           <h3>{summary.isNewClass ? 'Confirm import' : 'Confirm overwrite'}</h3>
-          <button type="button" className="btn btn-ghost" onClick={onCancel} aria-label="Close">
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={onCancel}
+            disabled={busy}
+            aria-label="Close"
+          >
             ✕
           </button>
         </div>
@@ -66,14 +79,23 @@ export default function ConfirmOverwriteModal({ open, summary, onCancel, onConfi
               </div>
             </div>
           </div>
+          {error && (
+            <p className="auth-error" role="alert">
+              {error}
+            </p>
+          )}
         </div>
 
         <div className="modal-actions">
-          <button type="button" className="btn btn-secondary" onClick={onCancel}>
+          <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
             Cancel
           </button>
-          <button type="button" className="btn btn-primary" onClick={onConfirm}>
-            {summary.isNewClass ? 'Save attendance' : 'Overwrite attendance'}
+          <button type="button" className="btn btn-primary" onClick={onConfirm} disabled={busy}>
+            {busy
+              ? 'Saving…'
+              : summary.isNewClass
+                ? 'Save attendance'
+                : 'Overwrite attendance'}
           </button>
         </div>
       </div>

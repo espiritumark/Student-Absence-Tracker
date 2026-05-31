@@ -1,4 +1,4 @@
-import { classMatchKey, formatClassLabel } from '../utils/classFormat'
+import { findMatchingClass, formatClassLabel } from '../utils/classFormat'
 import { supabase } from './supabase'
 
 function normalizeName(name) {
@@ -197,14 +197,18 @@ export async function dbSetSessionMeta(userId, classId, day, meta) {
 
 export async function dbImportPortalSession(userId, payload) {
   const { classMeta, date, module, startTime, duration, students } = payload
-  const key = classMatchKey(classMeta)
 
   const { data: existingClasses } = await supabase
     .from('classes')
     .select('*')
     .eq('user_id', userId)
 
-  let cls = (existingClasses || []).find((c) => classMatchKey(c) === key)
+  const mappedClasses = (existingClasses || []).map((c) => ({
+    ...c,
+    group: c.class_group,
+  }))
+
+  let cls = findMatchingClass(mappedClasses, classMeta)
   if (!cls) {
     cls = await dbAddClass(userId, classMeta)
   }

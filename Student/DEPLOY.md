@@ -120,6 +120,42 @@ Each user only sees their own classes and attendance (Row Level Security).
 
 ---
 
+## Optional: Fast screenshot OCR (OCR.space)
+
+Browser OCR is slow. For scans that finish in seconds:
+
+1. Sign up at [https://ocr.space/ocrapi](https://ocr.space/ocrapi) (free tier: 25,000 requests/month).
+2. Copy your API key into `.env` and Vercel env vars:
+
+   ```
+   VITE_OCR_SPACE_API_KEY=your_key_here
+   ```
+
+3. Restart the dev server or redeploy.
+
+**Fast scan** reads names only (you mark absences). **Full scan** reads names via cloud OCR and detects checkboxes using Roboflow AI when configured, otherwise local pixel sampling. Both use cloud OCR when the OCR.space key is set.
+
+---
+
+## Optional: AI checkbox detection (Roboflow)
+
+Pixel sampling often misses portal checkboxes. For **Full scan**, you can use the public [checkbox-detector](https://universe.roboflow.com/test-racmu/checkbox-detector) model on Roboflow:
+
+1. Sign up at [https://roboflow.com](https://roboflow.com) (free tier available).
+2. Copy your API key from Roboflow settings into `.env` and Vercel env vars:
+
+   ```
+   VITE_ROBOFLOW_API_KEY=your_key_here
+   ```
+
+3. Restart the dev server or redeploy.
+
+The app calls `test-racmu/checkbox-detector/1` by default (`oncheckbox` / `offcheckbox` classes). Override with `VITE_ROBOFLOW_CHECKBOX_MODEL` if needed.
+
+Without this key, full scan falls back to improved local pixel detection (less reliable on some screenshots).
+
+---
+
 ## Troubleshooting
 
 | Issue | Fix |

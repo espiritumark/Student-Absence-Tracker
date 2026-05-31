@@ -1,3 +1,4 @@
+import { formatClassLabel } from './classFormat'
 import { isConsecutiveDays, parseDateKey } from './dates'
 
 export function getStudentAbsenceStats(classAttendance, studentId) {
@@ -53,4 +54,41 @@ export function getEffectiveAbsenceCounts(student, classAttendance) {
     usesManualTotal: hasManualTotal,
     usesManualConsecutive: hasManualConsecutive,
   }
+}
+
+/**
+ * All students with at least one recorded or manual absence count, sorted highest first.
+ */
+export function getAllStudentAbsenceSummaries(classes, attendance) {
+  const rows = []
+
+  for (const cls of classes) {
+    const classAttendance = attendance[cls.id] || {}
+    const className = formatClassLabel(cls)
+
+    for (const student of cls.students) {
+      const counts = getEffectiveAbsenceCounts(student, classAttendance)
+      if (counts.total <= 0 && counts.consecutive <= 0) continue
+
+      rows.push({
+        id: `${cls.id}-${student.id}`,
+        studentId: student.id,
+        studentName: student.name,
+        classId: cls.id,
+        className,
+        total: counts.total,
+        consecutive: counts.consecutive,
+        usesManualTotal: counts.usesManualTotal,
+        usesManualConsecutive: counts.usesManualConsecutive,
+      })
+    }
+  }
+
+  return rows.sort(
+    (a, b) =>
+      b.total - a.total ||
+      b.consecutive - a.consecutive ||
+      a.className.localeCompare(b.className) ||
+      a.studentName.localeCompare(b.studentName),
+  )
 }

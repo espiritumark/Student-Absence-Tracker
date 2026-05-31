@@ -33,6 +33,12 @@ export function isConsecutiveDays(dayA, dayB) {
   return daysBetween(dayA, dayB) === 1
 }
 
+export function formatPortalDate(key) {
+  if (!key) return ''
+  const [y, m, d] = key.split('-')
+  return `${Number(m)}/${Number(d)}/${y}`
+}
+
 export function parsePortalDate(text) {
   const labeled = text.match(/Date:?\s*(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/i)
   const m = labeled || text.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/)

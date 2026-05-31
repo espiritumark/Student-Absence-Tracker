@@ -8,6 +8,7 @@ import LoadingScreen from './components/LoadingScreen'
 import { useAuth } from './contexts/AuthContext'
 import { useStore } from './hooks/useStore'
 import { getAllAlerts } from './utils/alerts'
+import { isOcrRunning } from './utils/ocrSession'
 
 function AppContent() {
   const [tab, setTab] = useState('import')
@@ -23,7 +24,10 @@ function AppContent() {
     { id: 'classes', label: 'Classes' },
   ]
 
-  if ((cloudEnabled && authLoading) || store.loading) {
+  const blockUiForLoading =
+    (cloudEnabled && authLoading) || (store.initialLoading && !isOcrRunning())
+
+  if (blockUiForLoading) {
     return (
       <div className="app">
         <LoadingScreen
@@ -87,6 +91,7 @@ function AppContent() {
         {store.useCloud && (
           <p className="cloud-badge" aria-label="Cloud sync active">
             Cloud sync active
+            {store.syncing && <span className="sync-indicator"> · Syncing…</span>}
           </p>
         )}
       </header>
@@ -110,27 +115,29 @@ function AppContent() {
         ))}
       </nav>
 
-      <main>
-        {tab === 'import' && (
+      <main className="tab-panels">
+        <div className="tab-panel" hidden={tab !== 'import'} aria-hidden={tab !== 'import'}>
           <AttendanceImport
             importPortalSession={store.importPortalSession}
             classes={store.classes}
             attendance={store.attendance}
             onGoToWarnings={() => setTab('dashboard')}
           />
-        )}
-        {tab === 'dashboard' && (
+        </div>
+        <div className="tab-panel" hidden={tab !== 'dashboard'} aria-hidden={tab !== 'dashboard'}>
           <Dashboard classes={store.classes} attendance={store.attendance} />
-        )}
-        {tab === 'attendance' && (
+        </div>
+        <div className="tab-panel" hidden={tab !== 'attendance'} aria-hidden={tab !== 'attendance'}>
           <AttendanceSheet
             classes={store.classes}
             attendance={store.attendance}
             setAttendance={store.setAttendance}
             setSessionMeta={store.setSessionMeta}
           />
-        )}
-        {tab === 'classes' && <ClassManager {...store} />}
+        </div>
+        <div className="tab-panel" hidden={tab !== 'classes'} aria-hidden={tab !== 'classes'}>
+          <ClassManager {...store} />
+        </div>
       </main>
 
       <footer className="app-footer">

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import {
   dbAddClass,
@@ -14,7 +14,7 @@ import {
   fetchAppState,
 } from '../lib/database'
 import { isSupabaseConfigured } from '../lib/supabase'
-import { classMatchKey, formatClassLabel } from '../utils/classFormat'
+import { findMatchingClass, formatClassLabel } from '../utils/classFormat'
 import { dateKey } from '../utils/dates'
 
 const STORAGE_KEY = 'student-absence-tracker-v2'
@@ -113,31 +113,44 @@ function hasLocalData() {
 
 export function useStore() {
   const { user, cloudEnabled } = useAuth()
-  const useCloud = cloudEnabled && Boolean(user)
+  const userId = user?.id
+  const useCloud = cloudEnabled && Boolean(userId)
   const [state, setState] = useState(emptyState)
-  const [loading, setLoading] = useState(useCloud)
+  const [initialLoading, setInitialLoading] = useState(useCloud)
+  const [syncing, setSyncing] = useState(false)
   const [syncError, setSyncError] = useState('')
+  const hasInitialLoadedRef = useRef(false)
 
-  const refreshFromCloud = useCallback(async () => {
-    if (!user) return
-    setLoading(true)
+  const refreshFromCloud = useCallback(async ({ silent = false } = {}) => {
+    if (!userId) return
+    if (silent) {
+      setSyncing(true)
+    } else {
+      setInitialLoading(true)
+    }
     setSyncError('')
     try {
-      const data = await fetchAppState(user.id)
+      const data = await fetchAppState(userId)
       setState({ classes: data.classes, attendance: data.attendance })
     } catch (e) {
       setSyncError(e.message || 'Failed to load from cloud')
     } finally {
-      setLoading(false)
+      hasInitialLoadedRef.current = true
+      if (silent) {
+        setSyncing(false)
+      } else {
+        setInitialLoading(false)
+      }
     }
-  }, [user])
+  }, [userId])
 
   useEffect(() => {
     if (useCloud) {
-      refreshFromCloud()
+      refreshFromCloud({ silent: hasInitialLoadedRef.current })
     } else {
+      hasInitialLoadedRef.current = false
       setState(loadLocalState())
-      setLoading(false)
+      setInitialLoading(false)
     }
   }, [useCloud, refreshFromCloud])
 
@@ -154,9 +167,10 @@ export function useStore() {
       if (useCloud) {
         try {
           await dbAddClass(user.id, fields)
-          await refreshFromCloud()
+          await refreshFromCloud({ silent: true })
         } catch (e) {
           setSyncError(e.message)
+          throw e
         }
         return null
       }
@@ -186,9 +200,10 @@ export function useStore() {
       if (useCloud) {
         try {
           await dbRemoveClass(classId)
-          await refreshFromCloud()
+          await refreshFromCloud({ silent: true })
         } catch (e) {
           setSyncError(e.message)
+          throw e
         }
         return
       }
@@ -208,7 +223,7 @@ export function useStore() {
       if (useCloud) {
         try {
           await dbAddStudent(user.id, classId, name)
-          await refreshFromCloud()
+          await refreshFromCloud({ silent: true })
         } catch (e) {
           setSyncError(e.message)
         }
@@ -238,9 +253,10 @@ export function useStore() {
       if (useCloud) {
         try {
           await dbUpdateStudent(studentId, patch)
-          await refreshFromCloud()
+          await refreshFromCloud({ silent: true })
         } catch (e) {
           setSyncError(e.message)
+          throw e
         }
         return
       }
@@ -266,7 +282,7 @@ export function useStore() {
       if (useCloud) {
         try {
           await dbRemoveStudent(studentId)
-          await refreshFromCloud()
+          await refreshFromCloud({ silent: true })
         } catch (e) {
           setSyncError(e.message)
         }
@@ -305,7 +321,7 @@ export function useStore() {
       if (useCloud) {
         try {
           await dbSetAttendance(user.id, classId, day, studentId, patch)
-          await refreshFromCloud()
+          await refreshFromCloud({ silent: true })
         } catch (e) {
           setSyncError(e.message)
         }
@@ -337,7 +353,7 @@ export function useStore() {
       if (useCloud) {
         try {
           await dbSetSessionMeta(user.id, classId, day, meta)
-          await refreshFromCloud()
+          await refreshFromCloud({ silent: true })
         } catch (e) {
           setSyncError(e.message)
         }
@@ -363,7 +379,7 @@ export function useStore() {
       if (useCloud) {
         try {
           await dbImportPortalSession(user.id, payload)
-          await refreshFromCloud()
+          await refreshFromCloud({ silent: true })
         } catch (e) {
           setSyncError(e.message)
           throw e
@@ -372,9 +388,8 @@ export function useStore() {
       }
       runLocal((s) => {
         const { classMeta, date, module, startTime, duration, students } = payload
-        const key = classMatchKey(classMeta)
         let classes = [...s.classes]
-        let classId = classes.find((c) => classMatchKey(c) === key)?.id
+        let classId = findMatchingClass(classes, classMeta)?.id
 
         if (!classId) {
           classId = createId()
@@ -435,11 +450,11 @@ export function useStore() {
       if (useCloud) {
         try {
           const count = await dbImportStudentsBulk(user.id, classId, namesText)
-          await refreshFromCloud()
+          await refreshFromCloud({ silent: true })
           return count
         } catch (e) {
           setSyncError(e.message)
-          return 0
+          throw e
         }
       }
       const names = namesText.split(/[\n,;]+/).map(normalizeName).filter(Boolean)
@@ -464,17 +479,17 @@ export function useStore() {
     if (!user) return
     const local = loadLocalState()
     if (!local.classes.length) return
-    setLoading(true)
+    setInitialLoading(true)
     setSyncError('')
     try {
       await dbMigrateLocalState(user.id, local)
       localStorage.removeItem(STORAGE_KEY)
-      await refreshFromCloud()
+      await refreshFromCloud({ silent: false })
     } catch (e) {
       setSyncError(e.message || 'Migration failed')
       throw e
     } finally {
-      setLoading(false)
+      setInitialLoading(false)
     }
   }, [user, refreshFromCloud])
 
@@ -483,7 +498,9 @@ export function useStore() {
   return {
     classes: state.classes,
     attendance: state.attendance,
-    loading,
+    loading: initialLoading,
+    initialLoading,
+    syncing,
     syncError,
     useCloud,
     hasLocalData: hasLocalData(),
