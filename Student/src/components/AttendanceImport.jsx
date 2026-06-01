@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAutoDismiss } from '../hooks/useAutoDismiss'
+import { useScrollLoadMore } from '../hooks/useScrollLoadMore'
 import { formatClassLabel } from '../utils/classFormat'
 import { dateKey, formatDateLabel } from '../utils/dates'
 import {
@@ -15,8 +16,10 @@ import {
 } from '../utils/ocrSession'
 import { buildPortalJson, parseAttendanceJson } from '../utils/parseAttendanceJson'
 import { fileToDataUrl, isCloudOcrConfigured, isRoboflowCheckboxConfigured } from '../utils/parseScreenshot'
+import ConfirmDialog from './ConfirmDialog'
 import ConfirmOverwriteModal from './ConfirmOverwriteModal'
 import SaveFieldOverlay from './SaveFieldOverlay'
+import ScrollSentinel from './ScrollSentinel'
 
 const emptyMeta = {
   intake: '',
@@ -152,6 +155,7 @@ export default function AttendanceImport({
   const [saved, setSaved] = useState(false)
   const [savedCount, setSavedCount] = useState({ total: 0, absent: 0 })
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [saveConfirmOpen, setSaveConfirmOpen] = useState(false)
   const [pendingImport, setPendingImport] = useState(null)
   const [confirmSummary, setConfirmSummary] = useState(null)
   const [confirmError, setConfirmError] = useState('')
@@ -440,6 +444,7 @@ export default function AttendanceImport({
     setParseMessage('')
     setError('')
     setConfirmOpen(false)
+    setSaveConfirmOpen(false)
     setPendingImport(null)
     setConfirmSummary(null)
     setConfirmError('')
@@ -466,10 +471,19 @@ export default function AttendanceImport({
       setConfirmOpen(true)
       return
     }
+    setPendingImport(payload)
+    setConfirmSummary(summary)
+    setConfirmError('')
+    setSaveConfirmOpen(true)
+  }
+
+  async function handleConfirmSaveImport() {
+    if (!pendingImport || saving) return
+    setSaveConfirmOpen(false)
     setSaving(true)
     setError('')
     try {
-      await commitImport(payload)
+      await commitImport(pendingImport)
     } catch (err) {
       setError(err.message || 'Failed to save attendance. Please try again.')
     } finally {
@@ -520,6 +534,19 @@ export default function AttendanceImport({
           group: meta.group,
         })
       : meta.qualification || ''
+
+  const {
+    visibleCount: visibleStudentCount,
+    rootRef: studentScrollRef,
+    sentinelRef: studentSentinelRef,
+    hasMore: hasMoreStudents,
+  } = useScrollLoadMore({
+    total: students.length,
+    batchSize: 30,
+    resetKey: `${meta.date}-${students.length}`,
+  })
+
+  const visibleImportStudents = students.slice(0, visibleStudentCount)
 
   if (saved) {
     return (
@@ -761,6 +788,7 @@ export default function AttendanceImport({
 
           <SaveFieldOverlay busy={saving} label="Saving attendance…">
             <form className="portal-form" onSubmit={handleSave}>
+            <fieldset className="portal-form-fields" disabled={saving}>
             <p className="portal-class-header">
               Class: <strong>{classLabel || 'Review class details below'}</strong>
             </p>
@@ -853,21 +881,34 @@ export default function AttendanceImport({
               </p>
             )}
 
-            <ol className="portal-student-list">
-              {students.map((row) => (
-                <li key={`${row.index}-${row.name}`}>
-                  <span className="row-num">{row.index}</span>
-                  <input
-                    type="checkbox"
-                    checked={row.present}
-                    onChange={() => togglePresent(row.name)}
-                    aria-label={`${row.name} present`}
-                  />
-                  <span className="student-name">{row.name}</span>
-                  {!row.present && <span className="absent-tag">Absent</span>}
-                </li>
-              ))}
-            </ol>
+            {students.length > 30 && (
+              <p className="list-scroll-hint muted small">
+                {students.length} students · scroll the list below for more
+              </p>
+            )}
+
+            <div className="scroll-panel portal-student-list-scroll" ref={studentScrollRef}>
+              <ol className="portal-student-list portal-student-list-inset">
+                {visibleImportStudents.map((row) => (
+                  <li key={`${row.index}-${row.name}`}>
+                    <span className="row-num">{row.index}</span>
+                    <input
+                      type="checkbox"
+                      checked={row.present}
+                      onChange={() => togglePresent(row.name)}
+                      aria-label={`${row.name} present`}
+                    />
+                    <span className="student-name">{row.name}</span>
+                    {!row.present && <span className="absent-tag">Absent</span>}
+                  </li>
+                ))}
+              </ol>
+              <ScrollSentinel
+                sentinelRef={studentSentinelRef}
+                hasMore={hasMoreStudents}
+                label="Loading more students…"
+              />
+            </div>
 
             <p className="muted summary-line">
               {formatDateLabel(meta.date)} · {students.length} students ·{' '}
@@ -877,6 +918,7 @@ export default function AttendanceImport({
             <button type="submit" className="btn btn-primary btn-submit" disabled={saving}>
               {saving ? 'Saving attendance…' : 'Save daily attendance'}
             </button>
+            </fieldset>
             </form>
           </SaveFieldOverlay>
         </>
@@ -907,6 +949,39 @@ export default function AttendanceImport({
           }
         }}
       />
+
+      <ConfirmDialog
+        open={saveConfirmOpen}
+        title="Save daily attendance?"
+        confirmLabel="Save attendance"
+        cancelLabel="Keep editing"
+        busy={saving}
+        onCancel={() => {
+          if (saving) return
+          setSaveConfirmOpen(false)
+          setPendingImport(null)
+          setConfirmSummary(null)
+        }}
+        onConfirm={handleConfirmSaveImport}
+      >
+        {confirmSummary && pendingImport && (
+          <p className="modal-lead">
+            Save attendance for <strong>{confirmSummary.classLabel}</strong>
+            {confirmSummary.isNewClass ? ' (new class will be created)' : ''} on{' '}
+            <strong>{formatDateLabel(pendingImport.date)}</strong>
+            {confirmSummary.module ? (
+              <>
+                {' '}
+                · Module: <strong>{confirmSummary.module}</strong>
+              </>
+            ) : null}
+            ?{' '}
+            <strong>{pendingImport.students.length}</strong> students,{' '}
+            <strong>{pendingImport.students.filter((s) => !s.present).length}</strong> marked
+            absent.
+          </p>
+        )}
+      </ConfirmDialog>
     </section>
   )
 }

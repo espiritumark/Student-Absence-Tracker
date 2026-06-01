@@ -1,20 +1,17 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAutoDismiss } from '../hooks/useAutoDismiss'
+import { useScrollLoadMore } from '../hooks/useScrollLoadMore'
 import AbsenceBulkEditor from './AbsenceBulkEditor'
-import { AbsenceCountBadge } from './AbsenceCountBadge'
-import { getEffectiveAbsenceCounts } from '../utils/attendanceStats'
+import ClassStudentPanel from './ClassStudentPanel'
+import ScrollSentinel from './ScrollSentinel'
 import { formatClassLabel } from '../utils/classFormat'
-import {
-  filterAttendanceByModule,
-  formatModuleLabel,
-  listModulesForClass,
-} from '../utils/sessionKeys'
 import ConfirmDialog from './ConfirmDialog'
-import SearchableSelect from './SearchableSelect'
+import SaveFieldOverlay from './SaveFieldOverlay'
 
 export default function ClassManager({
   classes,
   attendance,
+  syncing = false,
   addClass,
   removeClass,
   addStudent,
@@ -28,144 +25,109 @@ export default function ClassManager({
     qualification: '',
     group: '',
   })
-  const [selectedClassId, setSelectedClassId] = useState(
-    classes.length > 0 ? classes[0].id : '',
-  )
-  const [studentInput, setStudentInput] = useState('')
-  const [bulkText, setBulkText] = useState('')
+  const [openClassIds, setOpenClassIds] = useState(() => new Set())
+  const [moduleFilters, setModuleFilters] = useState({})
   const [bulkEditMode, setBulkEditMode] = useState(false)
-  const [removedStudents, setRemovedStudents] = useState([])
+  const [bulkEditClassId, setBulkEditClassId] = useState('')
+  const [deleteTargetClassId, setDeleteTargetClassId] = useState('')
   const [addClassBusy, setAddClassBusy] = useState(false)
   const [addClassMessage, setAddClassMessage] = useState('')
   const [addClassError, setAddClassError] = useState('')
-  const [bulkMessage, setBulkMessage] = useState('')
-  const [bulkError, setBulkError] = useState('')
-  const [bulkBusy, setBulkBusy] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState('')
-  const [moduleFilter, setModuleFilter] = useState('')
+  const [addConfirmOpen, setAddConfirmOpen] = useState(false)
+  const [pendingClassFields, setPendingClassFields] = useState(null)
 
   useAutoDismiss(Boolean(addClassMessage) && !form.qualification.trim(), () => setAddClassMessage(''))
-  useAutoDismiss(Boolean(bulkMessage) && !bulkText.trim(), () => setBulkMessage(''))
 
   const sortedClasses = [...classes].sort((a, b) =>
     formatClassLabel(a).localeCompare(formatClassLabel(b)),
   )
 
-  const classOptions = sortedClasses.map((c) => ({
-    value: c.id,
-    label: formatClassLabel(c),
-  }))
+  const deleteTargetClass = classes.find((c) => c.id === deleteTargetClassId)
+  const addClassLocked = addClassBusy || syncing
 
-  const selectedClass = classes.find((c) => c.id === selectedClassId)
-  const classAttendance = selectedClass ? attendance?.[selectedClass.id] || {} : {}
-  const classModules = useMemo(
-    () => listModulesForClass(classAttendance),
-    [classAttendance],
-  )
-  const filteredAttendance = useMemo(
-    () =>
-      moduleFilter === ''
-        ? classAttendance
-        : filterAttendanceByModule(classAttendance, moduleFilter),
-    [classAttendance, moduleFilter],
-  )
-  const activeModuleLabel =
-    moduleFilter === ''
-      ? 'All modules'
-      : classModules.find((m) => m.value === moduleFilter)?.label ??
-        formatModuleLabel(moduleFilter)
-  const sortedStudents = selectedClass
-    ? [...selectedClass.students].sort((a, b) => a.name.localeCompare(b.name))
-    : []
+  const {
+    visibleCount: visibleClassCount,
+    rootRef: classScrollRef,
+    sentinelRef: classSentinelRef,
+    hasMore: hasMoreClasses,
+  } = useScrollLoadMore({
+    total: sortedClasses.length,
+    batchSize: 12,
+    resetKey: String(sortedClasses.length),
+  })
+
+  const visibleClasses = sortedClasses.slice(0, visibleClassCount)
 
   useEffect(() => {
-    if (classes.length === 0) {
-      setSelectedClassId('')
-      return
-    }
-    if (!classes.some((c) => c.id === selectedClassId)) {
-      const sorted = [...classes].sort((a, b) =>
-        formatClassLabel(a).localeCompare(formatClassLabel(b)),
-      )
-      setSelectedClassId(sorted[0]?.id ?? '')
-    }
-  }, [classes, selectedClassId])
+    setOpenClassIds((prev) => {
+      const valid = new Set([...prev].filter((id) => classes.some((c) => c.id === id)))
+      return valid.size === prev.size ? prev : valid
+    })
+  }, [classes])
 
-  useEffect(() => {
-    setModuleFilter('')
-  }, [selectedClassId])
+  function toggleClassOpen(classId) {
+    setOpenClassIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(classId)) next.delete(classId)
+      else next.add(classId)
+      return next
+    })
+  }
+
+  function setModuleFilter(classId, value) {
+    setModuleFilters((prev) => ({ ...prev, [classId]: value }))
+  }
 
   async function handleAddClass(e) {
     e.preventDefault()
-    if (!form.qualification.trim() || addClassBusy) return
+    if (!form.qualification.trim() || addClassLocked) return
     const fields = {
       intake: Number(form.intake) || null,
       level: Number(form.level) || null,
       qualification: form.qualification.trim(),
       group: Number(form.group) || null,
     }
+    setPendingClassFields(fields)
+    setAddConfirmOpen(true)
+  }
+
+  async function handleConfirmAddClass() {
+    if (!pendingClassFields || addClassLocked) return
+    setAddConfirmOpen(false)
     setAddClassBusy(true)
     setAddClassMessage('')
     setAddClassError('')
     try {
-      const newId = await addClass(fields)
-      if (newId) setSelectedClassId(newId)
+      const newId = await addClass(pendingClassFields)
+      if (newId) {
+        setOpenClassIds((prev) => new Set(prev).add(newId))
+      }
       setForm({ intake: '', level: '', qualification: '', group: '' })
-      setAddClassMessage(`"${formatClassLabel(fields)}" added successfully.`)
+      setAddClassMessage(`"${formatClassLabel(pendingClassFields)}" added successfully.`)
     } catch (err) {
       setAddClassError(err.message || 'Failed to add class. Try again.')
     } finally {
       setAddClassBusy(false)
-    }
-  }
-
-  function handleAddStudent(e) {
-    e.preventDefault()
-    if (!selectedClassId || !studentInput.trim()) return
-    addStudent(selectedClassId, studentInput)
-    setStudentInput('')
-  }
-
-  async function handleBulkImport() {
-    if (!selectedClassId || bulkBusy) return
-    if (!bulkText.trim()) {
-      setBulkError('Enter at least one student name.')
-      setBulkMessage('')
-      return
-    }
-    setBulkBusy(true)
-    setBulkMessage('')
-    setBulkError('')
-    try {
-      const count = await importStudentsBulk(selectedClassId, bulkText)
-      if (count > 0) {
-        setBulkText('')
-        setBulkMessage(
-          `Added ${count} student${count === 1 ? '' : 's'} to ${formatClassLabel(selectedClass ?? {})}.`,
-        )
-      } else {
-        setBulkMessage('No new students to add — all names were already in this class.')
-      }
-    } catch (err) {
-      setBulkError(err.message || 'Failed to import students. Try again.')
-    } finally {
-      setBulkBusy(false)
+      setPendingClassFields(null)
     }
   }
 
   async function handleConfirmDeleteClass() {
-    if (!selectedClassId || deleteBusy) return
+    if (!deleteTargetClassId || deleteBusy) return
     setDeleteBusy(true)
     setDeleteError('')
     try {
-      const remaining = classes.filter((c) => c.id !== selectedClassId)
-      await removeClass(selectedClassId)
-      setSelectedClassId(remaining[0]?.id ?? '')
+      await removeClass(deleteTargetClassId)
+      setOpenClassIds((prev) => {
+        const next = new Set(prev)
+        next.delete(deleteTargetClassId)
+        return next
+      })
       setDeleteOpen(false)
-      setBulkMessage('')
-      setBulkError('')
+      setDeleteTargetClassId('')
     } catch (err) {
       setDeleteError(err.message || 'Failed to delete class. Try again.')
     } finally {
@@ -173,18 +135,15 @@ export default function ClassManager({
     }
   }
 
-  function handleRemoveStudent(classId, student) {
-    const token = { classId, student, restoredAt: null }
-    setRemovedStudents((prev) => [token, ...prev.slice(0, 4)])
-    removeStudent(classId, student.id)
-    setTimeout(() => {
-      setRemovedStudents((prev) => prev.filter((r) => r.student.id !== student.id))
-    }, 7000)
+  function openDeleteDialog(classId) {
+    setDeleteTargetClassId(classId)
+    setDeleteError('')
+    setDeleteOpen(true)
   }
 
-  function handleUndo(token) {
-    addStudent(token.classId, token.student.name)
-    setRemovedStudents((prev) => prev.filter((r) => r.student.id !== token.student.id))
+  function openBulkEdit(classId) {
+    setBulkEditClassId(classId)
+    setBulkEditMode(true)
   }
 
   if (bulkEditMode) {
@@ -192,9 +151,12 @@ export default function ClassManager({
       <AbsenceBulkEditor
         classes={classes}
         attendance={attendance}
-        initialClassId={selectedClassId}
+        initialClassId={bulkEditClassId || sortedClasses[0]?.id || ''}
         bulkUpdateStudents={bulkUpdateStudents}
-        onClose={() => setBulkEditMode(false)}
+        onClose={() => {
+          setBulkEditMode(false)
+          setBulkEditClassId('')
+        }}
       />
     )
   }
@@ -204,101 +166,126 @@ export default function ClassManager({
       <header className="panel-header">
         <h2>Classes &amp; students</h2>
         <p className="panel-desc">
-          Manage classes and rosters. Use bulk edit for absence count overrides on one page.
+          Expand a class to manage its roster. Student lists load only when opened to keep
+          things fast.
         </p>
       </header>
 
       <details className="collapsible-form">
         <summary className="collapsible-summary">Add a new class manually</summary>
-        <form className="portal-meta-grid add-class-form" onSubmit={handleAddClass}>
-          <label>
-            Intake
-            <input
-              type="number"
-              value={form.intake}
-              onChange={(e) => setForm((f) => ({ ...f, intake: e.target.value }))}
-            />
-          </label>
-          <label>
-            Level
-            <input
-              type="number"
-              value={form.level}
-              onChange={(e) => setForm((f) => ({ ...f, level: e.target.value }))}
-            />
-          </label>
-          <label>
-            Group
-            <input
-              type="number"
-              value={form.group}
-              onChange={(e) => setForm((f) => ({ ...f, group: e.target.value }))}
-            />
-          </label>
-          <label className="span-2">
-            Qualification / programme
-            <input
-              type="text"
-              placeholder="HND IN COMPUTING"
-              value={form.qualification}
-              onChange={(e) => setForm((f) => ({ ...f, qualification: e.target.value }))}
-              required
-            />
-          </label>
-          <button type="submit" className="btn btn-primary" disabled={addClassBusy}>
-            {addClassBusy ? 'Adding class…' : 'Add class'}
-          </button>
-          {addClassMessage && (
-            <p className="auth-message span-2" role="status">
-              {addClassMessage}
-            </p>
-          )}
-          {addClassError && (
-            <p className="auth-error span-2" role="alert">
-              {addClassError}
-            </p>
-          )}
-        </form>
+        <SaveFieldOverlay busy={addClassBusy} label="Adding class…">
+          <form className="portal-meta-grid add-class-form" onSubmit={handleAddClass}>
+            <fieldset className="add-class-fields" disabled={addClassLocked}>
+              <label>
+                Intake
+                <input
+                  type="number"
+                  value={form.intake}
+                  onChange={(e) => setForm((f) => ({ ...f, intake: e.target.value }))}
+                />
+              </label>
+              <label>
+                Level
+                <input
+                  type="number"
+                  value={form.level}
+                  onChange={(e) => setForm((f) => ({ ...f, level: e.target.value }))}
+                />
+              </label>
+              <label>
+                Group
+                <input
+                  type="number"
+                  value={form.group}
+                  onChange={(e) => setForm((f) => ({ ...f, group: e.target.value }))}
+                />
+              </label>
+              <label className="span-2">
+                Qualification / programme
+                <input
+                  type="text"
+                  placeholder="HND IN COMPUTING"
+                  value={form.qualification}
+                  onChange={(e) => setForm((f) => ({ ...f, qualification: e.target.value }))}
+                  required
+                />
+              </label>
+              <button type="submit" className="btn btn-primary" disabled={addClassLocked}>
+                {addClassBusy ? 'Adding class…' : 'Add class'}
+              </button>
+            </fieldset>
+            {addClassMessage && (
+              <p className="auth-message span-2" role="status">
+                {addClassMessage}
+              </p>
+            )}
+            {addClassError && (
+              <p className="auth-error span-2" role="alert">
+                {addClassError}
+              </p>
+            )}
+          </form>
+        </SaveFieldOverlay>
       </details>
 
       {classes.length === 0 ? (
         <p className="empty-state">No classes yet. Import a screenshot or add one above.</p>
       ) : (
         <>
-          <div className="class-selector-row">
-            <SearchableSelect
-              options={classOptions}
-              value={selectedClassId}
-              onChange={(v) => {
-                setSelectedClassId(v)
-                setModuleFilter('')
-                setStudentInput('')
-                setBulkText('')
-                setBulkMessage('')
-                setBulkError('')
-              }}
-              placeholder="Search and select a class…"
-              label="Select class"
+          <p className="class-accordion-hint muted small">
+            {sortedClasses.length} class{sortedClasses.length === 1 ? '' : 'es'} ·{' '}
+            {openClassIds.size} expanded · scroll for more
+          </p>
+
+          <div className="scroll-panel class-accordion-scroll" ref={classScrollRef}>
+            <div className="class-accordion-list">
+            {visibleClasses.map((cls) => {
+              const isOpen = openClassIds.has(cls.id)
+              const studentCount = cls.students?.length ?? 0
+
+              return (
+                <details
+                  key={cls.id}
+                  className={`class-accordion-item ${isOpen ? 'is-open' : ''}`}
+                  open={isOpen}
+                >
+                  <summary
+                    className="class-accordion-summary"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      if (deleteBusy || addClassBusy) return
+                      toggleClassOpen(cls.id)
+                    }}
+                  >
+                    <span className="class-accordion-title">{formatClassLabel(cls)}</span>
+                    <span className="class-accordion-meta">
+                      {studentCount} student{studentCount === 1 ? '' : 's'}
+                    </span>
+                  </summary>
+
+                  {isOpen && (
+                    <ClassStudentPanel
+                      cls={cls}
+                      attendance={attendance?.[cls.id] || {}}
+                      moduleFilter={moduleFilters[cls.id] ?? ''}
+                      onModuleFilter={(value) => setModuleFilter(cls.id, value)}
+                      syncing={syncing}
+                      onBulkEdit={() => openBulkEdit(cls.id)}
+                      onDeleteRequest={() => openDeleteDialog(cls.id)}
+                      addStudent={addStudent}
+                      removeStudent={removeStudent}
+                      importStudentsBulk={importStudentsBulk}
+                    />
+                  )}
+                </details>
+              )
+            })}
+            </div>
+            <ScrollSentinel
+              sentinelRef={classSentinelRef}
+              hasMore={hasMoreClasses}
+              label="Loading more classes…"
             />
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={!selectedClass}
-              onClick={() => setBulkEditMode(true)}
-            >
-              Bulk edit this class
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-danger-text"
-              onClick={() => {
-                setDeleteError('')
-                setDeleteOpen(true)
-              }}
-              disabled={!selectedClass}
-            >
-              Delete class
-            </button>
           </div>
 
           <ConfirmDialog
@@ -312,13 +299,14 @@ export default function ClassManager({
             onCancel={() => {
               if (deleteBusy) return
               setDeleteOpen(false)
+              setDeleteTargetClassId('')
               setDeleteError('')
             }}
             onConfirm={handleConfirmDeleteClass}
           >
-            {selectedClass ? (
+            {deleteTargetClass ? (
               <p className="modal-lead">
-                Delete <strong>{formatClassLabel(selectedClass)}</strong> and all of its
+                Delete <strong>{formatClassLabel(deleteTargetClass)}</strong> and all of its
                 attendance records? This cannot be undone.
               </p>
             ) : (
@@ -328,138 +316,26 @@ export default function ClassManager({
             )}
           </ConfirmDialog>
 
-          {selectedClass && (
-            <div className="class-detail-card">
-              <div className="class-detail-header">
-                <p className="class-detail-title">{formatClassLabel(selectedClass)}</p>
-                <div className="class-detail-modules">
-                  <span className="class-detail-modules-label">Module</span>
-                  {classModules.length === 0 ? (
-                    <p className="class-detail-modules-empty muted small">
-                      No modules recorded yet. Set a module when importing or marking attendance.
-                    </p>
-                  ) : (
-                    <div className="class-module-chips" role="group" aria-label="Filter by module">
-                      <button
-                        type="button"
-                        className={`class-module-chip ${moduleFilter === '' ? 'is-active' : ''}`}
-                        onClick={() => setModuleFilter('')}
-                      >
-                        All modules
-                      </button>
-                      {classModules.map(({ value, label }) => (
-                        <button
-                          key={value || '__general__'}
-                          type="button"
-                          className={`class-module-chip ${moduleFilter === value ? 'is-active' : ''}`}
-                          onClick={() => setModuleFilter(value)}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {classModules.length > 0 && moduleFilter !== '' && (
-                    <p className="class-detail-scope muted small">
-                      Showing absence counts for <strong>{activeModuleLabel}</strong> only.
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <form className="inline-form" onSubmit={handleAddStudent}>
-                <input
-                  type="text"
-                  placeholder="Student name"
-                  value={studentInput}
-                  onChange={(e) => setStudentInput(e.target.value)}
-                />
-                <button type="submit" className="btn btn-secondary">
-                  Add student
-                </button>
-              </form>
-
-              <details className="bulk-import">
-                <summary>Bulk add names</summary>
-                <textarea
-                  placeholder="One name per line, or separated by commas"
-                  rows={4}
-                  value={bulkText}
-                  onChange={(e) => {
-                    setBulkText(e.target.value)
-                    if (bulkMessage || bulkError) {
-                      setBulkMessage('')
-                      setBulkError('')
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={handleBulkImport}
-                  disabled={bulkBusy}
-                >
-                  {bulkBusy ? 'Importing…' : 'Import'}
-                </button>
-                {bulkMessage && (
-                  <p className="auth-message" role="status">
-                    {bulkMessage}
-                  </p>
-                )}
-                {bulkError && (
-                  <p className="auth-error" role="alert">
-                    {bulkError}
-                  </p>
-                )}
-              </details>
-
-              {removedStudents.length > 0 && (
-                <div className="undo-stack">
-                  {removedStudents.map((r) => (
-                    <div key={r.student.id} className="undo-toast">
-                      <span>Removed {r.student.name}</span>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => handleUndo(r)}
-                      >
-                        Undo
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {sortedStudents.length === 0 ? (
-                <p className="muted">No students in this class.</p>
-              ) : (
-                <ul className="student-list">
-                  {sortedStudents.map((st) => {
-                    const counts = getEffectiveAbsenceCounts(st, filteredAttendance)
-
-                    return (
-                      <li key={st.id} className="student-list-item">
-                        <div className="student-list-main">
-                          <span className="student-name-text">{st.name}</span>
-                        </div>
-                        <div className="student-list-aside">
-                          <AbsenceCountBadge counts={counts} />
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm btn-danger-text"
-                            onClick={() => handleRemoveStudent(selectedClassId, st)}
-                            aria-label={`Remove ${st.name}`}
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      </li>
-                    )
-                  })}
-                </ul>
-              )}
-            </div>
-          )}
+          <ConfirmDialog
+            open={addConfirmOpen}
+            title="Add this class?"
+            confirmLabel="Add class"
+            cancelLabel="Cancel"
+            busy={addClassBusy}
+            onCancel={() => {
+              if (addClassBusy) return
+              setAddConfirmOpen(false)
+              setPendingClassFields(null)
+            }}
+            onConfirm={handleConfirmAddClass}
+          >
+            {pendingClassFields && (
+              <p className="modal-lead">
+                Create class <strong>{formatClassLabel(pendingClassFields)}</strong>? You can add
+                students after it is created.
+              </p>
+            )}
+          </ConfirmDialog>
         </>
       )}
     </section>

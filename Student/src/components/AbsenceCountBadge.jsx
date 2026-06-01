@@ -1,7 +1,19 @@
 import { getOverallAbsenceRisk, hasAbsenceNumbers, RISK_META } from '../utils/absenceRisk'
 
-export function AbsenceCountBadge({ counts, showManual = true, size = 'md' }) {
-  if (!counts || !hasAbsenceNumbers(counts)) return null
+export function AbsenceCountBadge({ counts, showManual = true, size = 'md', placeholder = false }) {
+  const hasNumbers = counts && hasAbsenceNumbers(counts)
+
+  if (!hasNumbers) {
+    if (!placeholder) return null
+    return (
+      <span
+        className={`absence-badge absence-badge-empty absence-badge-${size}`}
+        aria-hidden="true"
+      >
+        <span className="absence-badge-placeholder">—</span>
+      </span>
+    )
+  }
 
   const risk = getOverallAbsenceRisk(counts)
   const meta = RISK_META[risk]

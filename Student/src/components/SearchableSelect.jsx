@@ -17,6 +17,7 @@ export default function SearchableSelect({
   placeholder = 'Search…',
   id,
   label: labelText,
+  disabled = false,
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -33,6 +34,7 @@ export default function SearchableSelect({
     : options
 
   function openDropdown() {
+    if (disabled) return
     setOpen(true)
     setQuery('')
     setTimeout(() => inputRef.current?.focus(), 0)
@@ -50,6 +52,13 @@ export default function SearchableSelect({
       setQuery('')
     }
   }
+
+  useEffect(() => {
+    if (disabled) {
+      setOpen(false)
+      setQuery('')
+    }
+  }, [disabled])
 
   useEffect(() => {
     if (!open) return
@@ -109,12 +118,15 @@ export default function SearchableSelect({
         <button
           type="button"
           id={inputId}
-          className="ss-trigger"
+          className="ss-trigger ss-trigger-compact"
+          disabled={disabled}
           onClick={openDropdown}
+          title={selected ? selected.label : placeholder}
           aria-haspopup="listbox"
           aria-expanded="false"
+          aria-disabled={disabled}
         >
-          <span className={selected ? '' : 'ss-placeholder'}>
+          <span className={`ss-trigger-text ${selected ? '' : 'ss-placeholder'}`}>
             {selected ? selected.label : placeholder}
           </span>
           <svg className="ss-chevron" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">

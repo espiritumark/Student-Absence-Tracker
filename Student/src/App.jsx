@@ -136,6 +136,7 @@ function AppContent() {
             attendance={store.attendance}
             setAttendance={store.setAttendance}
             setSessionMeta={store.setSessionMeta}
+            syncing={store.syncing}
           />
         </div>
         <div className="tab-panel" hidden={tab !== 'classes'} aria-hidden={tab !== 'classes'}>

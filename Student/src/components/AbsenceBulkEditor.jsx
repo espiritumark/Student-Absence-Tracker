@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAutoDismiss } from '../hooks/useAutoDismiss'
+import { useScrollLoadMore } from '../hooks/useScrollLoadMore'
 import { AbsenceCountBadge } from './AbsenceCountBadge'
 import ConfirmDialog from './ConfirmDialog'
 import SaveFieldOverlay from './SaveFieldOverlay'
+import ScrollSentinel from './ScrollSentinel'
 import SearchableSelect from './SearchableSelect'
 import { getEffectiveAbsenceCounts } from '../utils/attendanceStats'
 import { formatClassLabel } from '../utils/classFormat'
@@ -61,6 +63,7 @@ export default function AbsenceBulkEditor({
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [confirmClear, setConfirmClear] = useState(false)
+  const [confirmSaveOpen, setConfirmSaveOpen] = useState(false)
 
   const selectedClass = sortedClasses.find((c) => c.id === classId)
   const classAttendance = selectedClass ? attendance?.[selectedClass.id] || {} : {}
@@ -108,6 +111,19 @@ export default function AbsenceBulkEditor({
 
   const changedCount = students.filter(({ changed }) => changed).length
 
+  const {
+    visibleCount: visibleStudentCount,
+    rootRef: tableScrollRef,
+    sentinelRef: tableSentinelRef,
+    hasMore: hasMoreStudents,
+  } = useScrollLoadMore({
+    total: visibleStudents.length,
+    batchSize: 30,
+    resetKey: `${classId}-${showAll}`,
+  })
+
+  const pagedStudents = visibleStudents.slice(0, visibleStudentCount)
+
   useAutoDismiss(Boolean(message) && changedCount === 0, () => setMessage(''))
 
   useEffect(() => {
@@ -137,6 +153,7 @@ export default function AbsenceBulkEditor({
 
   async function handleSave() {
     if (!classId || busy || changedCount === 0) return
+    setConfirmSaveOpen(false)
     setBusy(true)
     setError('')
     setMessage('')
@@ -212,7 +229,7 @@ export default function AbsenceBulkEditor({
           </p>
         </div>
         {onClose && (
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
+          <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>
             Back to class list
           </button>
         )}
@@ -232,6 +249,7 @@ export default function AbsenceBulkEditor({
             onChange={setClassId}
             placeholder="Select class…"
             label="Class"
+            disabled={busy}
           />
           <label className="bulk-absence-filter">
             <input
@@ -255,104 +273,142 @@ export default function AbsenceBulkEditor({
             No students in this class yet.
           </p>
         ) : (
-          <div className="bulk-absence-table-wrap">
-            <table className="bulk-absence-table">
-              <thead>
-                <tr>
-                  <th scope="col">Student</th>
-                  <th scope="col">Recorded</th>
-                  <th scope="col">Manual total</th>
-                  <th scope="col">Manual streak</th>
-                  <th scope="col">No notice</th>
-                  <th scope="col">Effective</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleStudents.map(({ student, counts, draft, previewCounts, changed }) => (
-                  <tr key={student.id} className={changed ? 'bulk-row-changed' : ''}>
-                    <th scope="row" className="bulk-student-name">
-                      {student.name}
-                    </th>
-                    <td className="bulk-recorded">
-                      {counts.recorded.total} total
-                      {counts.recorded.consecutive > 0 && (
-                        <> · {counts.recorded.consecutive}d</>
-                      )}
-                    </td>
-                    <td>
-                      <input
-                        type="number"
-                        min="0"
-                        className="bulk-input"
-                        placeholder="auto"
-                        disabled={busy}
-                        aria-label={`Manual total absences for ${student.name}`}
-                        value={draft.manualTotalAbsences}
-                        onChange={(e) =>
-                          updateDraft(student.id, { manualTotalAbsences: e.target.value })
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="number"
-                        min="0"
-                        className="bulk-input"
-                        placeholder="auto"
-                        disabled={busy}
-                        aria-label={`Manual consecutive days for ${student.name}`}
-                        value={draft.manualConsecutiveAbsences}
-                        onChange={(e) =>
-                          updateDraft(student.id, {
-                            manualConsecutiveAbsences: e.target.value,
-                          })
-                        }
-                      />
-                    </td>
-                    <td className="bulk-notice-cell">
-                      <input
-                        type="checkbox"
-                        aria-label={`No prior notice for ${student.name}`}
-                        checked={Boolean(draft.manualNoPriorNotice)}
-                        disabled={busy || draft.manualConsecutiveAbsences === ''}
-                        onChange={(e) =>
-                          updateDraft(student.id, { manualNoPriorNotice: e.target.checked })
-                        }
-                      />
-                    </td>
-                    <td>
-                      <AbsenceCountBadge counts={previewCounts} size="sm" />
-                    </td>
+          <>
+            {visibleStudents.length > 30 && (
+              <p className="list-scroll-hint muted small">
+                {visibleStudents.length} students · scroll the table below for more
+              </p>
+            )}
+            <div className="scroll-panel bulk-table-scroll" ref={tableScrollRef}>
+              <table className="bulk-absence-table bulk-absence-table-inset">
+                <colgroup>
+                  <col className="bulk-col-student" />
+                  <col className="bulk-col-recorded" />
+                  <col className="bulk-col-input" />
+                  <col className="bulk-col-input" />
+                  <col className="bulk-col-notice" />
+                  <col className="bulk-col-effective" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th scope="col">Student</th>
+                    <th scope="col">Recorded</th>
+                    <th scope="col">Manual total</th>
+                    <th scope="col">Manual streak</th>
+                    <th scope="col">No notice</th>
+                    <th scope="col">Effective</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {pagedStudents.map(({ student, counts, draft, previewCounts, changed }) => (
+                    <tr key={student.id} className={changed ? 'bulk-row-changed' : ''}>
+                      <th scope="row" className="bulk-student-name">
+                        {student.name}
+                      </th>
+                      <td className="bulk-recorded">
+                        {counts.recorded.total} total
+                        {counts.recorded.consecutive > 0 && (
+                          <> · {counts.recorded.consecutive}d</>
+                        )}
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          min="0"
+                          className="bulk-input"
+                          placeholder="auto"
+                          disabled={busy}
+                          aria-label={`Manual total absences for ${student.name}`}
+                          value={draft.manualTotalAbsences}
+                          onChange={(e) =>
+                            updateDraft(student.id, { manualTotalAbsences: e.target.value })
+                          }
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          min="0"
+                          className="bulk-input"
+                          placeholder="auto"
+                          disabled={busy}
+                          aria-label={`Manual consecutive days for ${student.name}`}
+                          value={draft.manualConsecutiveAbsences}
+                          onChange={(e) =>
+                            updateDraft(student.id, {
+                              manualConsecutiveAbsences: e.target.value,
+                            })
+                          }
+                        />
+                      </td>
+                      <td className="bulk-notice-cell">
+                        <input
+                          type="checkbox"
+                          aria-label={`No prior notice for ${student.name}`}
+                          checked={Boolean(draft.manualNoPriorNotice)}
+                          disabled={busy || draft.manualConsecutiveAbsences === ''}
+                          onChange={(e) =>
+                            updateDraft(student.id, { manualNoPriorNotice: e.target.checked })
+                          }
+                        />
+                      </td>
+                      <td className="bulk-effective-cell">
+                        <div className="bulk-effective-slot">
+                          <AbsenceCountBadge counts={previewCounts} size="sm" placeholder />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <ScrollSentinel
+                sentinelRef={tableSentinelRef}
+                hasMore={hasMoreStudents}
+                label="Loading more students…"
+              />
+            </div>
+          </>
         )}
+
+        <div className="bulk-absence-actions">
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={busy || changedCount === 0}
+            onClick={() => setConfirmSaveOpen(true)}
+          >
+            {busy
+              ? 'Saving…'
+              : changedCount === 0
+                ? 'Save changes'
+                : `Save ${changedCount} change${changedCount === 1 ? '' : 's'}`}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-danger-text"
+            disabled={busy}
+            onClick={() => setConfirmClear(true)}
+          >
+            Clear all manual overrides
+          </button>
+        </div>
       </SaveFieldOverlay>
 
-      <div className="bulk-absence-actions">
-        <button
-          type="button"
-          className="btn btn-primary"
-          disabled={busy || changedCount === 0}
-          onClick={handleSave}
-        >
-          {busy
-            ? 'Saving…'
-            : changedCount === 0
-              ? 'Save changes'
-              : `Save ${changedCount} change${changedCount === 1 ? '' : 's'}`}
-        </button>
-        <button
-          type="button"
-          className="btn btn-ghost btn-danger-text"
-          disabled={busy}
-          onClick={() => setConfirmClear(true)}
-        >
-          Clear all manual overrides
-        </button>
-      </div>
+      <ConfirmDialog
+        open={confirmSaveOpen}
+        title="Save absence overrides?"
+        confirmLabel="Save changes"
+        cancelLabel="Keep editing"
+        busy={busy}
+        onCancel={() => !busy && setConfirmSaveOpen(false)}
+        onConfirm={handleSave}
+      >
+        <p className="modal-lead">
+          Save manual absence overrides for <strong>{changedCount}</strong> student
+          {changedCount === 1 ? '' : 's'} in{' '}
+          <strong>{formatClassLabel(selectedClass)}</strong>?
+        </p>
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={confirmClear}

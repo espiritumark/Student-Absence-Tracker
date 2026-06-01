@@ -1,5 +1,7 @@
+import { useScrollLoadMore } from '../hooks/useScrollLoadMore'
 import { AbsenceCountBadge, AbsenceRiskLegend } from './AbsenceCountBadge'
 import ReportViolationNotice from './ReportViolationNotice'
+import ScrollSentinel from './ScrollSentinel'
 import { getAllAlerts } from '../utils/alerts'
 import { getAllStudentAbsenceSummaries } from '../utils/attendanceStats'
 import { ABSENCE_VIOLATION_REPORT_LABEL, ABSENCE_VIOLATION_REPORT_URL } from '../constants/reporting'
@@ -95,6 +97,31 @@ export default function Dashboard({ classes, attendance }) {
     alerts.length > 0 ||
     absenceSummaries.some((row) => row.risk === 'warning' || row.risk === 'critical')
 
+  const {
+    visibleCount: visibleAbsenceCount,
+    rootRef: absenceScrollRef,
+    sentinelRef: absenceSentinelRef,
+    hasMore: hasMoreAbsences,
+  } = useScrollLoadMore({
+    total: absenceSummaries.length,
+    batchSize: 25,
+    resetKey: 'dashboard-absences',
+  })
+
+  const {
+    visibleCount: visibleAlertCount,
+    rootRef: alertScrollRef,
+    sentinelRef: alertSentinelRef,
+    hasMore: hasMoreAlerts,
+  } = useScrollLoadMore({
+    total: alerts.length,
+    batchSize: 12,
+    resetKey: 'dashboard-alerts',
+  })
+
+  const visibleAbsenceSummaries = absenceSummaries.slice(0, visibleAbsenceCount)
+  const visibleAlerts = alerts.slice(0, visibleAlertCount)
+
   return (
     <section className="panel dashboard-panel">
       <header className="panel-header">
@@ -140,16 +167,29 @@ export default function Dashboard({ classes, attendance }) {
                 </div>
               </div>
 
-              <ol className="absence-count-list">
-                {absenceSummaries.map((row, index) => (
-                  <AbsenceCountRow
-                    key={row.id}
-                    row={row}
-                    rank={index + 1}
-                    maxScore={maxScore}
-                  />
-                ))}
-              </ol>
+              {absenceSummaries.length > 25 && (
+                <p className="list-scroll-hint muted small">
+                  {absenceSummaries.length} students · scroll the list below for more
+                </p>
+              )}
+
+              <div className="scroll-panel dashboard-list-scroll" ref={absenceScrollRef}>
+                <ol className="absence-count-list absence-count-list-inset">
+                  {visibleAbsenceSummaries.map((row, index) => (
+                    <AbsenceCountRow
+                      key={row.id}
+                      row={row}
+                      rank={index + 1}
+                      maxScore={maxScore}
+                    />
+                  ))}
+                </ol>
+                <ScrollSentinel
+                  sentinelRef={absenceSentinelRef}
+                  hasMore={hasMoreAbsences}
+                  label="Loading more students…"
+                />
+              </div>
             </section>
           ) : (
             <div className="success-banner dashboard-empty-counts">
@@ -174,11 +214,25 @@ export default function Dashboard({ classes, attendance }) {
                   : 'No students currently meet automatic warning rules.'}
               </div>
             ) : (
-              <div className="alert-grid">
-                {alerts.map((alert) => (
-                  <AlertCard key={alert.id} alert={alert} />
-                ))}
-              </div>
+              <>
+                {alerts.length > 12 && (
+                  <p className="list-scroll-hint muted small">
+                    {alerts.length} warnings · scroll the list below for more
+                  </p>
+                )}
+                <div className="scroll-panel alert-grid-scroll" ref={alertScrollRef}>
+                  <div className="alert-grid alert-grid-inset">
+                    {visibleAlerts.map((alert) => (
+                      <AlertCard key={alert.id} alert={alert} />
+                    ))}
+                  </div>
+                  <ScrollSentinel
+                    sentinelRef={alertSentinelRef}
+                    hasMore={hasMoreAlerts}
+                    label="Loading more warnings…"
+                  />
+                </div>
+              </>
             )}
           </section>
         </>

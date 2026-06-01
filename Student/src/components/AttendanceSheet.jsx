@@ -1,26 +1,41 @@
 import { useEffect, useMemo, useState } from 'react'
 import { formatClassLabel } from '../utils/classFormat'
-import { dateKey } from '../utils/dates'
+import { dateKey, formatDateLabel } from '../utils/dates'
+import { useScrollLoadMore } from '../hooks/useScrollLoadMore'
 import {
   findSessionKey,
+  formatModuleLabel,
+  listModulesForClass,
   listSessionsForDate,
   normalizeModuleKey,
 } from '../utils/sessionKeys'
+import ConfirmDialog from './ConfirmDialog'
+import ModuleSearchSelect from './ModuleSearchSelect'
+import SaveFieldOverlay from './SaveFieldOverlay'
+import ScrollSentinel from './ScrollSentinel'
 import SearchableSelect from './SearchableSelect'
+
+const STUDENTS_PAGE_SIZE = 30
 
 function getSessionRecords(classAttendance, sessionKey) {
   return classAttendance?.[sessionKey]?.records ?? {}
 }
 
-function getSessionMeta(classAttendance, sessionKey) {
-  const s = classAttendance?.[sessionKey]
-  return { module: s?.module ?? '', startTime: s?.startTime ?? '', duration: s?.duration ?? '' }
-}
-
-export default function AttendanceSheet({ classes, attendance, setAttendance, setSessionMeta }) {
+export default function AttendanceSheet({
+  classes,
+  attendance,
+  setAttendance,
+  setSessionMeta,
+  syncing = false,
+}) {
   const [selectedClassId, setSelectedClassId] = useState(classes[0]?.id ?? '')
   const [selectedDate, setSelectedDate] = useState(dateKey())
   const [moduleInput, setModuleInput] = useState('')
+  const [pending, setPending] = useState(false)
+  const [markAllConfirmOpen, setMarkAllConfirmOpen] = useState(false)
+  const [pendingMarkAllStatus, setPendingMarkAllStatus] = useState(null)
+
+  const locked = syncing || pending
 
   const sortedClasses = [...classes].sort((a, b) =>
     formatClassLabel(a).localeCompare(formatClassLabel(b)),
@@ -28,10 +43,6 @@ export default function AttendanceSheet({ classes, attendance, setAttendance, se
   const classOptions = sortedClasses.map((c) => ({ value: c.id, label: formatClassLabel(c) }))
 
   const selectedClass = classes.find((c) => c.id === selectedClassId)
-  const sortedStudents = selectedClass
-    ? [...selectedClass.students].sort((a, b) => a.name.localeCompare(b.name))
-    : []
-
   const classAttendance = selectedClassId ? attendance?.[selectedClassId] || {} : {}
 
   useEffect(() => {
@@ -59,35 +70,97 @@ export default function AttendanceSheet({ classes, attendance, setAttendance, se
 
   const sessionKey = findSessionKey(classAttendance, selectedDate, moduleInput)
   const dayRecords = getSessionRecords(classAttendance, sessionKey)
-  const sessionMeta = getSessionMeta(classAttendance, sessionKey)
 
-  const otherModules = useMemo(() => {
-    return listSessionsForDate(classAttendance, selectedDate).filter(
-      (entry) => normalizeModuleKey(entry.module) !== normalizeModuleKey(moduleInput),
-    )
+  const moduleOptions = useMemo(() => {
+    const seen = new Map()
+    for (const { module } of listSessionsForDate(classAttendance, selectedDate)) {
+      const label = formatModuleLabel(module)
+      const key = normalizeModuleKey(module)
+      if (!seen.has(key)) seen.set(key, { value: module || '', label })
+    }
+    for (const { value, label } of listModulesForClass(classAttendance)) {
+      if (!seen.has(value)) seen.set(value, { value, label })
+    }
+    if (moduleInput) {
+      const key = normalizeModuleKey(moduleInput)
+      if (!seen.has(key)) {
+        seen.set(key, { value: moduleInput, label: formatModuleLabel(moduleInput) })
+      }
+    }
+    return [...seen.values()].sort((a, b) => a.label.localeCompare(b.label))
   }, [classAttendance, selectedDate, moduleInput])
 
-  function setStatus(studentId, status) {
-    setAttendance(selectedClassId, sessionKey, studentId, { status })
-  }
+  const sortedStudents = selectedClass
+    ? [...selectedClass.students].sort((a, b) => a.name.localeCompare(b.name))
+    : []
 
-  function setPriorNotice(studentId, priorNotice) {
-    setAttendance(selectedClassId, sessionKey, studentId, { priorNotice })
-  }
+  const {
+    visibleCount: visibleStudentCount,
+    rootRef: studentScrollRef,
+    sentinelRef: studentSentinelRef,
+    hasMore: hasMoreStudents,
+  } = useScrollLoadMore({
+    total: sortedStudents.length,
+    batchSize: STUDENTS_PAGE_SIZE,
+    resetKey: `${selectedClassId}-${selectedDate}-${moduleInput}`,
+  })
 
-  function markAll(status) {
-    if (!selectedClass) return
-    for (const st of selectedClass.students) {
-      setAttendance(selectedClassId, sessionKey, st.id, {
-        status,
-        priorNotice: false,
-      })
+  const visibleStudents = sortedStudents.slice(0, visibleStudentCount)
+
+  async function runAction(action) {
+    if (locked) return
+    setPending(true)
+    try {
+      await action()
+    } finally {
+      setPending(false)
     }
   }
 
-  function selectModule(module) {
-    setModuleInput(module)
+  function setStatus(studentId, status) {
+    runAction(() =>
+      setAttendance(selectedClassId, sessionKey, studentId, { status }),
+    )
   }
+
+  function setPriorNotice(studentId, priorNotice) {
+    runAction(() =>
+      setAttendance(selectedClassId, sessionKey, studentId, { priorNotice }),
+    )
+  }
+
+  function requestMarkAll(status) {
+    if (!selectedClass?.students.length || locked) return
+    setPendingMarkAllStatus(status)
+    setMarkAllConfirmOpen(true)
+  }
+
+  function handleConfirmMarkAll() {
+    if (!selectedClass || locked || !pendingMarkAllStatus) return
+    setMarkAllConfirmOpen(false)
+    const status = pendingMarkAllStatus
+    setPendingMarkAllStatus(null)
+    runAction(async () => {
+      for (const st of selectedClass.students) {
+        await setAttendance(selectedClassId, sessionKey, st.id, {
+          status,
+          priorNotice: false,
+        })
+      }
+    })
+  }
+
+  function handleModuleChange(value) {
+    setModuleInput(value)
+  }
+
+  function handleModuleCommit(value) {
+    if (locked) return
+    const key = findSessionKey(classAttendance, selectedDate, value)
+    runAction(() => setSessionMeta(selectedClassId, key, { module: value }))
+  }
+
+  const overlayLabel = syncing ? 'Syncing attendance…' : 'Saving attendance…'
 
   return (
     <section className="panel portal-panel">
@@ -102,111 +175,154 @@ export default function AttendanceSheet({ classes, attendance, setAttendance, se
       {classes.length === 0 ? (
         <p className="empty-state">Import a screenshot or add a class under Classes.</p>
       ) : (
-        <>
-          <div className="portal-meta-grid attendance-meta">
-            <div className="ss-field">
-              <SearchableSelect
-                options={classOptions}
-                value={selectedClassId}
-                onChange={setSelectedClassId}
-                placeholder="Search class…"
-                label="Class"
-              />
-            </div>
-            <label>
-              Date
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-              />
-            </label>
-            <label className="span-2">
-              Module / subject
-              <input
-                type="text"
-                value={moduleInput}
-                placeholder="e.g. Maths, English…"
-                onChange={(e) => setModuleInput(e.target.value)}
-                onBlur={() => {
-                  if (moduleInput !== sessionMeta.module) {
-                    setSessionMeta(selectedClassId, sessionKey, { module: moduleInput })
-                  }
-                }}
-              />
-            </label>
-            {otherModules.length > 0 && (
-              <div className="span-full session-module-hints">
-                <span className="muted small">Other sessions this date:</span>
-                {otherModules.map(({ key, module }) => (
-                  <button
-                    key={key}
-                    type="button"
-                    className="btn btn-ghost btn-sm session-module-chip"
-                    onClick={() => selectModule(module)}
-                  >
-                    {module || 'General session'}
-                  </button>
-                ))}
+        <SaveFieldOverlay busy={locked} label={overlayLabel}>
+          <div className="attendance-sheet-body">
+            <fieldset className="attendance-sheet-fields" disabled={locked}>
+              <div className="portal-meta-grid attendance-meta">
+                <div className="ss-field attendance-meta-class">
+                  <SearchableSelect
+                    options={classOptions}
+                    value={selectedClassId}
+                    onChange={setSelectedClassId}
+                    placeholder="Search class…"
+                    label="Class"
+                    disabled={locked}
+                  />
+                </div>
+                <label className="attendance-meta-date">
+                  Date
+                  <input
+                    type="date"
+                    className="meta-control"
+                    value={selectedDate}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                  />
+                </label>
+                <div className="attendance-meta-module">
+                  <ModuleSearchSelect
+                    options={moduleOptions}
+                    value={moduleInput}
+                    onChange={handleModuleChange}
+                    onCommit={handleModuleCommit}
+                    placeholder="Search or type module…"
+                    label="Module / subject"
+                    disabled={locked}
+                  />
+                </div>
+              </div>
+
+              {selectedClass && (
+                <p className="portal-class-header">
+                  Class: <strong>{formatClassLabel(selectedClass)}</strong>
+                  {moduleInput.trim() && (
+                    <>
+                      {' '}
+                      · Module: <strong>{moduleInput.trim()}</strong>
+                    </>
+                  )}
+                </p>
+              )}
+
+              <div className="portal-bulk-actions">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={locked}
+                  onClick={() => requestMarkAll('present')}
+                >
+                  Check all
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={locked}
+                  onClick={() => requestMarkAll('absent')}
+                >
+                  Uncheck all
+                </button>
+              </div>
+
+              {sortedStudents.length > 30 && (
+                <p className="list-scroll-hint muted small">
+                  {sortedStudents.length} students · scroll the list below for more
+                </p>
+              )}
+            </fieldset>
+
+            {!selectedClass?.students.length ? (
+              <p className="empty-state">No students in this class.</p>
+            ) : (
+              <div className="scroll-panel portal-student-list-scroll" ref={studentScrollRef}>
+                <ol className="portal-student-list portal-student-list-inset">
+                  {visibleStudents.map((st, i) => {
+                    const rec = dayRecords[st.id] || { status: 'present', priorNotice: false }
+                    const present = rec.status !== 'absent'
+                    return (
+                      <li key={st.id} className={!present ? 'row-absent' : ''}>
+                        <span className="row-num">{i + 1}</span>
+                        <input
+                          type="checkbox"
+                          checked={present}
+                          disabled={locked}
+                          onChange={() => setStatus(st.id, present ? 'absent' : 'present')}
+                          aria-label={`${st.name} present`}
+                        />
+                        <span className="student-name">{st.name}</span>
+                        {!present && (
+                          <label className="notice-inline">
+                            <input
+                              type="checkbox"
+                              checked={rec.priorNotice}
+                              disabled={locked}
+                              onChange={(e) => setPriorNotice(st.id, e.target.checked)}
+                            />
+                            Prior notice
+                          </label>
+                        )}
+                      </li>
+                    )
+                  })}
+                </ol>
+                <ScrollSentinel
+                  sentinelRef={studentSentinelRef}
+                  hasMore={hasMoreStudents}
+                  label="Loading more students…"
+                />
               </div>
             )}
           </div>
-
-          {selectedClass && (
-            <p className="portal-class-header">
-              Class: <strong>{formatClassLabel(selectedClass)}</strong>
-              {moduleInput.trim() && (
-                <>
-                  {' '}
-                  · Module: <strong>{moduleInput.trim()}</strong>
-                </>
-              )}
-            </p>
-          )}
-
-          <div className="portal-bulk-actions">
-            <button type="button" className="btn btn-primary" onClick={() => markAll('present')}>
-              Check all
-            </button>
-            <button type="button" className="btn btn-secondary" onClick={() => markAll('absent')}>
-              Uncheck all
-            </button>
-          </div>
-
-          {!selectedClass?.students.length ? (
-            <p className="empty-state">No students in this class.</p>
-          ) : (
-            <ol className="portal-student-list">
-              {sortedStudents.map((st, i) => {
-                const rec = dayRecords[st.id] || { status: 'present', priorNotice: false }
-                const present = rec.status !== 'absent'
-                return (
-                  <li key={st.id} className={!present ? 'row-absent' : ''}>
-                    <span className="row-num">{i + 1}</span>
-                    <input
-                      type="checkbox"
-                      checked={present}
-                      onChange={() => setStatus(st.id, present ? 'absent' : 'present')}
-                      aria-label={`${st.name} present`}
-                    />
-                    <span className="student-name">{st.name}</span>
-                    {!present && (
-                      <label className="notice-inline">
-                        <input
-                          type="checkbox"
-                          checked={rec.priorNotice}
-                          onChange={(e) => setPriorNotice(st.id, e.target.checked)}
-                        />
-                        Prior notice
-                      </label>
-                    )}
-                  </li>
-                )
-              })}
-            </ol>
-          )}
-        </>
+        </SaveFieldOverlay>
       )}
+
+      <ConfirmDialog
+        open={markAllConfirmOpen}
+        title={pendingMarkAllStatus === 'absent' ? 'Mark all absent?' : 'Mark all present?'}
+        confirmLabel={pendingMarkAllStatus === 'absent' ? 'Mark all absent' : 'Mark all present'}
+        cancelLabel="Cancel"
+        busy={locked}
+        onCancel={() => {
+          if (locked) return
+          setMarkAllConfirmOpen(false)
+          setPendingMarkAllStatus(null)
+        }}
+        onConfirm={handleConfirmMarkAll}
+      >
+        {selectedClass && pendingMarkAllStatus && (
+          <p className="modal-lead">
+            Mark all <strong>{selectedClass.students.length}</strong> students in{' '}
+            <strong>{formatClassLabel(selectedClass)}</strong> as{' '}
+            <strong>{pendingMarkAllStatus === 'absent' ? 'absent' : 'present'}</strong> for{' '}
+            <strong>{formatDateLabel(selectedDate)}</strong>
+            {moduleInput.trim() ? (
+              <>
+                {' '}
+                · Module: <strong>{moduleInput.trim()}</strong>
+              </>
+            ) : null}
+            ?
+          </p>
+        )}
+      </ConfirmDialog>
     </section>
   )
 }
