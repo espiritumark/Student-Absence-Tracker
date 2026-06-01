@@ -1,7 +1,19 @@
+import dayjs from 'dayjs'
+import {
+  Alert,
+  Button,
+  Checkbox,
+  DatePicker,
+  Empty,
+  Table,
+  Space,
+  Typography,
+} from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { formatClassLabel } from '../utils/classFormat'
 import { dateKey, formatDateLabel } from '../utils/dates'
-import { useScrollLoadMore } from '../hooks/useScrollLoadMore'
+import { useReportTabActivity } from '../hooks/useReportTabActivity'
+import { useScrollRegionHeight } from '../hooks/useScrollRegionHeight'
 import {
   findSessionKey,
   formatModuleLabel,
@@ -12,10 +24,7 @@ import {
 import ConfirmDialog from './ConfirmDialog'
 import ModuleSearchSelect from './ModuleSearchSelect'
 import SaveFieldOverlay from './SaveFieldOverlay'
-import ScrollSentinel from './ScrollSentinel'
 import SearchableSelect from './SearchableSelect'
-
-const STUDENTS_PAGE_SIZE = 30
 
 function getSessionRecords(classAttendance, sessionKey) {
   return classAttendance?.[sessionKey]?.records ?? {}
@@ -27,6 +36,7 @@ export default function AttendanceSheet({
   setAttendance,
   setSessionMeta,
   syncing = false,
+  onTabActivityChange,
 }) {
   const [selectedClassId, setSelectedClassId] = useState(classes[0]?.id ?? '')
   const [selectedDate, setSelectedDate] = useState(dateKey())
@@ -94,18 +104,22 @@ export default function AttendanceSheet({
     ? [...selectedClass.students].sort((a, b) => a.name.localeCompare(b.name))
     : []
 
-  const {
-    visibleCount: visibleStudentCount,
-    rootRef: studentScrollRef,
-    sentinelRef: studentSentinelRef,
-    hasMore: hasMoreStudents,
-  } = useScrollLoadMore({
-    total: sortedStudents.length,
-    batchSize: STUDENTS_PAGE_SIZE,
-    resetKey: `${selectedClassId}-${selectedDate}-${moduleInput}`,
-  })
+  const [studentTableRef, studentTableHeight] = useScrollRegionHeight(280)
 
-  const visibleStudents = sortedStudents.slice(0, visibleStudentCount)
+  const attendanceRows = useMemo(
+    () =>
+      sortedStudents.map((st, index) => {
+        const rec = dayRecords[st.id] || { status: 'present', priorNotice: false }
+        return {
+          key: st.id,
+          index: index + 1,
+          student: st,
+          present: rec.status !== 'absent',
+          priorNotice: rec.priorNotice,
+        }
+      }),
+    [sortedStudents, dayRecords],
+  )
 
   async function runAction(action) {
     if (locked) return
@@ -118,9 +132,7 @@ export default function AttendanceSheet({
   }
 
   function setStatus(studentId, status) {
-    runAction(() =>
-      setAttendance(selectedClassId, sessionKey, studentId, { status }),
-    )
+    runAction(() => setAttendance(selectedClassId, sessionKey, studentId, { status }))
   }
 
   function setPriorNotice(studentId, priorNotice) {
@@ -162,131 +174,148 @@ export default function AttendanceSheet({
 
   const overlayLabel = syncing ? 'Syncing attendance…' : 'Saving attendance…'
 
+  const attendanceTabActivity = syncing || pending ? 'processing' : null
+  useReportTabActivity('attendance', attendanceTabActivity, onTabActivityChange)
+
   return (
-    <section className="panel portal-panel">
+    <section className="panel portal-panel workspace-panel attendance-workspace">
       <header className="panel-header">
-        <h2>Daily attendance (manual)</h2>
-        <p className="panel-desc">
-          Mark attendance by hand for any class and date. The same class can have separate
-          sessions per module or subject on the same day.
-        </p>
+        <Typography.Title level={3} style={{ margin: 0 }}>
+          Daily attendance (manual)
+        </Typography.Title>
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+          Mark attendance by hand for any class and date. The same class can have separate sessions
+          per module or subject on the same day.
+        </Typography.Paragraph>
       </header>
 
       {classes.length === 0 ? (
-        <p className="empty-state">Import a screenshot or add a class under Classes.</p>
+        <Empty description="Import a screenshot or add a class on Classes & rosters." />
       ) : (
-        <SaveFieldOverlay busy={locked} label={overlayLabel}>
+        <SaveFieldOverlay busy={locked} label={overlayLabel} className="attendance-workspace-overlay">
           <div className="attendance-sheet-body">
-            <fieldset className="attendance-sheet-fields" disabled={locked}>
-              <div className="portal-meta-grid attendance-meta">
-                <div className="ss-field attendance-meta-class">
-                  <SearchableSelect
-                    options={classOptions}
-                    value={selectedClassId}
-                    onChange={setSelectedClassId}
-                    placeholder="Search class…"
-                    label="Class"
-                    disabled={locked}
-                  />
+            <div className="attendance-sheet-toolbar">
+              <fieldset className="attendance-sheet-fields" disabled={locked}>
+                <div className="portal-meta-grid attendance-meta">
+                  <div className="ss-field attendance-meta-class">
+                    <SearchableSelect
+                      options={classOptions}
+                      value={selectedClassId}
+                      onChange={setSelectedClassId}
+                      placeholder="Search class…"
+                      label="Class"
+                      disabled={locked}
+                    />
+                  </div>
+                  <div className="antd-field attendance-meta-date">
+                    <span className="antd-field-label">Date</span>
+                    <DatePicker
+                      value={selectedDate ? dayjs(selectedDate) : null}
+                      onChange={(value) => setSelectedDate(value ? value.format('YYYY-MM-DD') : dateKey())}
+                      style={{ width: '100%' }}
+                      disabled={locked}
+                    />
+                  </div>
+                  <div className="attendance-meta-module">
+                    <ModuleSearchSelect
+                      options={moduleOptions}
+                      value={moduleInput}
+                      onChange={handleModuleChange}
+                      onCommit={handleModuleCommit}
+                      placeholder="Search or type module…"
+                      label="Module / Subject"
+                      disabled={locked}
+                    />
+                  </div>
                 </div>
-                <label className="attendance-meta-date">
-                  Date
-                  <input
-                    type="date"
-                    className="meta-control"
-                    value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
+
+                {selectedClass && (
+                  <Alert
+                    type="info"
+                    showIcon={false}
+                    message={
+                      <>
+                        Class: <strong>{formatClassLabel(selectedClass)}</strong>
+                        {moduleInput.trim() && (
+                          <>
+                            {' '}
+                            · Module: <strong>{moduleInput.trim()}</strong>
+                          </>
+                        )}
+                      </>
+                    }
+                    style={{ marginBottom: '0.65rem' }}
                   />
-                </label>
-                <div className="attendance-meta-module">
-                  <ModuleSearchSelect
-                    options={moduleOptions}
-                    value={moduleInput}
-                    onChange={handleModuleChange}
-                    onCommit={handleModuleCommit}
-                    placeholder="Search or type module…"
-                    label="Module / subject"
-                    disabled={locked}
-                  />
-                </div>
-              </div>
+                )}
 
-              {selectedClass && (
-                <p className="portal-class-header">
-                  Class: <strong>{formatClassLabel(selectedClass)}</strong>
-                  {moduleInput.trim() && (
-                    <>
-                      {' '}
-                      · Module: <strong>{moduleInput.trim()}</strong>
-                    </>
-                  )}
-                </p>
-              )}
+                <Space wrap style={{ marginBottom: '0.65rem' }}>
+                  <Button type="primary" disabled={locked} onClick={() => requestMarkAll('present')}>
+                    Check All
+                  </Button>
+                  <Button disabled={locked} onClick={() => requestMarkAll('absent')}>
+                    Uncheck all
+                  </Button>
+                </Space>
 
-              <div className="portal-bulk-actions">
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={locked}
-                  onClick={() => requestMarkAll('present')}
-                >
-                  Check all
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  disabled={locked}
-                  onClick={() => requestMarkAll('absent')}
-                >
-                  Uncheck all
-                </button>
-              </div>
-
-              {sortedStudents.length > 30 && (
-                <p className="list-scroll-hint muted small">
-                  {sortedStudents.length} students · scroll the list below for more
-                </p>
-              )}
-            </fieldset>
+                {sortedStudents.length > 30 && (
+                  <Typography.Text type="secondary" style={{ fontSize: '0.85rem' }}>
+                    {sortedStudents.length} students · scroll the list below for more
+                  </Typography.Text>
+                )}
+              </fieldset>
+            </div>
 
             {!selectedClass?.students.length ? (
-              <p className="empty-state">No students in this class.</p>
+              <Empty className="attendance-sheet-empty" description="No students in this class." />
             ) : (
-              <div className="scroll-panel portal-student-list-scroll" ref={studentScrollRef}>
-                <ol className="portal-student-list portal-student-list-inset">
-                  {visibleStudents.map((st, i) => {
-                    const rec = dayRecords[st.id] || { status: 'present', priorNotice: false }
-                    const present = rec.status !== 'absent'
-                    return (
-                      <li key={st.id} className={!present ? 'row-absent' : ''}>
-                        <span className="row-num">{i + 1}</span>
-                        <input
-                          type="checkbox"
-                          checked={present}
+              <div className="table-scroll-region attendance-sheet-list-scroll" ref={studentTableRef}>
+                <Table
+                  size="small"
+                  pagination={{ pageSize: 30, showSizeChanger: false, hideOnSinglePage: true }}
+                  scroll={{ y: studentTableHeight }}
+                  dataSource={attendanceRows}
+                  rowClassName={(row) => (!row.present ? 'attendance-row-absent' : '')}
+                  columns={[
+                    {
+                      title: '#',
+                      dataIndex: 'index',
+                      width: 48,
+                    },
+                    {
+                      title: 'Present',
+                      key: 'present',
+                      width: 90,
+                      render: (_, row) => (
+                        <Checkbox
+                          checked={row.present}
                           disabled={locked}
-                          onChange={() => setStatus(st.id, present ? 'absent' : 'present')}
-                          aria-label={`${st.name} present`}
+                          onChange={() =>
+                            setStatus(row.student.id, row.present ? 'absent' : 'present')
+                          }
                         />
-                        <span className="student-name">{st.name}</span>
-                        {!present && (
-                          <label className="notice-inline">
-                            <input
-                              type="checkbox"
-                              checked={rec.priorNotice}
-                              disabled={locked}
-                              onChange={(e) => setPriorNotice(st.id, e.target.checked)}
-                            />
-                            Prior notice
-                          </label>
-                        )}
-                      </li>
-                    )
-                  })}
-                </ol>
-                <ScrollSentinel
-                  sentinelRef={studentSentinelRef}
-                  hasMore={hasMoreStudents}
-                  label="Loading more students…"
+                      ),
+                    },
+                    {
+                      title: 'Student',
+                      key: 'name',
+                      render: (_, row) => row.student.name,
+                    },
+                    {
+                      title: 'Prior Notice',
+                      key: 'notice',
+                      width: 120,
+                      render: (_, row) =>
+                        !row.present ? (
+                          <Checkbox
+                            checked={row.priorNotice}
+                            disabled={locked}
+                            onChange={(e) =>
+                              setPriorNotice(row.student.id, e.target.checked)
+                            }
+                          />
+                        ) : null,
+                    },
+                  ]}
                 />
               </div>
             )}
@@ -308,7 +337,7 @@ export default function AttendanceSheet({
         onConfirm={handleConfirmMarkAll}
       >
         {selectedClass && pendingMarkAllStatus && (
-          <p className="modal-lead">
+          <Typography.Paragraph>
             Mark all <strong>{selectedClass.students.length}</strong> students in{' '}
             <strong>{formatClassLabel(selectedClass)}</strong> as{' '}
             <strong>{pendingMarkAllStatus === 'absent' ? 'absent' : 'present'}</strong> for{' '}
@@ -320,7 +349,7 @@ export default function AttendanceSheet({
               </>
             ) : null}
             ?
-          </p>
+          </Typography.Paragraph>
         )}
       </ConfirmDialog>
     </section>

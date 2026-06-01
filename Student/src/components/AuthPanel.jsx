@@ -1,3 +1,4 @@
+import { Badge, Button, Space, Typography } from 'antd'
 import { useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import AuthModal from './AuthModal'
@@ -9,59 +10,52 @@ export default function AuthPanel() {
 
   if (!cloudEnabled) {
     return (
-      <div className="auth-status auth-status-local" title="Data stays in this browser only">
-        <span className="status-dot status-dot-local" aria-hidden="true" />
-        <span className="auth-status-text">Local only</span>
-      </div>
+      <Space size={6} className="auth-panel-chip">
+        <Badge status="default" />
+        <Typography.Text type="secondary">Local only</Typography.Text>
+      </Space>
     )
   }
 
   if (user) {
     return (
-      <div className="auth-panel auth-panel-signed-in">
-        <div className="auth-user-chip">
-          <span className="status-dot status-dot-cloud" aria-hidden="true" />
-          <span className="auth-email" title={user.email}>
+      <Space wrap size="small" className="auth-panel-signed-in">
+        <Space size={8} className="auth-panel-chip">
+          <Badge status="success" />
+          <Typography.Text ellipsis className="auth-panel-email" title={user.email}>
             {user.email}
-          </span>
-        </div>
-        <div className="auth-actions">
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => signOut()}
-          >
-            Sign out
-          </button>
-        </div>
-      </div>
+          </Typography.Text>
+        </Space>
+        <Button size="small" onClick={() => signOut()}>
+          Sign Out
+        </Button>
+      </Space>
     )
   }
 
   return (
     <>
-      <div className="auth-panel auth-panel-signed-out">
-        <button
-          type="button"
-          className="btn btn-primary btn-sm"
+      <Space wrap size="small">
+        <Button
+          type="primary"
+          size="small"
           onClick={() => {
             setModalMode('signin')
             setModalOpen(true)
           }}
         >
           Sign in
-        </button>
-        <button
-          type="button"
-          className="btn btn-secondary btn-sm"
+        </Button>
+        <Button
+          size="small"
           onClick={() => {
             setModalMode('signup')
             setModalOpen(true)
           }}
         >
           Create account
-        </button>
-      </div>
+        </Button>
+      </Space>
       <AuthModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}

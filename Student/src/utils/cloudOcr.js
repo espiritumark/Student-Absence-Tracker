@@ -44,27 +44,39 @@ function mapOverlayLines(overlay) {
  * @returns {{ text: string, lines: Array<{ text: string, bbox: object }>, imageWidth: number|null, imageHeight: number|null }}
  */
 export async function recognizeWithCloudOcr(dataUrl, onProgress, options = {}) {
-  const { withOverlay = false } = options
+  const engine = options.engine ?? 3
+  const withOverlay = Boolean(options.withOverlay) && engine !== 3
+  const isTable = options.isTable ?? engine === 3
   const apiKey = import.meta.env.VITE_OCR_SPACE_API_KEY
   if (!apiKey) {
     throw new Error('Cloud OCR is not configured.')
   }
 
+  const engineLabel =
+    engine === 3
+      ? 'OCR.space Engine 3'
+      : withOverlay
+        ? 'OCR.space Engine 2 (layout)'
+        : 'OCR.space Engine 2'
+
   onProgress?.({
     stage: 'cloud ocr',
     progress: 0.15,
-    label: withOverlay
-      ? 'Sending screenshot to cloud OCR (with layout)…'
-      : 'Sending screenshot to cloud OCR…',
+    label: `Sending screenshot to ${engineLabel}…`,
   })
 
   const formData = new FormData()
   formData.append('base64Image', dataUrl)
   formData.append('language', 'eng')
-  formData.append('isOverlayRequired', withOverlay ? 'true' : 'false')
   formData.append('detectOrientation', 'true')
   formData.append('scale', 'true')
-  formData.append('OCREngine', '2')
+  formData.append('OCREngine', String(engine))
+
+  if (engine === 3) {
+    formData.append('isTable', isTable ? 'true' : 'false')
+  } else {
+    formData.append('isOverlayRequired', withOverlay ? 'true' : 'false')
+  }
 
   const response = await fetch(API_URL, {
     method: 'POST',
@@ -85,7 +97,7 @@ export async function recognizeWithCloudOcr(dataUrl, onProgress, options = {}) {
   onProgress?.({
     stage: 'cloud ocr',
     progress: withOverlay ? 0.75 : 0.85,
-    label: 'Reading cloud OCR result…',
+    label: `Reading ${engineLabel} result…`,
   })
 
   const parsed = data.ParsedResults?.[0]
@@ -100,5 +112,6 @@ export async function recognizeWithCloudOcr(dataUrl, onProgress, options = {}) {
     lines: withOverlay ? mapOverlayLines(overlay) : [],
     imageWidth: overlay?.Width ?? parsed?.ImageWidth ?? null,
     imageHeight: overlay?.Height ?? parsed?.ImageHeight ?? null,
+    engine,
   }
 }

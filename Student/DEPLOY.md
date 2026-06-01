@@ -133,7 +133,7 @@ Browser OCR is slow. For scans that finish in seconds:
 
 3. Restart the dev server or redeploy.
 
-**Fast scan** reads names only (you mark absences). **Full scan** reads names via cloud OCR and detects checkboxes using Roboflow AI when configured, otherwise local pixel sampling. Both use cloud OCR when the OCR.space key is set.
+**Fast scan** reads names only (you mark absences). **Full scan** uses OCR.space **Engine 3** for table text and checkbox symbols (☑/☐); if those are missing it falls back to Engine 2 layout + Roboflow or pixel sampling. Both use cloud OCR when the OCR.space key is set.
 
 ---
 

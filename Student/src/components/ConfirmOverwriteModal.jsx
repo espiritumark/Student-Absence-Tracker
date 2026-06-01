@@ -1,3 +1,4 @@
+import { Alert, Card, Col, Modal, Row, Typography } from 'antd'
 import { formatDateLabel } from '../utils/dates'
 
 export default function ConfirmOverwriteModal({
@@ -8,101 +9,97 @@ export default function ConfirmOverwriteModal({
   error = '',
   busy = false,
 }) {
-  if (!open || !summary) return null
+  if (!summary) return null
+
+  const title = summary.isNewClass ? 'Confirm import' : 'Confirm overwrite'
+  const okText = busy
+    ? 'Saving…'
+    : summary.isNewClass
+      ? 'Save attendance'
+      : 'Overwrite attendance'
 
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Confirm overwrite">
-      <div className="modal">
-        <div className="modal-header">
-          <h3>{summary.isNewClass ? 'Confirm import' : 'Confirm overwrite'}</h3>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={onCancel}
-            disabled={busy}
-            aria-label="Close"
-          >
-            ✕
-          </button>
-        </div>
+    <Modal
+      open={open}
+      title={title}
+      okText={okText}
+      cancelText="Cancel"
+      confirmLoading={busy}
+      cancelButtonProps={{ disabled: busy }}
+      onCancel={busy ? undefined : onCancel}
+      onOk={onConfirm}
+      destroyOnHidden
+      centered
+      width={560}
+    >
+      {summary.isNewClass ? (
+        <Typography.Paragraph>A new class will be created from this import.</Typography.Paragraph>
+      ) : (
+        <Typography.Paragraph>
+          Attendance already exists for this class, date, and module. Review changes before
+          overwriting.
+        </Typography.Paragraph>
+      )}
 
-        <div className="modal-body">
-          {summary.isNewClass ? (
-            <p className="modal-lead">
-              A new class will be created from this import.
-            </p>
-          ) : (
-            <p className="modal-lead">
-              Attendance already exists for this class, date, and module. Review changes before
-              overwriting.
-            </p>
-          )}
-
-          <div className="diff-grid">
-            <div className="diff-card">
-              <div className="diff-title">Where</div>
-              <div className="diff-value">
-                <strong>{summary.classLabel || 'Class'}</strong>
-                <div className="muted">{formatDateLabel(summary.date)}</div>
-                {summary.module && (
-                  <div className="muted">Module: {summary.module}</div>
-                )}
-              </div>
+      <Row gutter={[12, 12]}>
+        <Col xs={24} sm={12}>
+          <Card size="small" title="Where">
+            <Typography.Text strong>{summary.classLabel || 'Class'}</Typography.Text>
+            <div>
+              <Typography.Text type="secondary">{formatDateLabel(summary.date)}</Typography.Text>
             </div>
-            {!summary.isNewClass && (
-              <>
-                <div className="diff-card">
-                  <div className="diff-title">Absent count</div>
-                  <div className="diff-value">
-                    <strong>{summary.prevAbsent} → {summary.nextAbsent}</strong>
-                    <div className="muted">Saved → this import</div>
-                  </div>
-                </div>
-                <div className="diff-card">
-                  <div className="diff-title">Changes</div>
-                  <div className="diff-value">
-                    <div><strong>{summary.toAbsent}</strong> become absent</div>
-                    <div><strong>{summary.toPresent}</strong> become present</div>
-                    <div className="muted"><strong>{summary.unchanged}</strong> unchanged</div>
-                  </div>
-                </div>
-              </>
+            {summary.module && (
+              <div>
+                <Typography.Text type="secondary">Module: {summary.module}</Typography.Text>
+              </div>
             )}
-            <div className="diff-card">
-              <div className="diff-title">New students</div>
-              <div className="diff-value">
-                <strong>{summary.newStudents ?? 0}</strong> will be added
-                {summary.newStudentNames?.length > 0 && (
-                  <div className="muted small">
-                    {summary.newStudentNames.slice(0, 5).join(', ')}
-                    {summary.newStudentNames.length > 5
-                      ? ` … +${summary.newStudentNames.length - 5} more`
-                      : ''}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-          {error && (
-            <p className="auth-error" role="alert">
-              {error}
-            </p>
-          )}
-        </div>
+          </Card>
+        </Col>
+        {!summary.isNewClass && (
+          <>
+            <Col xs={24} sm={12}>
+              <Card size="small" title="Absent count">
+                <Typography.Text strong>
+                  {summary.prevAbsent} → {summary.nextAbsent}
+                </Typography.Text>
+                <div>
+                  <Typography.Text type="secondary">Saved → this import</Typography.Text>
+                </div>
+              </Card>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Card size="small" title="Changes">
+                <div>
+                  <Typography.Text strong>{summary.toAbsent}</Typography.Text> become absent
+                </div>
+                <div>
+                  <Typography.Text strong>{summary.toPresent}</Typography.Text> become present
+                </div>
+                <Typography.Text type="secondary">
+                  <Typography.Text strong>{summary.unchanged}</Typography.Text> unchanged
+                </Typography.Text>
+              </Card>
+            </Col>
+          </>
+        )}
+        <Col xs={24} sm={12}>
+          <Card size="small" title="New students">
+            <Typography.Text strong>{summary.newStudents ?? 0}</Typography.Text> will be added
+            {summary.newStudentNames?.length > 0 && (
+              <Typography.Paragraph type="secondary" style={{ marginBottom: 0, fontSize: '0.85rem' }}>
+                {summary.newStudentNames.slice(0, 5).join(', ')}
+                {summary.newStudentNames.length > 5
+                  ? ` … +${summary.newStudentNames.length - 5} more`
+                  : ''}
+              </Typography.Paragraph>
+            )}
+          </Card>
+        </Col>
+      </Row>
 
-        <div className="modal-actions">
-          <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>
-            Cancel
-          </button>
-          <button type="button" className="btn btn-primary" onClick={onConfirm} disabled={busy}>
-            {busy
-              ? 'Saving…'
-              : summary.isNewClass
-                ? 'Save attendance'
-                : 'Overwrite attendance'}
-          </button>
-        </div>
-      </div>
-    </div>
+      {error && (
+        <Alert type="error" showIcon message={error} style={{ marginTop: '0.75rem' }} />
+      )}
+    </Modal>
   )
 }

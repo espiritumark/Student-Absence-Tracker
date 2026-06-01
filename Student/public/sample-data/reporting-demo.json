@@ -1,0 +1,130 @@
+{
+  "classes": [
+    {
+      "id": "demo-class-reporting-1",
+      "intake": 99,
+      "level": 5,
+      "qualification": "DEMO REPORTING TEST",
+      "group": 1,
+      "name": "INTAKE 99 LEVEL 5 DEMO REPORTING TEST GROUP 1",
+      "students": [
+        {
+          "id": "demo-student-watch",
+          "name": "ALEX DEMO WATCH ONLY"
+        },
+        {
+          "id": "demo-student-report",
+          "name": "JORDAN DEMO NEEDS REPORT"
+        },
+        {
+          "id": "demo-student-safe",
+          "name": "SAM DEMO SAFE"
+        }
+      ]
+    }
+  ],
+  "attendance": {
+    "demo-class-reporting-1": {
+      "2026-05-14": {
+        "module": "L5C | DEMO MODULE",
+        "startTime": "09:00",
+        "duration": "1 Session",
+        "records": {
+          "demo-student-report": { "status": "absent", "priorNotice": false }
+        }
+      },
+      "2026-05-15": {
+        "module": "L5C | DEMO MODULE",
+        "records": {
+          "demo-student-report": { "status": "absent", "priorNotice": false }
+        }
+      },
+      "2026-05-16": {
+        "module": "L5C | DEMO MODULE",
+        "records": {
+          "demo-student-report": { "status": "absent", "priorNotice": false }
+        }
+      },
+      "2026-05-17": {
+        "module": "L5C | DEMO MODULE",
+        "records": {
+          "demo-student-report": { "status": "absent", "priorNotice": false }
+        }
+      },
+      "2026-05-18": {
+        "module": "L5C | DEMO MODULE",
+        "records": {
+          "demo-student-report": { "status": "absent", "priorNotice": false }
+        }
+      },
+      "2026-05-19": {
+        "module": "L5C | DEMO MODULE",
+        "records": {
+          "demo-student-report": { "status": "absent", "priorNotice": false }
+        }
+      },
+      "2026-05-20": {
+        "module": "L5C | DEMO MODULE",
+        "records": {
+          "demo-student-report": { "status": "absent", "priorNotice": false }
+        }
+      },
+      "2026-05-21": {
+        "module": "L5C | DEMO MODULE",
+        "records": {
+          "demo-student-report": { "status": "absent", "priorNotice": false }
+        }
+      },
+      "2026-05-22": {
+        "module": "L5C | DEMO MODULE",
+        "records": {
+          "demo-student-report": { "status": "absent", "priorNotice": false },
+          "demo-student-watch": { "status": "absent", "priorNotice": false }
+        }
+      },
+      "2026-05-23": {
+        "module": "L5C | DEMO MODULE",
+        "records": {
+          "demo-student-report": { "status": "absent", "priorNotice": false },
+          "demo-student-watch": { "status": "absent", "priorNotice": false }
+        }
+      },
+      "2026-05-24": {
+        "module": "L5C | DEMO MODULE",
+        "records": {
+          "demo-student-report": { "status": "absent", "priorNotice": false },
+          "demo-student-watch": { "status": "absent", "priorNotice": false }
+        }
+      },
+      "2026-05-25": {
+        "module": "L5C | DEMO MODULE",
+        "records": {
+          "demo-student-report": { "status": "absent", "priorNotice": false },
+          "demo-student-watch": { "status": "absent", "priorNotice": false }
+        }
+      },
+      "2026-05-26": {
+        "module": "L5C | DEMO MODULE",
+        "records": {
+          "demo-student-report": { "status": "absent", "priorNotice": false },
+          "demo-student-watch": { "status": "absent", "priorNotice": false }
+        }
+      },
+      "2026-05-27": {
+        "module": "L5C | DEMO MODULE",
+        "records": {
+          "demo-student-report": { "status": "absent", "priorNotice": false },
+          "demo-student-watch": { "status": "absent", "priorNotice": false }
+        }
+      },
+      "2026-05-28": {
+        "module": "L5C | DEMO MODULE",
+        "records": {
+          "demo-student-report": { "status": "absent", "priorNotice": false },
+          "demo-student-watch": { "status": "absent", "priorNotice": false },
+          "demo-student-safe": { "status": "present", "priorNotice": false }
+        }
+      }
+    }
+  }
+}

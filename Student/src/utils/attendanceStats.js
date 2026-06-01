@@ -1,7 +1,11 @@
 import { formatClassLabel } from './classFormat'
 import { compareAbsenceRisk, getOverallAbsenceRisk } from './absenceRisk'
 import { isConsecutiveDays, parseDateKey } from './dates'
-import { sessionDateFromKey, listAbsentModulesForStudent } from './sessionKeys'
+import {
+  filterAttendanceByModule,
+  sessionDateFromKey,
+  listAbsentModulesForStudent,
+} from './sessionKeys'
 
 export function getStudentAbsenceStats(classAttendance, studentId) {
   const absentDates = new Set()
@@ -86,6 +90,54 @@ export function getAllStudentAbsenceSummaries(classes, attendance) {
         usesManualTotal: counts.usesManualTotal,
         usesManualConsecutive: counts.usesManualConsecutive,
         risk: getOverallAbsenceRisk(counts),
+      })
+    }
+  }
+
+  return rows.sort((a, b) => compareAbsenceRisk(a, b))
+}
+
+/**
+ * Students at watch level or above (Safe tier excluded), optionally scoped to one module.
+ */
+export function getAtRiskStudentSummaries(classes, attendance, options = {}) {
+  const { moduleFilter = '' } = options
+  const rows = []
+
+  for (const cls of classes) {
+    const classAttendance = attendance[cls.id] || {}
+    const scopedAttendance = moduleFilter
+      ? filterAttendanceByModule(classAttendance, moduleFilter)
+      : classAttendance
+
+    if (moduleFilter && Object.keys(scopedAttendance).length === 0) continue
+
+    const className = formatClassLabel(cls)
+
+    for (const student of cls.students ?? []) {
+      const counts = getEffectiveAbsenceCounts(student, scopedAttendance)
+      if (counts.total <= 0 && counts.consecutive <= 0) continue
+
+      const risk = getOverallAbsenceRisk(counts)
+      if (risk === 'safe') continue
+
+      const absentModules = listAbsentModulesForStudent(
+        moduleFilter ? scopedAttendance : classAttendance,
+        student.id,
+      )
+
+      rows.push({
+        id: `${cls.id}-${student.id}`,
+        studentId: student.id,
+        studentName: student.name,
+        classId: cls.id,
+        className,
+        absentModules,
+        total: counts.total,
+        consecutive: counts.consecutive,
+        usesManualTotal: counts.usesManualTotal,
+        usesManualConsecutive: counts.usesManualConsecutive,
+        risk,
       })
     }
   }

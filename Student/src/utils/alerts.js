@@ -3,8 +3,10 @@ import { getStudentAbsenceStats } from './attendanceStats'
 import { isConsecutiveDays, parseDateKey, weekKey } from './dates'
 import { sessionDateFromKey } from './sessionKeys'
 
-const CONSECUTIVE_WEEKS_DAYS = 14
-const MONTH_DAYS = 30
+export const CONSECUTIVE_REPORT_DAYS = 14
+export const MONTH_REPORT_DAYS = 30
+const CONSECUTIVE_WEEKS_DAYS = CONSECUTIVE_REPORT_DAYS
+const MONTH_DAYS = MONTH_REPORT_DAYS
 
 function getDayStreak(sortedAbsentKeys) {
   if (!sortedAbsentKeys.length) {

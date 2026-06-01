@@ -1,11 +1,28 @@
-import { useEffect, useState } from 'react'
+import { PlusOutlined } from '@ant-design/icons'
+import {
+  Button,
+  Empty,
+  Input,
+  InputNumber,
+  Modal,
+  Row,
+  Col,
+  Segmented,
+  Space,
+  Table,
+  Typography,
+} from 'antd'
+import { useEffect, useMemo, useState } from 'react'
 import { useAutoDismiss } from '../hooks/useAutoDismiss'
-import { useScrollLoadMore } from '../hooks/useScrollLoadMore'
+import { useReportTabActivity } from '../hooks/useReportTabActivity'
+import { useScrollRegionHeight } from '../hooks/useScrollRegionHeight'
+import { formatClassLabel } from '../utils/classFormat'
+import { formatModuleLabel, listModulesAcrossClasses } from '../utils/sessionKeys'
 import AbsenceBulkEditor from './AbsenceBulkEditor'
 import ClassStudentPanel from './ClassStudentPanel'
-import ScrollSentinel from './ScrollSentinel'
-import { formatClassLabel } from '../utils/classFormat'
 import ConfirmDialog from './ConfirmDialog'
+import ModuleSearchSelect from './ModuleSearchSelect'
+import FormField from './FormField'
 import SaveFieldOverlay from './SaveFieldOverlay'
 
 export default function ClassManager({
@@ -18,79 +35,161 @@ export default function ClassManager({
   removeStudent,
   importStudentsBulk,
   bulkUpdateStudents,
+  initialFocus = null,
+  onFocusApplied,
+  onTabActivityChange,
 }) {
+  const [browseMode, setBrowseMode] = useState('module')
+  const [addClassOpen, setAddClassOpen] = useState(false)
+  const [bulkEditorBusy, setBulkEditorBusy] = useState(false)
+  const [bulkEditorDraftCount, setBulkEditorDraftCount] = useState(0)
+  const [panelActivity, setPanelActivity] = useState({ processing: false, draft: false })
+  const [selectedModule, setSelectedModule] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedClassId, setSelectedClassId] = useState('')
+  const [bulkEditMode, setBulkEditMode] = useState(false)
+  const [bulkEditClassId, setBulkEditClassId] = useState('')
+  const [bulkEditClassIds, setBulkEditClassIds] = useState(null)
+  const [deleteTargetClassId, setDeleteTargetClassId] = useState('')
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
+  const [addConfirmOpen, setAddConfirmOpen] = useState(false)
+  const [pendingClassFields, setPendingClassFields] = useState(null)
+  const [addClassBusy, setAddClassBusy] = useState(false)
+  const [addClassMessage, setAddClassMessage] = useState('')
+  const [addClassError, setAddClassError] = useState('')
   const [form, setForm] = useState({
     intake: '',
     level: '',
     qualification: '',
     group: '',
   })
-  const [openClassIds, setOpenClassIds] = useState(() => new Set())
-  const [moduleFilters, setModuleFilters] = useState({})
-  const [bulkEditMode, setBulkEditMode] = useState(false)
-  const [bulkEditClassId, setBulkEditClassId] = useState('')
-  const [deleteTargetClassId, setDeleteTargetClassId] = useState('')
-  const [addClassBusy, setAddClassBusy] = useState(false)
-  const [addClassMessage, setAddClassMessage] = useState('')
-  const [addClassError, setAddClassError] = useState('')
-  const [deleteOpen, setDeleteOpen] = useState(false)
-  const [deleteBusy, setDeleteBusy] = useState(false)
-  const [deleteError, setDeleteError] = useState('')
-  const [addConfirmOpen, setAddConfirmOpen] = useState(false)
-  const [pendingClassFields, setPendingClassFields] = useState(null)
 
   useAutoDismiss(Boolean(addClassMessage) && !form.qualification.trim(), () => setAddClassMessage(''))
 
-  const sortedClasses = [...classes].sort((a, b) =>
-    formatClassLabel(a).localeCompare(formatClassLabel(b)),
+  const sortedClasses = useMemo(
+    () => [...classes].sort((a, b) => formatClassLabel(a).localeCompare(formatClassLabel(b))),
+    [classes],
   )
 
+  const allModules = useMemo(
+    () => listModulesAcrossClasses(classes, attendance),
+    [classes, attendance],
+  )
+
+  const moduleOptions = useMemo(
+    () => allModules.map(({ value, label }) => ({ value, label })),
+    [allModules],
+  )
+
+  useEffect(() => {
+    if (!initialFocus) return
+    if (initialFocus.module) {
+      setBrowseMode('module')
+      setSelectedModule(initialFocus.module)
+    } else {
+      setBrowseMode('class')
+    }
+    if (initialFocus.classId) {
+      setSelectedClassId(initialFocus.classId)
+    }
+    onFocusApplied?.()
+  }, [initialFocus, onFocusApplied])
+
+  useEffect(() => {
+    if (browseMode !== 'module' || allModules.length === 0) return
+    if (!selectedModule || !allModules.some((m) => m.value === selectedModule)) {
+      setSelectedModule(allModules[0]?.value ?? '')
+    }
+  }, [browseMode, allModules, selectedModule])
+
+  const classesForBrowse = useMemo(() => {
+    if (browseMode !== 'module' || !selectedModule) return sortedClasses
+    const match = allModules.find((m) => m.value === selectedModule)
+    if (!match) return sortedClasses
+    const idSet = new Set(match.classIds)
+    return sortedClasses.filter((cls) => idSet.has(cls.id))
+  }, [browseMode, selectedModule, sortedClasses, allModules])
+
+  const filteredClasses = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return classesForBrowse
+    return classesForBrowse.filter((cls) => formatClassLabel(cls).toLowerCase().includes(q))
+  }, [classesForBrowse, searchQuery])
+
+  const moduleClassIds = useMemo(
+    () => classesForBrowse.map((c) => c.id),
+    [classesForBrowse],
+  )
+
+  const [masterTableRef, masterTableHeight] = useScrollRegionHeight(200)
+
+  const classTableData = filteredClasses.map((cls) => ({
+    key: cls.id,
+    id: cls.id,
+    name: formatClassLabel(cls),
+    count: cls.students?.length ?? 0,
+  }))
+  const selectedClass = classes.find((c) => c.id === selectedClassId)
   const deleteTargetClass = classes.find((c) => c.id === deleteTargetClassId)
   const addClassLocked = addClassBusy || syncing
 
-  const {
-    visibleCount: visibleClassCount,
-    rootRef: classScrollRef,
-    sentinelRef: classSentinelRef,
-    hasMore: hasMoreClasses,
-  } = useScrollLoadMore({
-    total: sortedClasses.length,
-    batchSize: 12,
-    resetKey: String(sortedClasses.length),
-  })
+  const addClassHasDraft =
+    addClassOpen &&
+    (form.intake !== '' ||
+      form.level !== '' ||
+      form.group !== '' ||
+      Boolean(form.qualification.trim()))
 
-  const visibleClasses = sortedClasses.slice(0, visibleClassCount)
+  const classesTabActivity = useMemo(() => {
+    if (
+      syncing ||
+      addClassBusy ||
+      deleteBusy ||
+      bulkEditorBusy ||
+      panelActivity.processing
+    ) {
+      return 'processing'
+    }
+    if ((bulkEditMode && bulkEditorDraftCount > 0) || addClassHasDraft || panelActivity.draft) {
+      return 'draft'
+    }
+    return null
+  }, [
+    syncing,
+    addClassBusy,
+    deleteBusy,
+    bulkEditorBusy,
+    panelActivity,
+    bulkEditMode,
+    bulkEditorDraftCount,
+    addClassHasDraft,
+  ])
+
+  useReportTabActivity('classes', classesTabActivity, onTabActivityChange)
 
   useEffect(() => {
-    setOpenClassIds((prev) => {
-      const valid = new Set([...prev].filter((id) => classes.some((c) => c.id === id)))
-      return valid.size === prev.size ? prev : valid
-    })
-  }, [classes])
+    if (selectedClassId && !filteredClasses.some((cls) => cls.id === selectedClassId)) {
+      setSelectedClassId('')
+    }
+  }, [filteredClasses, selectedClassId])
 
-  function toggleClassOpen(classId) {
-    setOpenClassIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(classId)) next.delete(classId)
-      else next.add(classId)
-      return next
-    })
-  }
-
-  function setModuleFilter(classId, value) {
-    setModuleFilters((prev) => ({ ...prev, [classId]: value }))
+  function handleBrowseModeChange(mode) {
+    if (mode === browseMode) return
+    setBrowseMode(mode)
+    setSelectedClassId('')
   }
 
   async function handleAddClass(e) {
     e.preventDefault()
     if (!form.qualification.trim() || addClassLocked) return
-    const fields = {
+    setPendingClassFields({
       intake: Number(form.intake) || null,
       level: Number(form.level) || null,
       qualification: form.qualification.trim(),
       group: Number(form.group) || null,
-    }
-    setPendingClassFields(fields)
+    })
     setAddConfirmOpen(true)
   }
 
@@ -103,10 +202,12 @@ export default function ClassManager({
     try {
       const newId = await addClass(pendingClassFields)
       if (newId) {
-        setOpenClassIds((prev) => new Set(prev).add(newId))
+        setSelectedClassId(newId)
+        setBrowseMode('class')
       }
       setForm({ intake: '', level: '', qualification: '', group: '' })
       setAddClassMessage(`"${formatClassLabel(pendingClassFields)}" added successfully.`)
+      setAddClassOpen(false)
     } catch (err) {
       setAddClassError(err.message || 'Failed to add class. Try again.')
     } finally {
@@ -121,11 +222,9 @@ export default function ClassManager({
     setDeleteError('')
     try {
       await removeClass(deleteTargetClassId)
-      setOpenClassIds((prev) => {
-        const next = new Set(prev)
-        next.delete(deleteTargetClassId)
-        return next
-      })
+      if (selectedClassId === deleteTargetClassId) {
+        setSelectedClassId('')
+      }
       setDeleteOpen(false)
       setDeleteTargetClassId('')
     } catch (err) {
@@ -135,14 +234,10 @@ export default function ClassManager({
     }
   }
 
-  function openDeleteDialog(classId) {
-    setDeleteTargetClassId(classId)
-    setDeleteError('')
-    setDeleteOpen(true)
-  }
-
-  function openBulkEdit(classId) {
-    setBulkEditClassId(classId)
+  function openModuleBulkEdit() {
+    if (moduleClassIds.length === 0) return
+    setBulkEditClassIds(moduleClassIds)
+    setBulkEditClassId(moduleClassIds[0])
     setBulkEditMode(true)
   }
 
@@ -152,192 +247,291 @@ export default function ClassManager({
         classes={classes}
         attendance={attendance}
         initialClassId={bulkEditClassId || sortedClasses[0]?.id || ''}
+        restrictToClassIds={bulkEditClassIds}
         bulkUpdateStudents={bulkUpdateStudents}
+        onActivityChange={({ busy, draftCount }) => {
+          setBulkEditorBusy(busy)
+          setBulkEditorDraftCount(draftCount)
+        }}
         onClose={() => {
           setBulkEditMode(false)
           setBulkEditClassId('')
+          setBulkEditClassIds(null)
+          setBulkEditorBusy(false)
+          setBulkEditorDraftCount(0)
         }}
       />
     )
   }
 
   return (
-    <section className="panel">
-      <header className="panel-header">
-        <h2>Classes &amp; students</h2>
-        <p className="panel-desc">
-          Expand a class to manage its roster. Student lists load only when opened to keep
-          things fast.
-        </p>
+    <section className="panel classes-panel workspace-panel">
+      <header className="panel-header dashboard-header-compact classes-panel-header">
+        <div>
+          <h2>Classes &amp; Rosters</h2>
+          <p className="panel-desc panel-desc-compact">
+            Browse by module to see every intake/group in a subject, or switch to all classes for
+            per-class bulk edits.
+          </p>
+        </div>
+        <Button type="default" icon={<PlusOutlined />} onClick={() => setAddClassOpen(true)}>
+          Add Class Manually
+        </Button>
       </header>
 
-      <details className="collapsible-form">
-        <summary className="collapsible-summary">Add a new class manually</summary>
+      <Modal
+        title="Add Class Manually"
+        open={addClassOpen}
+        onCancel={() => {
+          if (addClassBusy) return
+          setAddClassOpen(false)
+        }}
+        footer={null}
+        destroyOnClose
+        width={520}
+      >
         <SaveFieldOverlay busy={addClassBusy} label="Adding class…">
-          <form className="portal-meta-grid add-class-form" onSubmit={handleAddClass}>
-            <fieldset className="add-class-fields" disabled={addClassLocked}>
-              <label>
-                Intake
-                <input
-                  type="number"
-                  value={form.intake}
-                  onChange={(e) => setForm((f) => ({ ...f, intake: e.target.value }))}
+          <form className="add-class-form-modal" onSubmit={handleAddClass}>
+            <Row gutter={[12, 12]}>
+              <Col span={8}>
+                <Typography.Text className="field-label">Intake</Typography.Text>
+                <InputNumber
+                  value={form.intake === '' ? null : Number(form.intake)}
+                  onChange={(value) => setForm((f) => ({ ...f, intake: value ?? '' }))}
+                  style={{ width: '100%' }}
                 />
-              </label>
-              <label>
-                Level
-                <input
-                  type="number"
-                  value={form.level}
-                  onChange={(e) => setForm((f) => ({ ...f, level: e.target.value }))}
+              </Col>
+              <Col span={8}>
+                <Typography.Text className="field-label">Level</Typography.Text>
+                <InputNumber
+                  value={form.level === '' ? null : Number(form.level)}
+                  onChange={(value) => setForm((f) => ({ ...f, level: value ?? '' }))}
+                  style={{ width: '100%' }}
                 />
-              </label>
-              <label>
-                Group
-                <input
-                  type="number"
-                  value={form.group}
-                  onChange={(e) => setForm((f) => ({ ...f, group: e.target.value }))}
+              </Col>
+              <Col span={8}>
+                <Typography.Text className="field-label">Group</Typography.Text>
+                <InputNumber
+                  value={form.group === '' ? null : Number(form.group)}
+                  onChange={(value) => setForm((f) => ({ ...f, group: value ?? '' }))}
+                  style={{ width: '100%' }}
                 />
-              </label>
-              <label className="span-2">
-                Qualification / programme
-                <input
-                  type="text"
+              </Col>
+              <Col span={24}>
+                <Typography.Text className="field-label">Qualification / Programme</Typography.Text>
+                <Input
                   placeholder="HND IN COMPUTING"
                   value={form.qualification}
                   onChange={(e) => setForm((f) => ({ ...f, qualification: e.target.value }))}
                   required
                 />
-              </label>
-              <button type="submit" className="btn btn-primary" disabled={addClassLocked}>
-                {addClassBusy ? 'Adding class…' : 'Add class'}
-              </button>
-            </fieldset>
+              </Col>
+            </Row>
+            <Space style={{ marginTop: '1rem' }}>
+              <Button type="primary" htmlType="submit" disabled={addClassLocked} loading={addClassBusy}>
+                Add Class
+              </Button>
+              <Button disabled={addClassBusy} onClick={() => setAddClassOpen(false)}>
+                Cancel
+              </Button>
+            </Space>
             {addClassMessage && (
-              <p className="auth-message span-2" role="status">
+              <Typography.Paragraph type="success" role="status" style={{ marginTop: '0.75rem', marginBottom: 0 }}>
                 {addClassMessage}
-              </p>
+              </Typography.Paragraph>
             )}
             {addClassError && (
-              <p className="auth-error span-2" role="alert">
+              <Typography.Paragraph type="danger" role="alert" style={{ marginTop: '0.75rem', marginBottom: 0 }}>
                 {addClassError}
-              </p>
+              </Typography.Paragraph>
             )}
           </form>
         </SaveFieldOverlay>
-      </details>
+      </Modal>
 
-      {classes.length === 0 ? (
-        <p className="empty-state">No classes yet. Import a screenshot or add one above.</p>
-      ) : (
-        <>
-          <p className="class-accordion-hint muted small">
-            {sortedClasses.length} class{sortedClasses.length === 1 ? '' : 'es'} ·{' '}
-            {openClassIds.size} expanded · scroll for more
-          </p>
+      <div className="workspace-body classes-workspace">
+        <div className="master-detail-workspace">
+          <aside className="master-pane" aria-label="Class list">
+            <div className="master-pane-toolbar filter-toolbar">
+              <Segmented
+                block
+                className="master-mode-segmented"
+                options={[
+                  { label: 'By Module', value: 'module' },
+                  { label: 'By Class', value: 'class' },
+                ]}
+                value={browseMode}
+                onChange={handleBrowseModeChange}
+              />
 
-          <div className="scroll-panel class-accordion-scroll" ref={classScrollRef}>
-            <div className="class-accordion-list">
-            {visibleClasses.map((cls) => {
-              const isOpen = openClassIds.has(cls.id)
-              const studentCount = cls.students?.length ?? 0
+              {browseMode === 'module' && (
+                <ModuleSearchSelect
+                  options={moduleOptions}
+                  value={selectedModule}
+                  onChange={setSelectedModule}
+                  placeholder={
+                    moduleOptions.length ? 'Search module or subject…' : 'No modules recorded yet'
+                  }
+                  label="Module / Subject"
+                  disabled={moduleOptions.length === 0}
+                />
+              )}
 
-              return (
-                <details
-                  key={cls.id}
-                  className={`class-accordion-item ${isOpen ? 'is-open' : ''}`}
-                  open={isOpen}
-                >
-                  <summary
-                    className="class-accordion-summary"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      if (deleteBusy || addClassBusy) return
-                      toggleClassOpen(cls.id)
-                    }}
-                  >
-                    <span className="class-accordion-title">{formatClassLabel(cls)}</span>
-                    <span className="class-accordion-meta">
-                      {studentCount} student{studentCount === 1 ? '' : 's'}
-                    </span>
-                  </summary>
+              <FormField label="Search Classes" grow>
+                <Input
+                  allowClear
+                  placeholder="Intake, group, qualification…"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </FormField>
 
-                  {isOpen && (
-                    <ClassStudentPanel
-                      cls={cls}
-                      attendance={attendance?.[cls.id] || {}}
-                      moduleFilter={moduleFilters[cls.id] ?? ''}
-                      onModuleFilter={(value) => setModuleFilter(cls.id, value)}
-                      syncing={syncing}
-                      onBulkEdit={() => openBulkEdit(cls.id)}
-                      onDeleteRequest={() => openDeleteDialog(cls.id)}
-                      addStudent={addStudent}
-                      removeStudent={removeStudent}
-                      importStudentsBulk={importStudentsBulk}
-                    />
-                  )}
-                </details>
-              )
-            })}
+              {browseMode === 'module' && moduleClassIds.length > 1 && (
+                <Button block onClick={openModuleBulkEdit}>
+                  Bulk Edit All {moduleClassIds.length} Classes in Module
+                </Button>
+              )}
             </div>
-            <ScrollSentinel
-              sentinelRef={classSentinelRef}
-              hasMore={hasMoreClasses}
-              label="Loading more classes…"
-            />
-          </div>
 
-          <ConfirmDialog
-            open={deleteOpen}
-            title="Delete class?"
-            confirmLabel="Delete class"
-            cancelLabel="Keep class"
-            danger
-            busy={deleteBusy}
-            error={deleteError}
-            onCancel={() => {
-              if (deleteBusy) return
-              setDeleteOpen(false)
-              setDeleteTargetClassId('')
-              setDeleteError('')
-            }}
-            onConfirm={handleConfirmDeleteClass}
-          >
-            {deleteTargetClass ? (
-              <p className="modal-lead">
-                Delete <strong>{formatClassLabel(deleteTargetClass)}</strong> and all of its
-                attendance records? This cannot be undone.
-              </p>
+            <p className="master-pane-hint muted small">
+              {filteredClasses.length} class{filteredClasses.length === 1 ? '' : 'es'}
+              {browseMode === 'module' && selectedModule
+                ? ` · ${formatModuleLabel(selectedModule)}`
+                : ''}
+            </p>
+
+            {classes.length === 0 ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No classes yet. Import attendance or add one above." />
+            ) : browseMode === 'module' && allModules.length === 0 ? (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="No modules yet — import attendance with a module name, or use By Class."
+              />
+            ) : filteredClasses.length === 0 ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No classes match this filter." />
             ) : (
-              <p className="modal-lead">
-                Delete this class and all of its attendance records? This cannot be undone.
-              </p>
+              <div className="table-scroll-region master-list-scroll" ref={masterTableRef}>
+                <Table
+                  size="small"
+                  showHeader={false}
+                  pagination={{ pageSize: 30, showSizeChanger: false, hideOnSinglePage: true }}
+                  scroll={{ y: masterTableHeight }}
+                  dataSource={classTableData}
+                  columns={[
+                    {
+                      key: 'name',
+                      render: (_, row) => (
+                        <div>
+                          <Typography.Text strong>{row.name}</Typography.Text>
+                          <div>
+                            <Typography.Text type="secondary" style={{ fontSize: '0.78rem' }}>
+                              {row.count} student{row.count === 1 ? '' : 's'}
+                            </Typography.Text>
+                          </div>
+                        </div>
+                      ),
+                    },
+                  ]}
+                  rowClassName={(row) =>
+                    `master-list-item-ant ${selectedClassId === row.id ? 'is-selected' : ''}`
+                  }
+                  onRow={(row) => ({
+                    onClick: () => setSelectedClassId(row.id),
+                    style: { cursor: 'pointer' },
+                  })}
+                />
+              </div>
             )}
-          </ConfirmDialog>
+          </aside>
 
-          <ConfirmDialog
-            open={addConfirmOpen}
-            title="Add this class?"
-            confirmLabel="Add class"
-            cancelLabel="Cancel"
-            busy={addClassBusy}
-            onCancel={() => {
-              if (addClassBusy) return
-              setAddConfirmOpen(false)
-              setPendingClassFields(null)
-            }}
-            onConfirm={handleConfirmAddClass}
-          >
-            {pendingClassFields && (
-              <p className="modal-lead">
-                Create class <strong>{formatClassLabel(pendingClassFields)}</strong>? You can add
-                students after it is created.
-              </p>
+          <div className="detail-pane" aria-label="Class roster">
+            {selectedClass ? (
+              <>
+                <div className="detail-pane-header">
+                  <h3>{formatClassLabel(selectedClass)}</h3>
+                </div>
+                <div className="detail-pane-body">
+                  <ClassStudentPanel
+                    cls={selectedClass}
+                    attendance={attendance?.[selectedClass.id] || {}}
+                    moduleFilter={browseMode === 'module' ? selectedModule : ''}
+                    onModuleFilter={() => {}}
+                    lockModuleFilter={browseMode === 'module' && Boolean(selectedModule)}
+                    syncing={syncing}
+                    onBulkEdit={() => {
+                      setBulkEditClassId(selectedClass.id)
+                      setBulkEditClassIds(null)
+                      setBulkEditMode(true)
+                    }}
+                    onDeleteRequest={() => {
+                      setDeleteTargetClassId(selectedClass.id)
+                      setDeleteError('')
+                      setDeleteOpen(true)
+                    }}
+                    addStudent={addStudent}
+                    removeStudent={removeStudent}
+                    importStudentsBulk={importStudentsBulk}
+                    onActivityChange={setPanelActivity}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="detail-pane-empty">
+                <Empty description="Select a class on the left to manage students, absence overrides, and bulk edits." />
+              </div>
             )}
-          </ConfirmDialog>
-        </>
-      )}
+          </div>
+        </div>
+      </div>
+
+      <ConfirmDialog
+        open={deleteOpen}
+        title="Delete Class?"
+        confirmLabel="Delete Class"
+        cancelLabel="Keep class"
+        danger
+        busy={deleteBusy}
+        error={deleteError}
+        onCancel={() => {
+          if (deleteBusy) return
+          setDeleteOpen(false)
+          setDeleteTargetClassId('')
+          setDeleteError('')
+        }}
+        onConfirm={handleConfirmDeleteClass}
+      >
+        {deleteTargetClass ? (
+          <p className="modal-lead">
+            Delete <strong>{formatClassLabel(deleteTargetClass)}</strong> and all of its attendance
+            records? This cannot be undone.
+          </p>
+        ) : (
+          <p className="modal-lead">
+            Delete this class and all of its attendance records? This cannot be undone.
+          </p>
+        )}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={addConfirmOpen}
+        title="Add this class?"
+        confirmLabel="Add class"
+        cancelLabel="Cancel"
+        busy={addClassBusy}
+        onCancel={() => {
+          if (addClassBusy) return
+          setAddConfirmOpen(false)
+          setPendingClassFields(null)
+        }}
+        onConfirm={handleConfirmAddClass}
+      >
+        {pendingClassFields && (
+          <p className="modal-lead">
+            Create class <strong>{formatClassLabel(pendingClassFields)}</strong>? You can add
+            students after it is created.
+          </p>
+        )}
+      </ConfirmDialog>
     </section>
   )
 }

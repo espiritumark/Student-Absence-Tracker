@@ -1,11 +1,21 @@
-import { useMemo, useState } from 'react'
+import {
+  Alert,
+  Button,
+  Collapse,
+  Empty,
+  Input,
+  Space,
+  Table,
+  Tag,
+  Typography,
+} from 'antd'
+import { useEffect, useMemo, useState } from 'react'
 import { useAutoDismiss } from '../hooks/useAutoDismiss'
-import { useScrollLoadMore } from '../hooks/useScrollLoadMore'
-import { AbsenceCountBadge } from './AbsenceCountBadge'
+import { useScrollRegionHeight } from '../hooks/useScrollRegionHeight'
 import ConfirmDialog from './ConfirmDialog'
 import ModuleSearchSelect from './ModuleSearchSelect'
 import SaveFieldOverlay from './SaveFieldOverlay'
-import ScrollSentinel from './ScrollSentinel'
+import { RISK_META, getOverallAbsenceRisk } from '../utils/absenceRisk'
 import { getEffectiveAbsenceCounts } from '../utils/attendanceStats'
 import { formatClassLabel } from '../utils/classFormat'
 import {
@@ -13,8 +23,6 @@ import {
   formatModuleLabel,
   listModulesForClass,
 } from '../utils/sessionKeys'
-
-const STUDENTS_PAGE_SIZE = 25
 
 function countBulkNames(text) {
   return text
@@ -28,12 +36,14 @@ export default function ClassStudentPanel({
   attendance,
   moduleFilter,
   onModuleFilter,
+  lockModuleFilter = false,
   syncing = false,
   onBulkEdit,
   onDeleteRequest,
   addStudent,
   removeStudent,
   importStudentsBulk,
+  onActivityChange,
 }) {
   const [studentInput, setStudentInput] = useState('')
   const [bulkText, setBulkText] = useState('')
@@ -70,19 +80,30 @@ export default function ClassStudentPanel({
     [cls.students],
   )
 
-  const {
-    visibleCount,
-    rootRef: studentScrollRef,
-    sentinelRef: studentSentinelRef,
-    hasMore: hasMoreStudents,
-  } = useScrollLoadMore({
-    total: sortedStudents.length,
-    batchSize: STUDENTS_PAGE_SIZE,
-    resetKey: `${cls.id}-${moduleFilter}`,
-  })
+  const [studentTableRef, studentTableHeight] = useScrollRegionHeight(200)
 
-  const visibleStudents = sortedStudents.slice(0, visibleCount)
   const panelBusy = syncing || addStudentBusy || bulkBusy || Boolean(removingStudentId)
+
+  const studentTableData = useMemo(
+    () =>
+      sortedStudents.map((st) => {
+        const counts = getEffectiveAbsenceCounts(st, filteredAttendance)
+        return {
+          key: st.id,
+          student: st,
+          counts,
+          risk: getOverallAbsenceRisk(counts),
+        }
+      }),
+    [sortedStudents, filteredAttendance],
+  )
+
+  useEffect(() => {
+    onActivityChange?.({
+      processing: panelBusy,
+      draft: Boolean(studentInput.trim()) || Boolean(bulkText.trim()),
+    })
+  }, [panelBusy, studentInput, bulkText, onActivityChange])
 
   async function handleAddStudent(e) {
     e.preventDefault()
@@ -170,6 +191,93 @@ export default function ClassStudentPanel({
     }
   }
 
+  const studentColumns = useMemo(
+    () => [
+      {
+        title: 'Student',
+        key: 'name',
+        ellipsis: true,
+        render: (_, row) => row.student.name,
+      },
+      {
+        title: 'Status',
+        key: 'status',
+        width: 92,
+        render: (_, row) => (
+          <Tag
+            bordered={false}
+            className={`absence-risk-tag absence-risk-tag-${row.risk}`}
+            title={RISK_META[row.risk]?.description}
+          >
+            {RISK_META[row.risk]?.shortLabel ?? row.risk}
+          </Tag>
+        ),
+      },
+      {
+        title: 'Total',
+        key: 'total',
+        width: 64,
+        align: 'center',
+        render: (_, row) => (
+          <Typography.Text strong className="roster-student-total">
+            {row.counts.total}
+          </Typography.Text>
+        ),
+      },
+      {
+        title: 'Streak',
+        key: 'streak',
+        width: 72,
+        align: 'center',
+        render: (_, row) => {
+          const streakClass =
+            row.risk === 'critical'
+              ? 'dashboard-student-days-critical'
+              : row.risk === 'warning'
+                ? 'dashboard-student-days-warning'
+                : row.risk === 'watch'
+                  ? 'dashboard-student-days-watch'
+                  : ''
+
+          return (
+            <span className={`dashboard-student-days ${streakClass}`.trim()}>
+              {row.counts.consecutive}
+            </span>
+          )
+        },
+      },
+      {
+        title: 'Type',
+        key: 'type',
+        width: 80,
+        render: (_, row) =>
+          row.counts.usesManualTotal || row.counts.usesManualConsecutive ? (
+            <Tag color="processing" className="roster-student-type-tag">
+              Manual
+            </Tag>
+          ) : null,
+      },
+      {
+        title: 'Actions',
+        key: 'actions',
+        width: 96,
+        align: 'right',
+        render: (_, row) => (
+          <Button
+            type="link"
+            danger
+            disabled={panelBusy}
+            loading={removingStudentId === row.student.id}
+            onClick={() => requestRemoveStudent(row.student)}
+          >
+            Remove
+          </Button>
+        ),
+      },
+    ],
+    [panelBusy, removingStudentId],
+  )
+
   const overlayLabel = bulkBusy
     ? 'Importing students…'
     : addStudentBusy
@@ -188,15 +296,21 @@ export default function ClassStudentPanel({
             options={classModules}
             value={moduleFilter}
             onChange={onModuleFilter}
-            allowEmpty
+            allowEmpty={!lockModuleFilter}
             emptyLabel="All modules"
             placeholder={
               classModules.length ? 'Search module…' : 'No modules recorded yet'
             }
-            label="Filter by module"
-            disabled={panelBusy || classModules.length === 0}
+            label={lockModuleFilter ? 'Module / Subject' : 'Filter by Module'}
+            disabled={panelBusy || classModules.length === 0 || lockModuleFilter}
           />
-          {classModules.length > 0 && moduleFilter !== '' && (
+          {lockModuleFilter && moduleFilter !== '' && (
+            <p className="class-detail-scope muted small">
+              Browsing <strong>{activeModuleLabel}</strong> — switch to All classes to change
+              module per class.
+            </p>
+          )}
+          {!lockModuleFilter && classModules.length > 0 && moduleFilter !== '' && (
             <p className="class-detail-scope muted small">
               Showing absence counts for <strong>{activeModuleLabel}</strong> only.
             </p>
@@ -204,124 +318,92 @@ export default function ClassStudentPanel({
         </div>
 
         <div className="class-panel-actions">
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            disabled={panelBusy}
-            onClick={onBulkEdit}
-          >
-            Bulk edit this class
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm btn-danger-text"
-            disabled={panelBusy}
-            onClick={onDeleteRequest}
-          >
-            Delete class
-          </button>
+          <Button disabled={panelBusy} onClick={onBulkEdit}>
+            Bulk Edit This Class
+          </Button>
+          <Button type="link" danger disabled={panelBusy} onClick={onDeleteRequest}>
+            Delete Class
+          </Button>
         </div>
 
-        <form className="inline-form" onSubmit={handleAddStudent}>
-          <input
-            type="text"
+        <form className="inline-form antd-inline-form" onSubmit={handleAddStudent}>
+          <Input
             placeholder="Student name"
             value={studentInput}
             disabled={panelBusy}
             onChange={(e) => setStudentInput(e.target.value)}
           />
-          <button type="submit" className="btn btn-secondary" disabled={panelBusy}>
-            {addStudentBusy ? 'Adding…' : 'Add student'}
-          </button>
+          <Button type="default" htmlType="submit" disabled={panelBusy} loading={addStudentBusy}>
+            Add Student
+          </Button>
         </form>
 
-        <details className="bulk-import">
-          <summary>Bulk add names</summary>
-          <textarea
-            placeholder="One name per line, or separated by commas"
-            rows={4}
-            value={bulkText}
-            disabled={panelBusy}
-            onChange={(e) => {
-              setBulkText(e.target.value)
-              if (bulkMessage || bulkError) {
-                setBulkMessage('')
-                setBulkError('')
-              }
-            }}
-          />
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={requestBulkImport}
-            disabled={panelBusy}
-          >
-            {bulkBusy ? 'Importing…' : 'Import'}
-          </button>
-          {bulkMessage && (
-            <p className="auth-message" role="status">
-              {bulkMessage}
-            </p>
-          )}
-          {bulkError && (
-            <p className="auth-error" role="alert">
-              {bulkError}
-            </p>
-          )}
-        </details>
+        <Collapse
+          className="bulk-import-collapse"
+          items={[
+            {
+              key: 'bulk',
+              label: 'Bulk Add Names',
+              children: (
+                <>
+                  <Input.TextArea
+                    placeholder="One name per line, or separated by commas"
+                    rows={4}
+                    value={bulkText}
+                    disabled={panelBusy}
+                    onChange={(e) => {
+                      setBulkText(e.target.value)
+                      if (bulkMessage || bulkError) {
+                        setBulkMessage('')
+                        setBulkError('')
+                      }
+                    }}
+                  />
+                  <Button
+                    type="default"
+                    style={{ marginTop: '0.5rem' }}
+                    onClick={requestBulkImport}
+                    disabled={panelBusy}
+                    loading={bulkBusy}
+                  >
+                    Import
+                  </Button>
+                  {bulkMessage && <Alert type="success" showIcon message={bulkMessage} style={{ marginTop: '0.5rem' }} />}
+                  {bulkError && <Alert type="error" showIcon message={bulkError} style={{ marginTop: '0.5rem' }} />}
+                </>
+              ),
+            },
+          ]}
+        />
 
         {removedStudents.length > 0 && (
-          <div className="undo-stack">
+          <Space direction="vertical" style={{ width: '100%', marginBottom: '0.5rem' }}>
             {removedStudents.map((r) => (
-              <div key={r.student.id} className="undo-toast">
-                <span>Removed {r.student.name}</span>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  disabled={panelBusy}
-                  onClick={() => handleUndo(r)}
-                >
-                  Undo
-                </button>
-              </div>
+              <Alert
+                key={r.student.id}
+                type="info"
+                showIcon
+                message={`Removed ${r.student.name}`}
+                action={
+                  <Button size="small" disabled={panelBusy} onClick={() => handleUndo(r)}>
+                    Undo
+                  </Button>
+                }
+              />
             ))}
-          </div>
+          </Space>
         )}
 
         {sortedStudents.length === 0 ? (
-          <p className="muted">No students in this class.</p>
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No students in this class." />
         ) : (
-          <div className="scroll-panel student-list-scroll" ref={studentScrollRef}>
-            <ul className="student-list student-list-inset">
-              {visibleStudents.map((st) => {
-                const counts = getEffectiveAbsenceCounts(st, filteredAttendance)
-                const removing = removingStudentId === st.id
-
-                return (
-                  <li key={st.id} className="student-list-item">
-                    <div className="student-list-main">
-                      <span className="student-name-text">{st.name}</span>
-                    </div>
-                    <div className="student-list-aside">
-                      <AbsenceCountBadge counts={counts} />
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm btn-danger-text"
-                        disabled={panelBusy}
-                        onClick={() => requestRemoveStudent(st)}
-                        aria-label={`Remove ${st.name}`}
-                      >
-                        {removing ? 'Removing…' : 'Remove'}
-                      </button>
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
-            <ScrollSentinel
-              sentinelRef={studentSentinelRef}
-              hasMore={hasMoreStudents}
-              label="Loading more students…"
+          <div className="table-scroll-region student-list-scroll" ref={studentTableRef}>
+            <Table
+              size="small"
+              pagination={{ pageSize: 25, showSizeChanger: false, hideOnSinglePage: true }}
+              scroll={{ y: studentTableHeight }}
+              dataSource={studentTableData}
+              columns={studentColumns}
             />
           </div>
         )}
@@ -352,7 +434,7 @@ export default function ClassStudentPanel({
         <ConfirmDialog
           open={addConfirmOpen}
           title="Add this student?"
-          confirmLabel="Add student"
+          confirmLabel="Add Student"
           cancelLabel="Cancel"
           busy={addStudentBusy}
           onCancel={() => {

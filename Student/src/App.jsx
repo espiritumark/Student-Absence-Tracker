@@ -1,18 +1,40 @@
-import { useState } from 'react'
+import { Alert, Layout, Tabs, Typography } from 'antd'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import AttendanceImport from './components/AttendanceImport'
 import AttendanceSheet from './components/AttendanceSheet'
 import AuthPanel from './components/AuthPanel'
 import ClassManager from './components/ClassManager'
 import Dashboard from './components/Dashboard'
 import LoadingScreen from './components/LoadingScreen'
+import ReportingPanel from './components/ReportingPanel'
+import TabLabel from './components/TabLabel'
 import { useAuth } from './contexts/AuthContext'
+import { useReportedViolations } from './hooks/useReportedViolations'
+import { pruneReportingQueue, useReportingQueue } from './hooks/useReportingQueue'
 import { useStore } from './hooks/useStore'
-import { getAllAlerts } from './utils/alerts'
-import { getAllStudentAbsenceSummaries } from './utils/attendanceStats'
 import { isOcrRunning } from './utils/ocrSession'
+import { buildReportCandidates, splitReportingWorkflow } from './utils/reportingQueue'
+
+const { Header, Content, Footer } = Layout
 
 function AppContent() {
   const [tab, setTab] = useState('import')
+  const [classesFocus, setClassesFocus] = useState(null)
+  const [reportingFocusKey, setReportingFocusKey] = useState(null)
+  const [tabActivity, setTabActivity] = useState({})
+
+  const handleTabActivityChange = useCallback((tabId, activity) => {
+    setTabActivity((prev) => {
+      if (activity == null) {
+        if (!(tabId in prev)) return prev
+        const next = { ...prev }
+        delete next[tabId]
+        return next
+      }
+      if (prev[tabId] === activity) return prev
+      return { ...prev, [tabId]: activity }
+    })
+  }, [])
 
   function switchTab(nextTab) {
     if (nextTab !== tab) {
@@ -21,137 +43,225 @@ function AppContent() {
     setTab(nextTab)
   }
 
+  function openInClasses(focus) {
+    setClassesFocus(focus)
+    switchTab('classes')
+  }
+
   const { user, loading: authLoading, cloudEnabled } = useAuth()
   const store = useStore()
+  const reportsUserKey = user?.id || 'local'
+  const { reportedViolations, markStudentReported, clearStudentReported } =
+    useReportedViolations(reportsUserKey)
+  const {
+    reportingQueue,
+    queueStudentByKey,
+    dequeueStudent,
+    replaceReportingQueue,
+  } = useReportingQueue(reportsUserKey)
 
-  const alertCount = getAllAlerts(store.classes, store.attendance).length
-  const trackedCount = getAllStudentAbsenceSummaries(store.classes, store.attendance).length
+  const reportWorkflow = useMemo(() => {
+    const candidates = buildReportCandidates(store.classes, store.attendance)
+    return splitReportingWorkflow(candidates, reportedViolations, reportingQueue)
+  }, [store.classes, store.attendance, reportedViolations, reportingQueue])
+
+  useEffect(() => {
+    const candidates = buildReportCandidates(store.classes, store.attendance)
+    const validKeys = new Set(candidates.map((row) => row.key))
+    const pruned = pruneReportingQueue(reportingQueue, validKeys, reportedViolations)
+    if (pruned !== reportingQueue) {
+      replaceReportingQueue(pruned)
+    }
+  }, [store.classes, store.attendance, reportedViolations, reportingQueue, replaceReportingQueue])
+
+  function openReporting(studentKey = null) {
+    if (studentKey) {
+      queueStudentByKey(studentKey)
+    }
+    setReportingFocusKey(studentKey)
+    switchTab('reporting')
+  }
+
+  function handleMarkStudentReported(classId, studentId, meta) {
+    markStudentReported(classId, studentId, meta)
+    dequeueStudent(classId, studentId)
+  }
+
+  const dashboardReportAlert = reportWorkflow.dashboardPending.length > 0
+  const reportingTabAlert = reportWorkflow.reportingPending.length > 0
 
   const TABS = [
     { id: 'import', label: 'Record Attendance' },
-    {
-      id: 'dashboard',
-      label: 'Dashboard',
-      badge: alertCount || trackedCount,
-    },
+    { id: 'dashboard', label: 'Dashboard' },
+    { id: 'reporting', label: 'Reporting' },
+    { id: 'classes', label: 'Classes & Rosters' },
     { id: 'attendance', label: 'Mark Manually' },
-    { id: 'classes', label: 'Classes' },
   ]
+
+  function tabActivityFor(id) {
+    return tabActivity[id] ?? null
+  }
 
   const blockUiForLoading =
     (cloudEnabled && authLoading) || (store.initialLoading && !isOcrRunning())
 
   if (blockUiForLoading) {
     return (
-      <div className="app">
-        <LoadingScreen
-          message={
-            authLoading ? 'Checking sign-in status…' : 'Loading your attendance data…'
-          }
-        />
-      </div>
+      <Layout className="app-layout">
+        <Content className="app-layout-content app-layout-content-centered">
+          <LoadingScreen
+            message={
+              authLoading ? 'Checking sign-in status…' : 'Loading your attendance data…'
+            }
+          />
+        </Content>
+      </Layout>
     )
   }
 
   const showSignInBanner = cloudEnabled && !user
 
   return (
-    <div className="app">
-      <header className="app-header">
+    <Layout className="app-layout">
+      <Header className="app-layout-header">
         <div className="app-header-row">
-          <div>
-            <h1>Student Absence Tracker</h1>
-            <p className="tagline">
-              Import daily attendance from JSON, track absences locally or in the cloud, and
-              get warned about extended absences.
-            </p>
+          <div className="app-header-copy">
+            <Typography.Title level={3} style={{ margin: 0 }}>
+              Student Absence Tracker
+            </Typography.Title>
+            <Typography.Paragraph type="secondary" className="tagline" style={{ marginBottom: 0 }}>
+              Import daily attendance, track absences locally or in the cloud, and get warned about
+              extended absences.
+            </Typography.Paragraph>
           </div>
           <AuthPanel />
         </div>
 
         {showSignInBanner && (
-          <div className="info-banner app-banner">
-            <strong>Sign in</strong> to save attendance to your cloud account across devices.
-            Without signing in, data stays in this browser only and is not uploaded.
-          </div>
+          <Alert
+            type="info"
+            showIcon
+            className="app-banner"
+            message={
+              <>
+                <strong>Sign in</strong> to save attendance to your cloud account across devices.
+                Without signing in, data stays in this browser only.
+              </>
+            }
+          />
         )}
 
         {store.syncError && (
-          <div className="error-banner app-banner banner-dismissible" role="alert">
-            <span>{store.syncError}</span>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm banner-dismiss"
-              onClick={store.clearSyncError}
-              aria-label="Dismiss error"
-            >
-              Dismiss
-            </button>
-          </div>
+          <Alert
+            type="error"
+            showIcon
+            closable
+            className="app-banner"
+            message={store.syncError}
+            onClose={store.clearSyncError}
+          />
         )}
 
         {store.useCloud && (
-          <p className="cloud-badge" aria-label="Cloud sync active">
-            Cloud sync active
-            {store.syncing && <span className="sync-indicator"> · Syncing…</span>}
-          </p>
+          <Typography.Text type="success" className="cloud-sync-line">
+            Cloud Sync Active
+            {store.syncing ? ' · Syncing…' : ''}
+          </Typography.Text>
         )}
-      </header>
+      </Header>
 
-      <nav className="tabs" aria-label="Main sections">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className={`tab ${tab === t.id ? 'tab-active' : ''}`}
-            onClick={() => switchTab(t.id)}
-            aria-current={tab === t.id ? 'page' : undefined}
-          >
-            {t.label}
-            {t.badge > 0 && (
-              <span className="tab-badge" aria-label={`${t.badge} items`}>
-                {t.badge}
-              </span>
-            )}
-          </button>
-        ))}
-      </nav>
+      <Content className="app-layout-content">
+        <Tabs
+          className="app-tabs"
+          activeKey={tab}
+          onChange={switchTab}
+          items={TABS.map((t) => ({
+            key: t.id,
+            label: (
+              <TabLabel
+                label={t.label}
+                activity={tabActivityFor(t.id)}
+                reportAlert={
+                  (t.id === 'dashboard' && dashboardReportAlert) ||
+                  (t.id === 'reporting' && reportingTabAlert)
+                }
+              />
+            ),
+          }))}
+        />
 
-      <main className="tab-panels">
-        <div className="tab-panel" hidden={tab !== 'import'} aria-hidden={tab !== 'import'}>
-          <AttendanceImport
-            importPortalSession={store.importPortalSession}
-            classes={store.classes}
-            attendance={store.attendance}
-            isActive={tab === 'import'}
-            onGoToWarnings={() => switchTab('dashboard')}
-          />
-        </div>
-        <div className="tab-panel" hidden={tab !== 'dashboard'} aria-hidden={tab !== 'dashboard'}>
-          <Dashboard classes={store.classes} attendance={store.attendance} />
-        </div>
-        <div className="tab-panel" hidden={tab !== 'attendance'} aria-hidden={tab !== 'attendance'}>
-          <AttendanceSheet
-            classes={store.classes}
-            attendance={store.attendance}
-            setAttendance={store.setAttendance}
-            setSessionMeta={store.setSessionMeta}
-            syncing={store.syncing}
-          />
-        </div>
-        <div className="tab-panel" hidden={tab !== 'classes'} aria-hidden={tab !== 'classes'}>
-          <ClassManager {...store} />
-        </div>
-      </main>
+        <main className="tab-panels">
+          <div className="tab-panel" hidden={tab !== 'import'} aria-hidden={tab !== 'import'}>
+            <AttendanceImport
+              importPortalSession={store.importPortalSession}
+              classes={store.classes}
+              attendance={store.attendance}
+              isActive={tab === 'import'}
+              onGoToWarnings={() => switchTab('dashboard')}
+              onTabActivityChange={handleTabActivityChange}
+            />
+          </div>
+          <div className="tab-panel" hidden={tab !== 'dashboard'} aria-hidden={tab !== 'dashboard'}>
+            <Dashboard
+              classes={store.classes}
+              attendance={store.attendance}
+              dashboardPendingKeys={reportWorkflow.dashboardPending.map((row) => row.key)}
+              reportingQueuedKeys={reportWorkflow.reportingPending.map((row) => row.key)}
+              onOpenInClasses={openInClasses}
+              onOpenReporting={openReporting}
+            />
+          </div>
+          <div className="tab-panel" hidden={tab !== 'reporting'} aria-hidden={tab !== 'reporting'}>
+            <ReportingPanel
+              classes={store.classes}
+              attendance={store.attendance}
+              reportingPending={reportWorkflow.reportingPending}
+              reported={reportWorkflow.reported}
+              markStudentReported={handleMarkStudentReported}
+              clearStudentReported={clearStudentReported}
+              initialStudentKey={reportingFocusKey}
+              onInitialStudentHandled={() => setReportingFocusKey(null)}
+            />
+          </div>
+          <div className="tab-panel" hidden={tab !== 'classes'} aria-hidden={tab !== 'classes'}>
+            <ClassManager
+              classes={store.classes}
+              attendance={store.attendance}
+              syncing={store.syncing}
+              addClass={store.addClass}
+              removeClass={store.removeClass}
+              addStudent={store.addStudent}
+              removeStudent={store.removeStudent}
+              importStudentsBulk={store.importStudentsBulk}
+              bulkUpdateStudents={store.bulkUpdateStudents}
+              initialFocus={classesFocus}
+              onFocusApplied={() => setClassesFocus(null)}
+              onTabActivityChange={handleTabActivityChange}
+            />
+          </div>
+          <div className="tab-panel" hidden={tab !== 'attendance'} aria-hidden={tab !== 'attendance'}>
+            <AttendanceSheet
+              classes={store.classes}
+              attendance={store.attendance}
+              setAttendance={store.setAttendance}
+              setSessionMeta={store.setSessionMeta}
+              syncing={store.syncing}
+              onTabActivityChange={handleTabActivityChange}
+            />
+          </div>
+        </main>
+      </Content>
 
-      <footer className="app-footer">
-        {store.useCloud
-          ? 'Signed in — changes save to your cloud account.'
-          : cloudEnabled
-            ? 'Not signed in — data saves in this browser only (not uploaded).'
-            : 'Data saves in this browser only.'}
-      </footer>
-    </div>
+      <Footer className="app-layout-footer">
+        <Typography.Text type="secondary">
+          {store.useCloud
+            ? 'Signed in — changes save to your cloud account.'
+            : cloudEnabled
+              ? 'Not signed in — data saves in this browser only.'
+              : 'Data saves in this browser only.'}
+        </Typography.Text>
+      </Footer>
+    </Layout>
   )
 }
 

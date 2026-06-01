@@ -1,3 +1,5 @@
+import { Spin } from 'antd'
+
 export default function SaveFieldOverlay({
   busy,
   label = 'Saving…',
@@ -5,14 +7,8 @@ export default function SaveFieldOverlay({
   className = '',
 }) {
   return (
-    <div className={`save-field-overlay-wrap ${busy ? 'is-saving' : ''} ${className}`.trim()}>
+    <Spin spinning={busy} tip={label} wrapperClassName={`save-field-spin-wrap ${className}`.trim()}>
       <div className="save-field-overlay-content">{children}</div>
-      {busy && (
-        <div className="save-field-overlay" role="status" aria-live="polite" aria-busy="true">
-          <div className="save-field-spinner" aria-hidden="true" />
-          <span>{label}</span>
-        </div>
-      )}
-    </div>
+    </Spin>
   )
 }

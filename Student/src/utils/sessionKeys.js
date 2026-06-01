@@ -90,6 +90,38 @@ export function filterAttendanceByModule(classAttendance, moduleFilter) {
   return filtered
 }
 
+/** All modules recorded across classes, with which class IDs use each one. */
+export function listModulesAcrossClasses(classes, attendance) {
+  const moduleMap = new Map()
+
+  for (const cls of classes || []) {
+    const classAttendance = attendance?.[cls.id] || {}
+    for (const { value, label } of listModulesForClass(classAttendance)) {
+      if (!value) continue
+      const existing = moduleMap.get(value)
+      if (existing) {
+        existing.classIds.add(cls.id)
+      } else {
+        moduleMap.set(value, { value, label, classIds: new Set([cls.id]) })
+      }
+    }
+  }
+
+  return [...moduleMap.values()]
+    .sort((a, b) => a.label.localeCompare(b.label))
+    .map(({ value, label, classIds }) => ({
+      value,
+      label,
+      classIds: [...classIds].sort((a, b) => a.localeCompare(b)),
+    }))
+}
+
+export function classHasModule(classAttendance, moduleFilter) {
+  if (!moduleFilter) return true
+  const target = normalizeModuleKey(moduleFilter)
+  return listModulesForClass(classAttendance).some((m) => m.value === target)
+}
+
 export function listAbsentModulesForStudent(classAttendance, studentId) {
   const modules = new Set()
 

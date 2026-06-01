@@ -1,6 +1,28 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  Alert,
+  Button,
+  Checkbox,
+  DatePicker,
+  Empty,
+  Input,
+  InputNumber,
+  Progress,
+  Radio,
+  Result,
+  Row,
+  Col,
+  Space,
+  Table,
+  Tag,
+  Tabs,
+  Typography,
+  Upload,
+} from 'antd'
+import dayjs from 'dayjs'
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react'
 import { useAutoDismiss } from '../hooks/useAutoDismiss'
-import { useScrollLoadMore } from '../hooks/useScrollLoadMore'
+import { useReportTabActivity } from '../hooks/useReportTabActivity'
+import { useScrollRegionHeight } from '../hooks/useScrollRegionHeight'
 import { formatClassLabel } from '../utils/classFormat'
 import { dateKey, formatDateLabel } from '../utils/dates'
 import {
@@ -18,8 +40,8 @@ import { buildPortalJson, parseAttendanceJson } from '../utils/parseAttendanceJs
 import { fileToDataUrl, isCloudOcrConfigured, isRoboflowCheckboxConfigured } from '../utils/parseScreenshot'
 import ConfirmDialog from './ConfirmDialog'
 import ConfirmOverwriteModal from './ConfirmOverwriteModal'
+import BackButton from './BackButton'
 import SaveFieldOverlay from './SaveFieldOverlay'
-import ScrollSentinel from './ScrollSentinel'
 
 const emptyMeta = {
   intake: '',
@@ -42,41 +64,27 @@ function OcrSpinner({ progress, stageLabel, elapsedSeconds = 0, progressStalled 
   const pct = Math.round((progress ?? 0) * 100)
   return (
     <div className="ocr-spinner" aria-live="polite">
-      <div className="ocr-spinner-icon">
-        <svg viewBox="0 0 44 44" aria-hidden="true">
-          <circle cx="22" cy="22" r="18" fill="none" stroke="var(--border)" strokeWidth="4" />
-          <circle
-            cx="22" cy="22" r="18" fill="none"
-            stroke="var(--primary)" strokeWidth="4"
-            strokeDasharray={`${2 * Math.PI * 18}`}
-            strokeDashoffset={`${2 * Math.PI * 18 * (1 - (progress ?? 0))}`}
-            strokeLinecap="round"
-            transform="rotate(-90 22 22)"
-          />
-        </svg>
-      </div>
+      <Progress type="circle" percent={pct} size={88} strokeColor="var(--primary)" />
       <div className="ocr-spinner-text">
-        <strong>{stageLabel || 'Reading screenshot…'}</strong>
-        <span>
+        <Typography.Text strong>{stageLabel || 'Reading screenshot…'}</Typography.Text>
+        <Typography.Text type="secondary" style={{ display: 'block' }}>
           {pct}% complete · {formatElapsed(elapsedSeconds)} elapsed
-        </span>
-        <div className="ocr-progress-bar" aria-hidden="true">
-          <div className="ocr-progress-fill" style={{ width: `${pct}%` }} />
-        </div>
+        </Typography.Text>
+        <Progress percent={pct} showInfo={false} style={{ marginTop: 8 }} />
         {pct < 62 && (
-          <span className="ocr-progress-hint">
+          <Typography.Text type="secondary" style={{ display: 'block', fontSize: '0.85rem' }}>
             First run downloads OCR files — this can take about a minute.
-          </span>
+          </Typography.Text>
         )}
         {progressStalled && (
-          <span className="ocr-progress-hint">
+          <Typography.Text type="warning" style={{ display: 'block', fontSize: '0.85rem' }}>
             Still working — add a cloud OCR key in .env for much faster scans.
-          </span>
+          </Typography.Text>
         )}
         {onCancel && (
-          <button type="button" className="btn btn-secondary btn-sm ocr-cancel-btn" onClick={onCancel}>
+          <Button size="small" style={{ marginTop: 8 }} onClick={onCancel}>
             Cancel scan
-          </button>
+          </Button>
         )}
       </div>
     </div>
@@ -92,37 +100,39 @@ function SaveSuccess({
   onImportAnother,
 }) {
   return (
-    <div className="save-success">
-      <div className="save-success-icon" aria-hidden="true">
-        ✓
-      </div>
-      <h2>Attendance saved</h2>
-      <p>
-        <strong>{formatDateLabel(meta.date)}</strong>
-        {classLabel && <> — {classLabel}</>}
-      </p>
-      <p className="save-success-counts">
-        {savedCount.total} students ·{' '}
-        <span className={savedCount.absent > 0 ? 'absent-highlight' : ''}>
-          {savedCount.absent} absent
-        </span>
-      </p>
-      {resetCountdown > 0 && (
-        <p className="save-success-reset muted small" role="status">
-          Ready for the next import in {resetCountdown}s — or use a button below.
-        </p>
-      )}
-      <div className="save-success-actions">
-        {savedCount.absent > 0 && (
-          <button type="button" className="btn btn-primary" onClick={onGoToWarnings}>
-            View Dashboard →
-          </button>
-        )}
-        <button type="button" className="btn btn-secondary" onClick={onImportAnother}>
-          Import another now
-        </button>
-      </div>
-    </div>
+    <Result
+      status="success"
+      title="Attendance saved"
+      subTitle={
+        <>
+          <strong>{formatDateLabel(meta.date)}</strong>
+          {classLabel && <> — {classLabel}</>}
+        </>
+      }
+      extra={
+        <div className="import-save-success-extra">
+          <Typography.Paragraph style={{ marginBottom: 0 }}>
+            {savedCount.total} students ·{' '}
+            <Typography.Text type={savedCount.absent > 0 ? 'danger' : undefined} strong>
+              {savedCount.absent} absent
+            </Typography.Text>
+          </Typography.Paragraph>
+          {resetCountdown > 0 && (
+            <Typography.Text type="secondary" className="import-save-success-reset">
+              Ready for the next import in {resetCountdown}s — or use a button below.
+            </Typography.Text>
+          )}
+          <Space wrap className="import-save-success-actions">
+            {savedCount.absent > 0 && (
+              <Button type="primary" onClick={onGoToWarnings}>
+                View Dashboard
+              </Button>
+            )}
+            <Button onClick={onImportAnother}>Import another now</Button>
+          </Space>
+        </div>
+      }
+    />
   )
 }
 
@@ -134,6 +144,7 @@ export default function AttendanceImport({
   attendance,
   isActive = true,
   onGoToWarnings,
+  onTabActivityChange,
 }) {
   const [importMode, setImportMode] = useState('json')
   const [jsonText, setJsonText] = useState('')
@@ -163,6 +174,7 @@ export default function AttendanceImport({
   const [parseMessage, setParseMessage] = useState('')
   const [jsonExportMessage, setJsonExportMessage] = useState('')
   const [resetCountdown, setResetCountdown] = useState(0)
+  const [importView, setImportView] = useState('input')
   const savedRef = useRef(false)
 
   const hasUnsavedDraft = useCallback(() => {
@@ -173,6 +185,15 @@ export default function AttendanceImport({
       processing
     )
   }, [students.length, jsonText, pendingScreenshot, processing])
+
+  const resetParsedReview = useCallback(() => {
+    setStudents([])
+    setMeta(emptyMeta)
+    setParseMessage('')
+    setJsonExportMessage('')
+    setError('')
+    setImportView('input')
+  }, [])
 
   const resetToFreshForm = useCallback(() => {
     savedRef.current = false
@@ -187,6 +208,7 @@ export default function AttendanceImport({
     setParseMessage('')
     setJsonExportMessage('')
     setImportMode('json')
+    setImportView('input')
     setConfirmOpen(false)
     setPendingImport(null)
     setConfirmSummary(null)
@@ -248,6 +270,7 @@ export default function AttendanceImport({
     setParseMessage(
       `Parsed ${parsed.students.length} student${parsed.students.length === 1 ? '' : 's'}. Review details below, then save.`,
     )
+    setImportView('review')
   }, [])
 
   useEffect(() => {
@@ -363,6 +386,7 @@ export default function AttendanceImport({
       setError(e.message || 'Failed to parse JSON.')
       setStudents([])
       setParseMessage('')
+      setImportView('input')
     }
   }
 
@@ -535,22 +559,22 @@ export default function AttendanceImport({
         })
       : meta.qualification || ''
 
-  const {
-    visibleCount: visibleStudentCount,
-    rootRef: studentScrollRef,
-    sentinelRef: studentSentinelRef,
-    hasMore: hasMoreStudents,
-  } = useScrollLoadMore({
-    total: students.length,
-    batchSize: 30,
-    resetKey: `${meta.date}-${students.length}`,
-  })
+  const [studentTableRef, studentTableHeight] = useScrollRegionHeight(220)
+  const showReview = importView === 'review' && students.length > 0 && !processing
+  const showImportInput = !showReview
+  const backToInputLabel = importMode === 'json' ? 'Back to JSON' : 'Back to Screenshot'
 
-  const visibleImportStudents = students.slice(0, visibleStudentCount)
+  const importTabActivity = useMemo(() => {
+    if (saving || processing) return 'processing'
+    if (students.length > 0 || jsonText.trim() || pendingScreenshot) return 'draft'
+    return null
+  }, [saving, processing, students.length, jsonText, pendingScreenshot])
+
+  useReportTabActivity('import', importTabActivity, onTabActivityChange)
 
   if (saved) {
     return (
-      <section className="panel portal-panel">
+      <section className="panel portal-panel workspace-panel">
         <SaveSuccess
           meta={meta}
           classLabel={classLabel}
@@ -564,93 +588,110 @@ export default function AttendanceImport({
   }
 
   return (
-    <section className="panel portal-panel">
+    <section className="panel portal-panel workspace-panel">
+      {showReview && (
+        <div className="panel-nav-bar">
+          <BackButton onClick={resetParsedReview}>{backToInputLabel}</BackButton>
+        </div>
+      )}
+
       <header className="panel-header">
-        <h2>Record attendance</h2>
-        <p className="panel-desc">
+        <Typography.Title level={4} style={{ margin: 0 }}>
+          Record Attendance
+        </Typography.Title>
+        <Typography.Paragraph type="secondary" className="panel-desc" style={{ marginBottom: 0 }}>
           Upload or paste a screenshot, preview it, then scan. JSON import is instant if your
           portal exports a file.
-          {isCloudOcrConfigured() && (
-            <> Cloud OCR is enabled for fast scans (usually a few seconds).</>
-          )}
-        </p>
+          {isCloudOcrConfigured() && <> Cloud OCR is enabled for fast scans.</>}
+        </Typography.Paragraph>
       </header>
 
-      <div className="import-mode-tabs" role="tablist" aria-label="Import method">
-        <button
-          type="button"
-          role="tab"
-          className={`import-mode-tab ${importMode === 'json' ? 'import-mode-active' : ''}`}
-          aria-selected={importMode === 'json'}
-          onClick={() => setImportMode('json')}
-        >
-          JSON
-        </button>
-        <button
-          type="button"
-          role="tab"
-          className={`import-mode-tab ${importMode === 'screenshot' ? 'import-mode-active' : ''}`}
-          aria-selected={importMode === 'screenshot'}
-          onClick={() => setImportMode('screenshot')}
-        >
-          Screenshot
-        </button>
-      </div>
+      {showReview && parseMessage && (
+        <Alert
+          type="success"
+          showIcon
+          message={parseMessage}
+          style={{ flexShrink: 0, marginBottom: '0.5rem' }}
+        />
+      )}
+
+      <div className="import-workspace">
+      {showImportInput && (
+      <div className="import-mode-region">
+      <Tabs
+        activeKey={importMode}
+        onChange={(mode) => {
+          if (mode === importMode) return
+          resetParsedReview()
+          setImportMode(mode)
+        }}
+        items={[
+          { key: 'json', label: 'JSON' },
+          { key: 'screenshot', label: 'Screenshot' },
+        ]}
+        style={{ marginBottom: '0.75rem' }}
+      />
 
       {importMode === 'json' ? (
         <div className="json-import-panel">
-          <p className="muted small">
+          <Typography.Paragraph type="secondary" className="json-import-hint">
             Paste JSON exported from your attendance platform, or upload a <code>.json</code> file.
-          </p>
-          <textarea
-            className="json-textarea"
-            rows={12}
-            placeholder={'Paste JSON here…\n\nExpected keys: session_details, attendance[]'}
-            value={jsonText}
-            onChange={(e) => {
-              setJsonText(e.target.value)
-              if (parseMessage) setParseMessage('')
-            }}
-            spellCheck={false}
-          />
-          <div className="json-actions">
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={handleParseJson}
-              disabled={!jsonText.trim()}
-            >
-              Parse JSON
-            </button>
-            <label className="btn btn-secondary file-label">
-              Upload .json
-              <input
-                type="file"
-                accept=".json,application/json"
-                className="sr-only"
-                onChange={(e) => {
-                  handleJsonFile(e.target.files?.[0])
-                  e.target.value = ''
-                }}
-              />
-            </label>
+          </Typography.Paragraph>
+          <div className="json-import-textarea-wrap">
+            <Input.TextArea
+              className="json-import-textarea"
+              placeholder={'Paste JSON here…\n\nExpected keys: session_details, attendance[]'}
+              value={jsonText}
+              onChange={(e) => {
+                setJsonText(e.target.value)
+                if (parseMessage) setParseMessage('')
+              }}
+              spellCheck={false}
+            />
           </div>
+          <Space wrap className="json-import-actions">
+            <Button type="primary" onClick={handleParseJson} disabled={!jsonText.trim()}>
+              Parse JSON
+            </Button>
+            <Upload
+              accept=".json,application/json"
+              showUploadList={false}
+              beforeUpload={(file) => {
+                handleJsonFile(file)
+                return false
+              }}
+            >
+              <Button>Upload .json</Button>
+            </Upload>
+          </Space>
         </div>
       ) : (
         <>
           {isCloudOcrConfigured() ? (
-            <p className="auth-message cloud-ocr-banner" role="status">
-              Cloud OCR active — fast and full scans use OCR.space.
-              {isRoboflowCheckboxConfigured()
-                ? ' Full scan uses Roboflow AI for checkbox detection.'
-                : ' Full scan uses local pixel detection for checkboxes; add VITE_ROBOFLOW_API_KEY for better accuracy.'}
-            </p>
+            <Alert
+              type="success"
+              showIcon
+              message="Cloud OCR active — scans use OCR.space Engine 3 (table + checkbox text)."
+              description={
+                isRoboflowCheckboxConfigured()
+                  ? 'Full scan falls back to Roboflow AI when checkbox symbols are missing.'
+                  : 'Full scan falls back to layout detection when checkbox symbols are missing; add VITE_ROBOFLOW_API_KEY for better accuracy.'
+              }
+              style={{ marginBottom: '0.65rem' }}
+            />
           ) : (
-            <p className="info-banner">
-              For faster scans, add a free <strong>OCR.space</strong> API key to your{' '}
-              <code>.env</code> as <code>VITE_OCR_SPACE_API_KEY</code>. Without it, scanning runs
-              slowly in your browser.
-            </p>
+            <Alert
+              type="info"
+              showIcon
+              message={
+                <>
+                  For faster scans, add a free <strong>OCR.space</strong> API key to your{' '}
+                  <code>.env</code> as <code>VITE_OCR_SPACE_API_KEY</code>. Without it, scanning
+                  runs slowly in your browser.
+                </>
+              }
+              style={{ marginBottom: '0.65rem' }}
+            />
           )}
 
           {!processing ? (
@@ -694,36 +735,23 @@ export default function AttendanceImport({
                 )}
               </div>
 
-              <div className="json-actions screenshot-actions">
-                <label className="btn btn-secondary file-label">
-                  Choose image
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="sr-only"
-                    onChange={(e) => {
-                      stageScreenshot(e.target.files?.[0])
-                      e.target.value = ''
-                    }}
-                  />
-                </label>
-                <button type="button" className="btn btn-secondary" onClick={pasteScreenshotFromClipboard}>
-                  Paste screenshot
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={!pendingScreenshot}
-                  onClick={handleScanScreenshot}
+              <Space wrap style={{ marginTop: '0.65rem' }}>
+                <Upload
+                  accept="image/*"
+                  showUploadList={false}
+                  beforeUpload={(file) => {
+                    stageScreenshot(file)
+                    return false
+                  }}
                 >
+                  <Button>Choose image</Button>
+                </Upload>
+                <Button onClick={pasteScreenshotFromClipboard}>Paste screenshot</Button>
+                <Button type="primary" disabled={!pendingScreenshot} onClick={handleScanScreenshot}>
                   Scan screenshot
-                </button>
-                {pendingScreenshot && (
-                  <button type="button" className="btn btn-ghost" onClick={clearPendingScreenshot}>
-                    Clear
-                  </button>
-                )}
-              </div>
+                </Button>
+                {pendingScreenshot && <Button type="link" onClick={clearPendingScreenshot}>Clear</Button>}
+              </Space>
             </>
           ) : (
             <OcrSpinner
@@ -735,194 +763,202 @@ export default function AttendanceImport({
             />
           )}
           <div className="import-options">
-            <fieldset className="scan-mode-fieldset">
-              <legend className="sr-only">Screenshot scan mode</legend>
-              <label className="notice-inline">
-                <input
-                  type="radio"
-                  name="scanMode"
-                  checked={scanMode === 'full'}
-                  onChange={() => setScanMode('full')}
-                />
-                Full — detect present/absent from checkboxes
-                {isCloudOcrConfigured() && ' (recommended)'}
-              </label>
-              <label className="notice-inline">
-                <input
-                  type="radio"
-                  name="scanMode"
-                  checked={scanMode === 'fast'}
-                  onChange={() => setScanMode('fast')}
-                />
-                Fast — names only; mark absences yourself
-              </label>
-            </fieldset>
+            <Radio.Group value={scanMode} onChange={(e) => setScanMode(e.target.value)}>
+              <Space direction="vertical">
+                <Radio value="full">
+                  Full — detect present/absent from checkboxes
+                  {isCloudOcrConfigured() && ' (recommended)'}
+                </Radio>
+                <Radio value="fast">Fast — names only; mark absences yourself</Radio>
+              </Space>
+            </Radio.Group>
             {scanMode === 'full' && (
-              <label className="notice-inline">
-                <input
-                  type="checkbox"
-                  checked={highAccuracy}
-                  onChange={(e) => setHighAccuracy(e.target.checked)}
-                />
+              <Checkbox
+                checked={highAccuracy}
+                onChange={(e) => setHighAccuracy(e.target.checked)}
+                style={{ marginTop: '0.5rem' }}
+              >
                 High resolution checkbox scan (slower)
-              </label>
+              </Checkbox>
             )}
           </div>
         </>
       )}
-
-      {error && <p className="error-banner" role="alert">{error}</p>}
-      {parseMessage && !error && (
-        <p className="auth-message" role="status">
-          {parseMessage}
-        </p>
+      </div>
       )}
 
-      {students.length > 0 && !processing && (
+      {error && showImportInput && (
+        <Alert type="error" showIcon message={error} style={{ marginTop: '0.5rem', flexShrink: 0 }} />
+      )}
+      {parseMessage && !error && showImportInput && (
+        <Alert type="success" showIcon message={parseMessage} style={{ marginTop: '0.5rem', flexShrink: 0 }} />
+      )}
+
+      {showReview && (
         <>
           {previewUrl && (
-            <figure className="screenshot-preview">
+            <figure className="screenshot-preview screenshot-preview-compact">
               <img src={previewUrl} alt="Screenshot preview" />
             </figure>
           )}
 
-          <SaveFieldOverlay busy={saving} label="Saving attendance…">
-            <form className="portal-form" onSubmit={handleSave}>
-            <fieldset className="portal-form-fields" disabled={saving}>
-            <p className="portal-class-header">
-              Class: <strong>{classLabel || 'Review class details below'}</strong>
-            </p>
+          <SaveFieldOverlay busy={saving} label="Saving attendance…" className="import-review-overlay">
+            <form className="portal-form import-review-form" onSubmit={handleSave}>
+              <fieldset className="portal-form-fields import-review-fields" disabled={saving}>
+                <div className="import-review-toolbar">
+                  <Alert
+                    type="info"
+                    showIcon={false}
+                    message={
+                      <>
+                        Class: <strong>{classLabel || 'Review class details below'}</strong>
+                      </>
+                    }
+                  />
 
-            <div className="portal-meta-grid">
-              <label>
-                Intake
-                <input
-                  type="number"
-                  value={meta.intake}
-                  onChange={(e) => setMeta((m) => ({ ...m, intake: e.target.value }))}
-                />
-              </label>
-              <label>
-                Level
-                <input
-                  type="number"
-                  value={meta.level}
-                  onChange={(e) => setMeta((m) => ({ ...m, level: e.target.value }))}
-                />
-              </label>
-              <label>
-                Group
-                <input
-                  type="number"
-                  value={meta.group}
-                  onChange={(e) => setMeta((m) => ({ ...m, group: e.target.value }))}
-                />
-              </label>
-              <label className="span-2">
-                Qualification / programme
-                <input
-                  type="text"
-                  value={meta.qualification}
-                  onChange={(e) => setMeta((m) => ({ ...m, qualification: e.target.value }))}
-                />
-              </label>
-              <label>
-                Date
-                <input
-                  type="date"
-                  value={meta.date}
-                  onChange={(e) => setMeta((m) => ({ ...m, date: e.target.value }))}
-                />
-              </label>
-              <label className="span-2">
-                Module
-                <input
-                  type="text"
-                  value={meta.module}
-                  onChange={(e) => setMeta((m) => ({ ...m, module: e.target.value }))}
-                />
-              </label>
-              <label>
-                Start time
-                <input
-                  type="text"
-                  value={meta.startTime}
-                  onChange={(e) => setMeta((m) => ({ ...m, startTime: e.target.value }))}
-                />
-              </label>
-              <label>
-                Duration
-                <input
-                  type="text"
-                  value={meta.duration}
-                  onChange={(e) => setMeta((m) => ({ ...m, duration: e.target.value }))}
-                />
-              </label>
-            </div>
+                  <Row gutter={[12, 12]} className="portal-meta-row">
+                    <Col xs={12} sm={8} md={4}>
+                      <Typography.Text className="field-label">Intake</Typography.Text>
+                      <InputNumber
+                        value={meta.intake === '' ? null : Number(meta.intake)}
+                        onChange={(value) => setMeta((m) => ({ ...m, intake: value ?? '' }))}
+                        style={{ width: '100%' }}
+                      />
+                    </Col>
+                    <Col xs={12} sm={8} md={4}>
+                      <Typography.Text className="field-label">Level</Typography.Text>
+                      <InputNumber
+                        value={meta.level === '' ? null : Number(meta.level)}
+                        onChange={(value) => setMeta((m) => ({ ...m, level: value ?? '' }))}
+                        style={{ width: '100%' }}
+                      />
+                    </Col>
+                    <Col xs={12} sm={8} md={4}>
+                      <Typography.Text className="field-label">Group</Typography.Text>
+                      <InputNumber
+                        value={meta.group === '' ? null : Number(meta.group)}
+                        onChange={(value) => setMeta((m) => ({ ...m, group: value ?? '' }))}
+                        style={{ width: '100%' }}
+                      />
+                    </Col>
+                    <Col xs={24} md={12}>
+                      <Typography.Text className="field-label">Qualification / Programme</Typography.Text>
+                      <Input
+                        value={meta.qualification}
+                        onChange={(e) => setMeta((m) => ({ ...m, qualification: e.target.value }))}
+                      />
+                    </Col>
+                    <Col xs={24} sm={12} md={6}>
+                      <Typography.Text className="field-label">Date</Typography.Text>
+                      <DatePicker
+                        value={meta.date ? dayjs(meta.date) : null}
+                        onChange={(value) =>
+                          setMeta((m) => ({
+                            ...m,
+                            date: value ? value.format('YYYY-MM-DD') : dateKey(),
+                          }))
+                        }
+                        style={{ width: '100%' }}
+                      />
+                    </Col>
+                    <Col xs={24} sm={12} md={6}>
+                      <Typography.Text className="field-label">Module</Typography.Text>
+                      <Input
+                        value={meta.module}
+                        onChange={(e) => setMeta((m) => ({ ...m, module: e.target.value }))}
+                      />
+                    </Col>
+                    <Col xs={12} sm={6}>
+                      <Typography.Text className="field-label">Start Time</Typography.Text>
+                      <Input
+                        value={meta.startTime}
+                        onChange={(e) => setMeta((m) => ({ ...m, startTime: e.target.value }))}
+                      />
+                    </Col>
+                    <Col xs={12} sm={6}>
+                      <Typography.Text className="field-label">Duration</Typography.Text>
+                      <Input
+                        value={meta.duration}
+                        onChange={(e) => setMeta((m) => ({ ...m, duration: e.target.value }))}
+                      />
+                    </Col>
+                  </Row>
 
-            <div className="portal-bulk-actions">
-              <button type="button" className="btn btn-primary" onClick={() => setAllPresent(true)}>
-                Check all
-              </button>
-              <button type="button" className="btn btn-secondary" onClick={() => setAllPresent(false)}>
-                Uncheck all
-              </button>
-              <button type="button" className="btn btn-secondary" onClick={handleCopyJson}>
-                Copy as JSON
-              </button>
-              <button type="button" className="btn btn-secondary" onClick={handleDownloadJson}>
-                Download JSON
-              </button>
-              <span className="muted">Checked = present · Unchecked = absent</span>
-            </div>
-            {jsonExportMessage && (
-              <p className="auth-message" role="status">
-                {jsonExportMessage}
-              </p>
-            )}
+                  <Space wrap className="import-review-actions">
+                    <Button type="primary" onClick={() => setAllPresent(true)}>
+                      Check All
+                    </Button>
+                    <Button onClick={() => setAllPresent(false)}>Uncheck All</Button>
+                    <Button onClick={handleCopyJson}>Copy as JSON</Button>
+                    <Button onClick={handleDownloadJson}>Download JSON</Button>
+                  </Space>
+                  <Typography.Text type="secondary" className="import-review-hint">
+                    Checked = present · Unchecked = absent
+                  </Typography.Text>
+                  {jsonExportMessage && (
+                    <Alert type="success" showIcon message={jsonExportMessage} />
+                  )}
+                </div>
 
-            {students.length > 30 && (
-              <p className="list-scroll-hint muted small">
-                {students.length} students · scroll the list below for more
-              </p>
-            )}
+                <div className="table-scroll-region portal-student-list-scroll" ref={studentTableRef}>
+                  <Table
+                    size="small"
+                    pagination={{ pageSize: 30, showSizeChanger: false, hideOnSinglePage: true }}
+                    scroll={{ y: studentTableHeight }}
+                    dataSource={students.map((row) => ({ key: `${row.index}-${row.name}`, ...row }))}
+                    columns={[
+                      {
+                        title: '#',
+                        dataIndex: 'index',
+                        width: 48,
+                      },
+                      {
+                        title: 'Present',
+                        key: 'present',
+                        width: 90,
+                        render: (_, row) => (
+                          <Checkbox
+                            checked={row.present}
+                            onChange={() => togglePresent(row.name)}
+                          />
+                        ),
+                      },
+                      {
+                        title: 'Student',
+                        dataIndex: 'name',
+                        ellipsis: true,
+                      },
+                      {
+                        title: 'Status',
+                        key: 'status',
+                        width: 90,
+                        render: (_, row) =>
+                          !row.present ? (
+                            <Tag color="error">Absent</Tag>
+                          ) : (
+                            <Tag color="success">Present</Tag>
+                          ),
+                      },
+                    ]}
+                  />
+                </div>
 
-            <div className="scroll-panel portal-student-list-scroll" ref={studentScrollRef}>
-              <ol className="portal-student-list portal-student-list-inset">
-                {visibleImportStudents.map((row) => (
-                  <li key={`${row.index}-${row.name}`}>
-                    <span className="row-num">{row.index}</span>
-                    <input
-                      type="checkbox"
-                      checked={row.present}
-                      onChange={() => togglePresent(row.name)}
-                      aria-label={`${row.name} present`}
-                    />
-                    <span className="student-name">{row.name}</span>
-                    {!row.present && <span className="absent-tag">Absent</span>}
-                  </li>
-                ))}
-              </ol>
-              <ScrollSentinel
-                sentinelRef={studentSentinelRef}
-                hasMore={hasMoreStudents}
-                label="Loading more students…"
-              />
-            </div>
+                <Typography.Paragraph type="secondary" className="import-review-summary">
+                  {formatDateLabel(meta.date)} · {students.length} students ·{' '}
+                  <Typography.Text strong type="danger">
+                    {students.filter((s) => !s.present).length} absent
+                  </Typography.Text>
+                </Typography.Paragraph>
 
-            <p className="muted summary-line">
-              {formatDateLabel(meta.date)} · {students.length} students ·{' '}
-              <strong>{students.filter((s) => !s.present).length} absent</strong>
-            </p>
-
-            <button type="submit" className="btn btn-primary btn-submit" disabled={saving}>
-              {saving ? 'Saving attendance…' : 'Save daily attendance'}
-            </button>
-            </fieldset>
+                <Button type="primary" htmlType="submit" loading={saving} block>
+                  Save daily attendance
+                </Button>
+              </fieldset>
             </form>
           </SaveFieldOverlay>
         </>
       )}
+      </div>
 
       <ConfirmOverwriteModal
         open={confirmOpen}
@@ -965,7 +1001,7 @@ export default function AttendanceImport({
         onConfirm={handleConfirmSaveImport}
       >
         {confirmSummary && pendingImport && (
-          <p className="modal-lead">
+          <Typography.Paragraph>
             Save attendance for <strong>{confirmSummary.classLabel}</strong>
             {confirmSummary.isNewClass ? ' (new class will be created)' : ''} on{' '}
             <strong>{formatDateLabel(pendingImport.date)}</strong>
@@ -975,11 +1011,9 @@ export default function AttendanceImport({
                 · Module: <strong>{confirmSummary.module}</strong>
               </>
             ) : null}
-            ?{' '}
-            <strong>{pendingImport.students.length}</strong> students,{' '}
-            <strong>{pendingImport.students.filter((s) => !s.present).length}</strong> marked
-            absent.
-          </p>
+            ? <strong>{pendingImport.students.length}</strong> students,{' '}
+            <strong>{pendingImport.students.filter((s) => !s.present).length}</strong> marked absent.
+          </Typography.Paragraph>
         )}
       </ConfirmDialog>
     </section>

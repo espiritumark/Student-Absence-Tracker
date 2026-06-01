@@ -14,6 +14,44 @@ export { isRoboflowCheckboxConfigured } from './roboflowCheckbox'
 const SKIP_LINE =
   /^(class|date|module|start\s*time|duration|check\s*all|uncheck\s*all|submit|present|absent)\b/i
 
+const CHECKBOX_PRESENT = /[☑☒✓✔✅]|\[(x|X)\]/
+const CHECKBOX_ABSENT = /[☐□⬜]|\[ \]/
+
+function stripCheckboxGlyphs(text) {
+  return text
+    .replace(/[☑☒✓✔☐□⬜✅]/g, '')
+    .replace(/\[(x|X| )\]/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+export function parseStudentLineWithCheckbox(text) {
+  const cleaned = text.replace(/\s+/g, ' ').trim()
+  if (!cleaned || SKIP_LINE.test(cleaned)) return null
+
+  let present = null
+  if (CHECKBOX_PRESENT.test(cleaned)) present = true
+  else if (CHECKBOX_ABSENT.test(cleaned)) present = false
+
+  const parsed = parseStudentLine(stripCheckboxGlyphs(cleaned))
+  if (!parsed) return null
+
+  return {
+    ...parsed,
+    present: present ?? true,
+    checkboxDetected: present !== null,
+  }
+}
+
+export function parseStudentsWithCheckboxesFromText(text) {
+  const students = []
+  for (const line of text.split(/\r?\n/)) {
+    const parsed = parseStudentLineWithCheckbox(line)
+    if (parsed) students.push(parsed)
+  }
+  return students
+}
+
 function drawToCanvas(img, { maxW }) {
   const scale = img.width > maxW ? maxW / img.width : 1
   const w = Math.round(img.width * scale)
@@ -356,27 +394,50 @@ export async function parseAttendanceScreenshot(fileOrDataUrl, onProgress, opts)
         ? detectCheckboxesWithRoboflow(dataUrl, onProgress).catch(() => null)
         : Promise.resolve(null)
 
-      const [cloud, roboflowCheckboxes] = await Promise.all([
-        recognizeWithCloudOcr(dataUrl, onProgress, { withOverlay: true }),
+      const [engine3, roboflowCheckboxes] = await Promise.all([
+        recognizeWithCloudOcr(dataUrl, onProgress, { engine: 3, isTable: true }),
         roboflowPromise,
       ])
 
+      const textStudents = parseStudentsWithCheckboxesFromText(engine3.text)
+      const hasCheckboxInText = textStudents.some((s) => s.checkboxDetected)
+
+      if (textStudents.length >= 3 && hasCheckboxInText) {
+        const meta = parseMetadataFromText(engine3.text)
+        return buildFullResult(
+          meta,
+          textStudents.map(({ checkboxDetected: _c, ...student }) => student),
+          engine3.text,
+          dataUrl,
+          { checkboxEngine: 'ocr-space-3', ocrEngine: 'cloud-3' },
+        )
+      }
+
+      const engine2 = await recognizeWithCloudOcr(dataUrl, onProgress, {
+        engine: 2,
+        withOverlay: true,
+      })
+
       const result = await detectStudentsFromLines(
         canvas,
-        cloud.lines,
-        cloud.text,
-        cloud.imageWidth || sourceWidth,
-        cloud.imageHeight || sourceHeight,
+        engine2.lines,
+        engine2.text || engine3.text,
+        engine2.imageWidth || sourceWidth,
+        engine2.imageHeight || sourceHeight,
         onProgress,
         roboflowCheckboxes,
       )
-      return { ...result, previewUrl: resolvePreviewUrl(dataUrl), ocrEngine: 'cloud' }
+      return {
+        ...result,
+        previewUrl: resolvePreviewUrl(dataUrl),
+        ocrEngine: hasCheckboxInText ? 'cloud-3+2' : 'cloud-2',
+      }
     }
 
     reportProgress(onProgress, 'loading image', 1)
-    const cloud = await recognizeWithCloudOcr(dataUrl, onProgress)
+    const cloud = await recognizeWithCloudOcr(dataUrl, onProgress, { engine: 3, isTable: true })
     reportProgress(onProgress, 'detecting attendance', 1)
-    return buildFastResult(cloud.text, dataUrl, { ocrEngine: 'cloud' })
+    return buildFastResult(cloud.text, dataUrl, { ocrEngine: 'cloud-3' })
   }
 
   const { canvas } = await loadImageToCanvas(dataUrl, { maxW })

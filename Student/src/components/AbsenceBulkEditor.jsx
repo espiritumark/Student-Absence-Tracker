@@ -1,13 +1,14 @@
+import { Alert, Button, Checkbox, Empty, InputNumber, Space, Table, Tag, Typography } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { useAutoDismiss } from '../hooks/useAutoDismiss'
-import { useScrollLoadMore } from '../hooks/useScrollLoadMore'
-import { AbsenceCountBadge } from './AbsenceCountBadge'
-import ConfirmDialog from './ConfirmDialog'
-import SaveFieldOverlay from './SaveFieldOverlay'
-import ScrollSentinel from './ScrollSentinel'
-import SearchableSelect from './SearchableSelect'
+import { useScrollRegionHeight } from '../hooks/useScrollRegionHeight'
+import { RISK_META, getOverallAbsenceRisk } from '../utils/absenceRisk'
 import { getEffectiveAbsenceCounts } from '../utils/attendanceStats'
 import { formatClassLabel } from '../utils/classFormat'
+import BackButton from './BackButton'
+import ConfirmDialog from './ConfirmDialog'
+import SaveFieldOverlay from './SaveFieldOverlay'
+import SearchableSelect from './SearchableSelect'
 
 function emptyDraft(student) {
   return {
@@ -44,11 +45,15 @@ export default function AbsenceBulkEditor({
   initialClassId,
   onClose,
   bulkUpdateStudents,
+  restrictToClassIds = null,
+  onActivityChange,
 }) {
   const sortedClasses = useMemo(
     () =>
-      [...classes].sort((a, b) => formatClassLabel(a).localeCompare(formatClassLabel(b))),
-    [classes],
+      [...classes]
+        .filter((c) => !restrictToClassIds || restrictToClassIds.includes(c.id))
+        .sort((a, b) => formatClassLabel(a).localeCompare(formatClassLabel(b))),
+    [classes, restrictToClassIds],
   )
 
   const classOptions = sortedClasses.map((c) => ({
@@ -87,11 +92,19 @@ export default function AbsenceBulkEditor({
           usesManualTotal: previewPatch.manualTotalAbsences != null,
           usesManualConsecutive: previewPatch.manualConsecutiveAbsences != null,
         }
+        const previewRisk = getOverallAbsenceRisk(previewCounts)
+        const hasManualType =
+          previewPatch.manualTotalAbsences != null ||
+          previewPatch.manualConsecutiveAbsences != null ||
+          previewPatch.manualNoPriorNotice
         return {
+          key: student.id,
           student,
           counts,
           draft,
           previewCounts,
+          previewRisk,
+          hasManualType,
           changed: draftChanged(student, draft),
         }
       })
@@ -110,19 +123,11 @@ export default function AbsenceBulkEditor({
       )
 
   const changedCount = students.filter(({ changed }) => changed).length
+  const [tableRegionRef, tableHeight] = useScrollRegionHeight(320)
 
-  const {
-    visibleCount: visibleStudentCount,
-    rootRef: tableScrollRef,
-    sentinelRef: tableSentinelRef,
-    hasMore: hasMoreStudents,
-  } = useScrollLoadMore({
-    total: visibleStudents.length,
-    batchSize: 30,
-    resetKey: `${classId}-${showAll}`,
-  })
-
-  const pagedStudents = visibleStudents.slice(0, visibleStudentCount)
+  useEffect(() => {
+    onActivityChange?.({ busy, draftCount: changedCount })
+  }, [busy, changedCount, onActivityChange])
 
   useAutoDismiss(Boolean(message) && changedCount === 0, () => setMessage(''))
 
@@ -210,36 +215,179 @@ export default function AbsenceBulkEditor({
     }
   }
 
+  const columns = useMemo(
+    () => [
+      {
+        title: 'Student',
+        dataIndex: ['student', 'name'],
+        key: 'name',
+        fixed: 'left',
+        width: 220,
+        ellipsis: true,
+      },
+      {
+        title: 'Status',
+        key: 'status',
+        width: 92,
+        render: (_, record) => (
+          <Tag
+            bordered={false}
+            className={`absence-risk-tag absence-risk-tag-${record.previewRisk}`}
+            title={RISK_META[record.previewRisk]?.description}
+          >
+            {RISK_META[record.previewRisk]?.shortLabel ?? record.previewRisk}
+          </Tag>
+        ),
+      },
+      {
+        title: 'Total',
+        key: 'total',
+        width: 64,
+        align: 'center',
+        render: (_, record) => (
+          <Typography.Text strong className="roster-student-total">
+            {record.previewCounts.total}
+          </Typography.Text>
+        ),
+      },
+      {
+        title: 'Streak',
+        key: 'streak',
+        width: 72,
+        align: 'center',
+        render: (_, record) => {
+          const streakClass =
+            record.previewRisk === 'critical'
+              ? 'dashboard-student-days-critical'
+              : record.previewRisk === 'warning'
+                ? 'dashboard-student-days-warning'
+                : record.previewRisk === 'watch'
+                  ? 'dashboard-student-days-watch'
+                  : ''
+
+          return (
+            <span className={`dashboard-student-days ${streakClass}`.trim()}>
+              {record.previewCounts.consecutive}
+            </span>
+          )
+        },
+      },
+      {
+        title: 'Type',
+        key: 'type',
+        width: 80,
+        render: (_, record) =>
+          record.hasManualType ? (
+            <Tag color="processing" className="roster-student-type-tag">
+              Manual
+            </Tag>
+          ) : null,
+      },
+      {
+        title: 'Recorded',
+        key: 'recorded',
+        width: 88,
+        align: 'center',
+        render: (_, record) => (
+          <Typography.Text type="secondary" className="bulk-recorded-summary">
+            {record.counts.recorded.total}
+            {record.counts.recorded.consecutive > 0
+              ? ` · ${record.counts.recorded.consecutive}d`
+              : ''}
+          </Typography.Text>
+        ),
+      },
+      {
+        title: 'Manual Total',
+        key: 'manualTotal',
+        width: 108,
+        render: (_, record) => (
+          <InputNumber
+            min={0}
+            placeholder="auto"
+            disabled={busy}
+            value={record.draft.manualTotalAbsences === '' ? null : record.draft.manualTotalAbsences}
+            onChange={(value) =>
+              updateDraft(record.student.id, {
+                manualTotalAbsences: value ?? '',
+              })
+            }
+            style={{ width: '100%' }}
+          />
+        ),
+      },
+      {
+        title: 'Manual Streak',
+        key: 'manualStreak',
+        width: 108,
+        render: (_, record) => (
+          <InputNumber
+            min={0}
+            placeholder="auto"
+            disabled={busy}
+            value={
+              record.draft.manualConsecutiveAbsences === ''
+                ? null
+                : record.draft.manualConsecutiveAbsences
+            }
+            onChange={(value) =>
+              updateDraft(record.student.id, {
+                manualConsecutiveAbsences: value ?? '',
+              })
+            }
+            style={{ width: '100%' }}
+          />
+        ),
+      },
+      {
+        title: 'No Notice',
+        key: 'notice',
+        width: 88,
+        align: 'center',
+        render: (_, record) => (
+          <Checkbox
+            checked={Boolean(record.draft.manualNoPriorNotice)}
+            disabled={busy || record.draft.manualConsecutiveAbsences === ''}
+            onChange={(e) =>
+              updateDraft(record.student.id, { manualNoPriorNotice: e.target.checked })
+            }
+          />
+        ),
+      },
+    ],
+    [busy],
+  )
+
   if (classes.length === 0) {
     return (
       <section className="panel">
-        <p className="empty-state">Add a class first, then edit absence counts here.</p>
+        <Empty description="Add a class first, then edit absence counts here." />
       </section>
     )
   }
 
   return (
-    <section className="panel bulk-absence-panel">
+    <section className="panel bulk-absence-panel workspace-panel">
+      {onClose && (
+        <div className="panel-nav-bar">
+          <BackButton onClick={onClose} disabled={busy}>
+            Back to Rosters
+          </BackButton>
+        </div>
+      )}
       <header className="panel-header bulk-absence-header">
         <div>
-          <h2>Bulk edit absence counts</h2>
-          <p className="panel-desc">
-            Set manual overrides for every student in the selected class. Leave a field blank
-            to use recorded attendance.
-          </p>
+          <Typography.Title level={3} style={{ margin: 0 }}>
+            Bulk Edit Absence Counts
+          </Typography.Title>
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+            Set manual overrides for every student in the selected class. Leave a field blank to use
+            recorded attendance.
+          </Typography.Paragraph>
         </div>
-        {onClose && (
-          <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>
-            Back to class list
-          </button>
-        )}
       </header>
 
-      {message && (
-        <p className="auth-message" role="status">
-          {message}
-        </p>
-      )}
+      {message && <Alert type="success" showIcon message={message} style={{ marginBottom: '0.5rem' }} />}
 
       <SaveFieldOverlay busy={busy} label="Saving changes…">
         <div className="bulk-absence-toolbar">
@@ -251,163 +399,61 @@ export default function AbsenceBulkEditor({
             label="Class"
             disabled={busy}
           />
-          <label className="bulk-absence-filter">
-            <input
-              type="checkbox"
-              checked={!showAll}
-              disabled={busy}
-              onChange={(e) => setShowAll(!e.target.checked)}
-            />
-            Only students with absence counts
-          </label>
+          <Checkbox
+            checked={!showAll}
+            disabled={busy}
+            onChange={(e) => setShowAll(!e.target.checked)}
+          >
+            Only Students With Absence Counts
+          </Checkbox>
         </div>
 
-        {error && (
-          <p className="auth-error" role="alert">
-            {error}
-          </p>
-        )}
+        {error && <Alert type="error" showIcon message={error} style={{ marginBottom: '0.5rem' }} />}
 
         {visibleStudents.length === 0 ? (
-          <p className="empty-state">
-            No students in this class yet.
-          </p>
+          <Empty description="No students in this class yet." />
         ) : (
-          <>
-            {visibleStudents.length > 30 && (
-              <p className="list-scroll-hint muted small">
-                {visibleStudents.length} students · scroll the table below for more
-              </p>
-            )}
-            <div className="scroll-panel bulk-table-scroll" ref={tableScrollRef}>
-              <table className="bulk-absence-table bulk-absence-table-inset">
-                <colgroup>
-                  <col className="bulk-col-student" />
-                  <col className="bulk-col-recorded" />
-                  <col className="bulk-col-input" />
-                  <col className="bulk-col-input" />
-                  <col className="bulk-col-notice" />
-                  <col className="bulk-col-effective" />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th scope="col">Student</th>
-                    <th scope="col">Recorded</th>
-                    <th scope="col">Manual total</th>
-                    <th scope="col">Manual streak</th>
-                    <th scope="col">No notice</th>
-                    <th scope="col">Effective</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pagedStudents.map(({ student, counts, draft, previewCounts, changed }) => (
-                    <tr key={student.id} className={changed ? 'bulk-row-changed' : ''}>
-                      <th scope="row" className="bulk-student-name">
-                        {student.name}
-                      </th>
-                      <td className="bulk-recorded">
-                        {counts.recorded.total} total
-                        {counts.recorded.consecutive > 0 && (
-                          <> · {counts.recorded.consecutive}d</>
-                        )}
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          min="0"
-                          className="bulk-input"
-                          placeholder="auto"
-                          disabled={busy}
-                          aria-label={`Manual total absences for ${student.name}`}
-                          value={draft.manualTotalAbsences}
-                          onChange={(e) =>
-                            updateDraft(student.id, { manualTotalAbsences: e.target.value })
-                          }
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          min="0"
-                          className="bulk-input"
-                          placeholder="auto"
-                          disabled={busy}
-                          aria-label={`Manual consecutive days for ${student.name}`}
-                          value={draft.manualConsecutiveAbsences}
-                          onChange={(e) =>
-                            updateDraft(student.id, {
-                              manualConsecutiveAbsences: e.target.value,
-                            })
-                          }
-                        />
-                      </td>
-                      <td className="bulk-notice-cell">
-                        <input
-                          type="checkbox"
-                          aria-label={`No prior notice for ${student.name}`}
-                          checked={Boolean(draft.manualNoPriorNotice)}
-                          disabled={busy || draft.manualConsecutiveAbsences === ''}
-                          onChange={(e) =>
-                            updateDraft(student.id, { manualNoPriorNotice: e.target.checked })
-                          }
-                        />
-                      </td>
-                      <td className="bulk-effective-cell">
-                        <div className="bulk-effective-slot">
-                          <AbsenceCountBadge counts={previewCounts} size="sm" placeholder />
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <ScrollSentinel
-                sentinelRef={tableSentinelRef}
-                hasMore={hasMoreStudents}
-                label="Loading more students…"
-              />
-            </div>
-          </>
+          <div className="table-scroll-region bulk-table-scroll" ref={tableRegionRef}>
+            <Table
+              size="small"
+              columns={columns}
+              dataSource={visibleStudents}
+              pagination={{ pageSize: 30, showSizeChanger: false, hideOnSinglePage: true }}
+              scroll={{ x: 980, y: tableHeight }}
+              rowClassName={(record) => (record.changed ? 'bulk-row-changed' : '')}
+            />
+          </div>
         )}
 
-        <div className="bulk-absence-actions">
-          <button
-            type="button"
-            className="btn btn-primary"
+        <Space wrap style={{ marginTop: '0.75rem' }}>
+          <Button
+            type="primary"
             disabled={busy || changedCount === 0}
             onClick={() => setConfirmSaveOpen(true)}
           >
-            {busy
-              ? 'Saving…'
-              : changedCount === 0
-                ? 'Save changes'
-                : `Save ${changedCount} change${changedCount === 1 ? '' : 's'}`}
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-danger-text"
-            disabled={busy}
-            onClick={() => setConfirmClear(true)}
-          >
-            Clear all manual overrides
-          </button>
-        </div>
+            {changedCount === 0
+              ? 'Save Changes'
+              : `Save ${changedCount} Change${changedCount === 1 ? '' : 's'}`}
+          </Button>
+          <Button danger type="link" disabled={busy} onClick={() => setConfirmClear(true)}>
+            Clear All Manual Overrides
+          </Button>
+        </Space>
       </SaveFieldOverlay>
 
       <ConfirmDialog
         open={confirmSaveOpen}
         title="Save absence overrides?"
-        confirmLabel="Save changes"
+        confirmLabel="Save Changes"
         cancelLabel="Keep editing"
         busy={busy}
         onCancel={() => !busy && setConfirmSaveOpen(false)}
         onConfirm={handleSave}
       >
-        <p className="modal-lead">
+        <Typography.Paragraph>
           Save manual absence overrides for <strong>{changedCount}</strong> student
-          {changedCount === 1 ? '' : 's'} in{' '}
-          <strong>{formatClassLabel(selectedClass)}</strong>?
-        </p>
+          {changedCount === 1 ? '' : 's'} in <strong>{formatClassLabel(selectedClass)}</strong>?
+        </Typography.Paragraph>
       </ConfirmDialog>
 
       <ConfirmDialog
@@ -420,11 +466,10 @@ export default function AbsenceBulkEditor({
         onCancel={() => !busy && setConfirmClear(false)}
         onConfirm={handleClearAll}
       >
-        <p className="modal-lead">
-          Remove every manual absence override in{' '}
-          <strong>{formatClassLabel(selectedClass)}</strong>? Recorded attendance stays
-          unchanged.
-        </p>
+        <Typography.Paragraph>
+          Remove every manual absence override in <strong>{formatClassLabel(selectedClass)}</strong>
+          ? Recorded attendance stays unchanged.
+        </Typography.Paragraph>
       </ConfirmDialog>
     </section>
   )

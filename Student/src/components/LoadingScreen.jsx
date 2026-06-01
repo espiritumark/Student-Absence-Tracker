@@ -1,8 +1,18 @@
+import { Flex, Spin, Typography } from 'antd'
+
 export default function LoadingScreen({ message = 'Loading…' }) {
   return (
-    <div className="loading-screen" role="status" aria-live="polite">
-      <div className="loading-spinner" aria-hidden="true" />
-      <p>{message}</p>
-    </div>
+    <Flex
+      className="loading-screen"
+      vertical
+      align="center"
+      justify="center"
+      gap="middle"
+      role="status"
+      aria-live="polite"
+    >
+      <Spin size="large" />
+      <Typography.Text>{message}</Typography.Text>
+    </Flex>
   )
 }

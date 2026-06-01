@@ -1,54 +1,40 @@
-import { useEffect, useRef, useState } from 'react'
+import { Alert, Button, Form, Input, Modal, Typography } from 'antd'
+import { useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { friendlyAuthError } from '../utils/authErrors'
 
 export default function AuthModal({ open, onClose, initialMode = 'signin' }) {
   const { signIn, signUp } = useAuth()
   const [mode, setMode] = useState(initialMode)
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const emailRef = useRef(null)
+  const [form] = Form.useForm()
 
   useEffect(() => {
     if (open) {
       setMode(initialMode)
       setError('')
       setMessage('')
-      setTimeout(() => emailRef.current?.focus(), 50)
+      form.resetFields()
     }
-  }, [open, initialMode])
+  }, [open, initialMode, form])
 
-  useEffect(() => {
-    if (!open) return
-    function onKey(e) {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
-
-  if (!open) return null
-
-  async function handleSubmit(e) {
-    e.preventDefault()
+  async function handleSubmit(values) {
     setBusy(true)
     setError('')
     setMessage('')
     try {
       if (mode === 'signin') {
-        await signIn(email.trim(), password)
+        await signIn(values.email.trim(), values.password)
         onClose()
       } else {
-        await signUp(email.trim(), password)
+        await signUp(values.email.trim(), values.password)
         setMessage(
           'Account created! If email confirmation is enabled, check your inbox, then sign in.',
         )
         setMode('signin')
-        setPassword('')
+        form.setFieldValue('password', '')
       }
     } catch (err) {
       setError(friendlyAuthError(err.message))
@@ -58,120 +44,92 @@ export default function AuthModal({ open, onClose, initialMode = 'signin' }) {
   }
 
   return (
-    <div
-      className="modal-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="auth-modal-title"
-      onClick={onClose}
+    <Modal
+      open={open}
+      title={mode === 'signin' ? 'Sign in' : 'Create account'}
+      footer={null}
+      onCancel={onClose}
+      destroyOnHidden
+      centered
+      width={420}
     >
-      <div className="modal auth-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <div>
-            <h3 id="auth-modal-title">
-              {mode === 'signin' ? 'Sign in' : 'Create account'}
-            </h3>
-            <p className="auth-modal-sub">
-              {mode === 'signin'
-                ? 'Access your classes and attendance from any device.'
-                : 'Create an account to sync attendance to the cloud.'}
-            </p>
-          </div>
-          <button type="button" className="btn btn-ghost" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
-        </div>
+      <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+        {mode === 'signin'
+          ? 'Access your classes and attendance from any device.'
+          : 'Create an account to sync attendance to the cloud.'}
+      </Typography.Paragraph>
 
-        <form className="modal-body auth-modal-body" onSubmit={handleSubmit}>
-          <label className="field-label">
-            Email
-            <input
-              ref={emailRef}
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-          </label>
+      <Form form={form} layout="vertical" onFinish={handleSubmit} requiredMark={false}>
+        <Form.Item
+          name="email"
+          label="Email"
+          rules={[
+            { required: true, message: 'Enter your email' },
+            { type: 'email', message: 'Enter a valid email' },
+          ]}
+        >
+          <Input autoComplete="email" />
+        </Form.Item>
 
-          <label className="field-label">
-            Password
-            <div className="password-field">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
-                minLength={6}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm password-toggle"
-                onClick={() => setShowPassword((v) => !v)}
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-              >
-                {showPassword ? 'Hide' : 'Show'}
-              </button>
-            </div>
-            {mode === 'signup' && (
-              <span className="field-hint">At least 6 characters</span>
-            )}
-          </label>
+        <Form.Item
+          name="password"
+          label="Password"
+          extra={mode === 'signup' ? 'At least 6 characters' : undefined}
+          rules={[
+            { required: true, message: 'Enter your password' },
+            { min: 6, message: 'At least 6 characters' },
+          ]}
+        >
+          <Input.Password
+            autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+          />
+        </Form.Item>
 
-          {error && (
-            <p className="auth-error" role="alert">
-              {error}
-            </p>
-          )}
-          {message && <p className="auth-message">{message}</p>}
+        {error && <Alert type="error" showIcon message={error} style={{ marginBottom: '1rem' }} />}
+        {message && (
+          <Alert type="success" showIcon message={message} style={{ marginBottom: '1rem' }} />
+        )}
 
-          <button type="submit" className="btn btn-primary btn-submit" disabled={busy}>
-            {busy
-              ? mode === 'signin'
-                ? 'Signing in…'
-                : 'Creating account…'
-              : mode === 'signin'
-                ? 'Sign in'
-                : 'Create account'}
-          </button>
+        <Button type="primary" htmlType="submit" block loading={busy}>
+          {mode === 'signin' ? 'Sign in' : 'Create account'}
+        </Button>
+      </Form>
 
-          <p className="auth-switch">
-            {mode === 'signin' ? (
-              <>
-                Don&apos;t have an account?{' '}
-                <button
-                  type="button"
-                  className="link-btn"
-                  onClick={() => {
-                    setMode('signup')
-                    setError('')
-                    setMessage('')
-                  }}
-                >
-                  Create one
-                </button>
-              </>
-            ) : (
-              <>
-                Already have an account?{' '}
-                <button
-                  type="button"
-                  className="link-btn"
-                  onClick={() => {
-                    setMode('signin')
-                    setError('')
-                    setMessage('')
-                  }}
-                >
-                  Sign in
-                </button>
-              </>
-            )}
-          </p>
-        </form>
-      </div>
-    </div>
+      <Typography.Paragraph style={{ marginBottom: 0, marginTop: '1rem', textAlign: 'center' }}>
+        {mode === 'signin' ? (
+          <>
+            Don&apos;t have an account?{' '}
+            <Button
+              type="link"
+              size="small"
+              onClick={() => {
+                setMode('signup')
+                setError('')
+                setMessage('')
+              }}
+              style={{ padding: 0 }}
+            >
+              Create one
+            </Button>
+          </>
+        ) : (
+          <>
+            Already have an account?{' '}
+            <Button
+              type="link"
+              size="small"
+              onClick={() => {
+                setMode('signin')
+                setError('')
+                setMessage('')
+              }}
+              style={{ padding: 0 }}
+            >
+              Sign in
+            </Button>
+          </>
+        )}
+      </Typography.Paragraph>
+    </Modal>
   )
 }

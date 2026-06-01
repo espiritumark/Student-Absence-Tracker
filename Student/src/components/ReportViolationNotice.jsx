@@ -1,31 +1,31 @@
-import {
-  ABSENCE_VIOLATION_REPORT_LABEL,
-  ABSENCE_VIOLATION_REPORT_URL,
-} from '../constants/reporting'
+import { Alert, Button } from 'antd'
 
-export default function ReportViolationNotice({ compact = false }) {
+export default function ReportViolationNotice({ compact = false, pendingCount = 0, onOpenReporting }) {
   return (
-    <aside
-      className={`report-violation-notice ${compact ? 'report-violation-notice-compact' : ''}`}
-      role="note"
-    >
-      <p className="report-violation-lead">
-        <strong>Must report</strong> if a student&apos;s absences continue to violate policy.
-      </p>
-      {!compact && (
-        <p className="report-violation-detail muted small">
-          Use the official Microsoft Form when follow-up is required (e.g. extended consecutive
-          absence or no prior notice).
-        </p>
-      )}
-      <a
-        href={ABSENCE_VIOLATION_REPORT_URL}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="btn btn-primary btn-sm report-violation-link"
-      >
-        {ABSENCE_VIOLATION_REPORT_LABEL}
-      </a>
-    </aside>
+    <Alert
+      type="error"
+      showIcon
+      className={compact ? 'report-violation-notice-compact' : ''}
+      message={
+        pendingCount > 0
+          ? `${pendingCount} student${pendingCount === 1 ? '' : 's'} must be reported on the official form.`
+          : "Must report if a student's absences continue to violate policy."
+      }
+      description={
+        compact ? undefined : (
+          <>
+            Use the Reporting tab to copy student details and submit the Microsoft Form (14+
+            consecutive days or 30 days without prior notice).
+          </>
+        )
+      }
+      action={
+        onOpenReporting && (
+          <Button type="primary" size="small" onClick={onOpenReporting}>
+            {pendingCount > 0 ? `Open reporting (${pendingCount})` : 'Open reporting'}
+          </Button>
+        )
+      }
+    />
   )
 }

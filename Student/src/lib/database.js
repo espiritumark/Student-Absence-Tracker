@@ -1,5 +1,6 @@
 import { findMatchingClass, formatClassLabel } from '../utils/classFormat'
 import { makeSessionKey, sessionDateFromKey, sessionModuleFromKey } from '../utils/sessionKeys'
+import { normalizeModuleKey } from '../utils/sessionKeys'
 import { supabase } from './supabase'
 
 function normalizeName(name) {
@@ -178,8 +179,48 @@ async function upsertSession(userId, classId, sessionKey, meta) {
     .insert(row)
     .select()
     .single()
-  if (error) throw error
-  return data
+
+  if (!error) return data
+
+  const isDuplicate =
+    error.code === '23505' ||
+    String(error.message || '').includes('duplicate key') ||
+    String(error.details || '').includes('already exists')
+
+  if (!isDuplicate) throw error
+
+  const { data: legacyRows, error: legacyErr } = await supabase
+    .from('attendance_sessions')
+    .select('*')
+    .eq('class_id', classId)
+    .eq('session_date', date)
+
+  if (legacyErr) throw legacyErr
+
+  const legacy = legacyRows?.[0]
+  if (!legacy) throw error
+
+  if (
+    legacyRows.length === 1 &&
+    normalizeModuleKey(legacy.module) !== normalizeModuleKey(module)
+  ) {
+    throw new Error(
+      'Your cloud database still allows only one session per class and date. Run the module migration in Supabase (see Student/supabase/schema.sql) to save separate modules on the same day.',
+    )
+  }
+
+  const target = legacyRows.find((s) => normalizeModuleKey(s.module) === normalizeModuleKey(module))
+  const match = target || legacy
+
+  const { data: updated, error: updateErr } = await supabase
+    .from('attendance_sessions')
+    .update(row)
+    .eq('id', match.id)
+    .select()
+    .single()
+
+  if (updateErr) throw updateErr
+  return updated
 }
 
 export async function dbSetAttendance(userId, classId, sessionKey, studentId, patch) {

@@ -1,241 +1,396 @@
-import { useScrollLoadMore } from '../hooks/useScrollLoadMore'
-import { AbsenceCountBadge, AbsenceRiskLegend } from './AbsenceCountBadge'
-import ReportViolationNotice from './ReportViolationNotice'
-import ScrollSentinel from './ScrollSentinel'
-import { getAllAlerts } from '../utils/alerts'
-import { getAllStudentAbsenceSummaries } from '../utils/attendanceStats'
-import { ABSENCE_VIOLATION_REPORT_LABEL, ABSENCE_VIOLATION_REPORT_URL } from '../constants/reporting'
-import { formatDateLabel } from '../utils/dates'
+import { Empty, Input, Popover, Select, Table, Tag, Typography } from 'antd'
+import { useEffect, useMemo, useState } from 'react'
+import { useScrollRegionHeight } from '../hooks/useScrollRegionHeight'
+import { getAtRiskStudentSummaries } from '../utils/attendanceStats'
+import { RISK_META } from '../utils/absenceRisk'
+import { formatModuleLabel, listModulesAcrossClasses } from '../utils/sessionKeys'
+import { studentReportKey } from '../utils/reportingQueue'
+import { DashboardRiskSummary } from './AbsenceCountBadge'
+import FormField from './FormField'
+import ModuleSearchSelect from './ModuleSearchSelect'
+import SearchableSelect from './SearchableSelect'
 
-function AlertCard({ alert }) {
-  const isMonth = alert.type === 'month_no_notice'
-  const range = alert.streakDays || alert.streakWeeks || []
-
-  return (
-    <article className={`alert-card alert-${alert.severity}`}>
-      <div className="alert-card-header">
-        <span className={`badge badge-${isMonth ? 'critical' : 'warning'}`}>
-          {isMonth ? 'No notice (~1 mo.)' : 'Extended absence'}
-        </span>
-        <span className="alert-class">{alert.className}</span>
-      </div>
-      <h3 className="alert-student">{alert.studentName}</h3>
-      <p className="alert-message">{alert.message}</p>
-      {range.length > 0 && (
-        <p className="alert-weeks">
-          {alert.streakDays ? 'Days' : 'Weeks'}:{' '}
-          {range
-            .slice(0, 5)
-            .map((k) => formatDateLabel(k))
-            .join(', ')}
-          {range.length > 5 ? ` … +${range.length - 5} more` : ''}
-        </p>
-      )}
-      <a
-        href={ABSENCE_VIOLATION_REPORT_URL}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="alert-report-link"
-      >
-        {ABSENCE_VIOLATION_REPORT_LABEL} →
-      </a>
-    </article>
-  )
+function sortStudentRows(rows, sortBy) {
+  const copy = [...rows]
+  if (sortBy === 'name') {
+    return copy.sort(
+      (a, b) =>
+        a.studentName.localeCompare(b.studentName) || a.className.localeCompare(b.className),
+    )
+  }
+  if (sortBy === 'class') {
+    return copy.sort(
+      (a, b) =>
+        a.className.localeCompare(b.className) || a.studentName.localeCompare(b.studentName),
+    )
+  }
+  return copy
 }
 
-function AbsenceCountRow({ row, rank, maxScore }) {
-  const score = Math.max(row.total, row.consecutive)
-  const barWidth = maxScore > 0 ? Math.max(8, Math.round((score / maxScore) * 100)) : 0
+const SORT_OPTIONS = [
+  { value: 'risk', label: 'Risk (highest first)' },
+  { value: 'name', label: 'Student name' },
+  { value: 'class', label: 'Class' },
+]
+
+export default function Dashboard({
+  classes,
+  attendance,
+  dashboardPendingKeys = [],
+  reportingQueuedKeys = [],
+  onOpenInClasses,
+  onOpenReporting,
+}) {
+  const [selectedModule, setSelectedModule] = useState('')
+  const [selectedClassId, setSelectedClassId] = useState('')
+  const [sortBy, setSortBy] = useState('risk')
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const dashboardPendingKeySet = useMemo(
+    () => new Set(dashboardPendingKeys),
+    [dashboardPendingKeys],
+  )
+
+  const reportingQueuedKeySet = useMemo(
+    () => new Set(reportingQueuedKeys),
+    [reportingQueuedKeys],
+  )
+
+  const allModules = useMemo(
+    () => listModulesAcrossClasses(classes, attendance),
+    [classes, attendance],
+  )
+  const moduleOptions = useMemo(
+    () =>
+      allModules
+        .filter(
+          ({ value }) =>
+            getAtRiskStudentSummaries(classes, attendance, { moduleFilter: value }).length > 0,
+        )
+        .map(({ value, label }) => ({ value, label })),
+    [classes, attendance, allModules],
+  )
+
+  useEffect(() => {
+    if (selectedModule && !moduleOptions.some((option) => option.value === selectedModule)) {
+      setSelectedModule('')
+    }
+  }, [selectedModule, moduleOptions])
+
+  const moduleScopedAtRisk = useMemo(() => {
+    const rows = getAtRiskStudentSummaries(classes, attendance, {
+      moduleFilter: selectedModule,
+    })
+    return rows
+      .filter(
+        (row) => !reportingQueuedKeySet.has(studentReportKey(row.classId, row.studentId)),
+      )
+      .map((row) => ({
+        ...row,
+        needsReport: dashboardPendingKeySet.has(studentReportKey(row.classId, row.studentId)),
+      }))
+  }, [classes, attendance, selectedModule, dashboardPendingKeySet, reportingQueuedKeySet])
+
+  const classOptions = useMemo(() => {
+    const seen = new Map()
+    for (const row of moduleScopedAtRisk) {
+      if (!seen.has(row.classId)) {
+        seen.set(row.classId, { value: row.classId, label: row.className })
+      }
+    }
+    return [...seen.values()].sort((a, b) => a.label.localeCompare(b.label))
+  }, [moduleScopedAtRisk])
+
+  useEffect(() => {
+    if (selectedClassId && !classOptions.some((option) => option.value === selectedClassId)) {
+      setSelectedClassId('')
+    }
+  }, [selectedClassId, classOptions])
+
+  const atRiskRows = useMemo(() => {
+    if (!selectedClassId) return moduleScopedAtRisk
+    return moduleScopedAtRisk.filter((row) => row.classId === selectedClassId)
+  }, [moduleScopedAtRisk, selectedClassId])
+
+  const activeRiskTiers = useMemo(() => {
+    const tiers = { watch: false, warning: false, critical: false }
+    for (const row of moduleScopedAtRisk) {
+      if (row.risk in tiers) tiers[row.risk] = true
+    }
+    return tiers
+  }, [moduleScopedAtRisk])
+
+  const pendingReportCount = useMemo(
+    () => moduleScopedAtRisk.filter((row) => row.needsReport).length,
+    [moduleScopedAtRisk],
+  )
+
+  const sortedStudents = useMemo(
+    () => sortStudentRows(atRiskRows, sortBy),
+    [atRiskRows, sortBy],
+  )
+
+  const filteredStudents = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return sortedStudents
+    return sortedStudents.filter(
+      (row) =>
+        row.studentName.toLowerCase().includes(q) ||
+        row.className.toLowerCase().includes(q) ||
+        row.absentModules?.some((m) => m.toLowerCase().includes(q)),
+    )
+  }, [sortedStudents, searchQuery])
+
+  const [tableRegionRef, tableHeight] = useScrollRegionHeight(280)
+
+  const tableColumns = useMemo(() => {
+    const columns = [
+      {
+        title: 'Student',
+        dataIndex: 'studentName',
+        key: 'studentName',
+        ellipsis: true,
+        render: (_, row) => {
+          if (!row.needsReport) return row.studentName
+
+          const reportKey = studentReportKey(row.classId, row.studentId)
+          return (
+            <Popover
+              title="Official reporting required"
+              content="This student must be reported on the official form. Click to open the Reporting tab."
+            >
+              <Typography.Link
+                type="danger"
+                strong
+                className="dashboard-student-report-link"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onOpenReporting?.(reportKey)
+                }}
+              >
+                {row.studentName}
+              </Typography.Link>
+            </Popover>
+          )
+        },
+      },
+    ]
+
+    if (!selectedClassId) {
+      columns.push({
+        title: 'Class',
+        dataIndex: 'className',
+        key: 'className',
+        ellipsis: true,
+      })
+    }
+
+    columns.push({
+      title: 'Level',
+      key: 'risk',
+      width: 92,
+      render: (_, row) => (
+        <Tag
+          bordered={false}
+          className={`absence-risk-tag absence-risk-tag-${row.risk}`}
+          title={RISK_META[row.risk]?.description}
+        >
+          {RISK_META[row.risk]?.shortLabel ?? row.risk}
+        </Tag>
+      ),
+    })
+
+    columns.push({
+      title: 'Days',
+      key: 'consecutive',
+      width: 72,
+      align: 'center',
+      render: (_, row) => {
+        const dayClass = row.needsReport
+          ? 'dashboard-student-days-report'
+          : row.risk === 'critical'
+            ? 'dashboard-student-days-critical'
+            : row.risk === 'warning'
+              ? 'dashboard-student-days-warning'
+              : row.risk === 'watch'
+                ? 'dashboard-student-days-watch'
+                : ''
+
+        return (
+          <span className={`dashboard-student-days ${dayClass}`.trim()}>
+            {row.consecutive}
+          </span>
+        )
+      },
+    })
+
+    columns.push({
+      title: 'Total',
+      key: 'total',
+      width: 64,
+      align: 'center',
+      render: (_, row) => (
+        <Typography.Text strong className="dashboard-student-total">
+          {row.total}
+        </Typography.Text>
+      ),
+    })
+
+    if (pendingReportCount > 0) {
+      columns.push({
+        title: 'Report',
+        key: 'report',
+        width: 118,
+        render: (_, row) =>
+          row.needsReport ? (
+            <Tag bordered={false} className="dashboard-student-report-tag">
+              Report required
+            </Tag>
+          ) : null,
+      })
+    }
+
+    return columns
+  }, [selectedClassId, onOpenReporting, pendingReportCount])
+
+  function openInClasses(classId, module = '') {
+    onOpenInClasses?.({ classId, module })
+  }
+
+  function openFromRow(row) {
+    if (row.needsReport) {
+      onOpenReporting?.(studentReportKey(row.classId, row.studentId))
+      return
+    }
+
+    const module =
+      selectedModule ||
+      (row.absentModules?.[0]
+        ? listModulesAcrossClasses(classes, attendance).find((m) =>
+            m.label === row.absentModules[0],
+          )?.value
+        : '') ||
+      ''
+    openInClasses(row.classId, module)
+  }
 
   return (
-    <li className={`absence-count-row absence-count-row-${row.risk}`}>
-      <span className="absence-count-rank" aria-hidden="true">
-        {rank}
-      </span>
-      <div className="absence-count-main">
-        <div className="absence-count-head">
-          <span className="absence-count-name">{row.studentName}</span>
-          <span className="absence-count-class">{row.className}</span>
-          {row.absentModules?.length > 0 && (
-            <span className="absence-count-modules">
-              Module{row.absentModules.length === 1 ? '' : 's'}:{' '}
-              {row.absentModules.join(' · ')}
-            </span>
-          )}
+    <section className="panel dashboard-panel workspace-panel">
+      <header className="panel-header dashboard-header-compact">
+        <div className="panel-header-copy">
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            Dashboard
+          </Typography.Title>
+          <Typography.Paragraph type="secondary" className="panel-desc-compact" style={{ marginBottom: 0 }}>
+            Warnings and students who need follow-up. Safe counts are hidden — manage rosters on
+            Classes &amp; rosters.
+          </Typography.Paragraph>
         </div>
-        <div
-          className={`absence-count-bar absence-count-bar-${row.risk}`}
-          style={{ width: `${barWidth}%` }}
-          aria-hidden="true"
+        <DashboardRiskSummary
+          activeTiers={activeRiskTiers}
+          showReportRequired={pendingReportCount > 0}
         />
-      </div>
-      <div className="absence-count-stats">
-        <AbsenceCountBadge
-          counts={{
-            total: row.total,
-            consecutive: row.consecutive,
-          }}
-          showManual={false}
-          size="sm"
-        />
-      </div>
-    </li>
-  )
-}
-
-export default function Dashboard({ classes, attendance }) {
-  const alerts = getAllAlerts(classes, attendance)
-  const absenceSummaries = getAllStudentAbsenceSummaries(classes, attendance)
-  const maxScore = Math.max(
-    0,
-    ...absenceSummaries.map((row) => Math.max(row.total, row.consecutive)),
-  )
-  const watchCount = absenceSummaries.filter(
-    (row) => row.risk === 'watch' || row.risk === 'warning' || row.risk === 'critical',
-  ).length
-  const mustReport =
-    alerts.length > 0 ||
-    absenceSummaries.some((row) => row.risk === 'warning' || row.risk === 'critical')
-
-  const {
-    visibleCount: visibleAbsenceCount,
-    rootRef: absenceScrollRef,
-    sentinelRef: absenceSentinelRef,
-    hasMore: hasMoreAbsences,
-  } = useScrollLoadMore({
-    total: absenceSummaries.length,
-    batchSize: 25,
-    resetKey: 'dashboard-absences',
-  })
-
-  const {
-    visibleCount: visibleAlertCount,
-    rootRef: alertScrollRef,
-    sentinelRef: alertSentinelRef,
-    hasMore: hasMoreAlerts,
-  } = useScrollLoadMore({
-    total: alerts.length,
-    batchSize: 12,
-    resetKey: 'dashboard-alerts',
-  })
-
-  const visibleAbsenceSummaries = absenceSummaries.slice(0, visibleAbsenceCount)
-  const visibleAlerts = alerts.slice(0, visibleAlertCount)
-
-  return (
-    <section className="panel dashboard-panel">
-      <header className="panel-header">
-        <h2>Dashboard</h2>
-        <p className="panel-desc">
-          Color-coded absence totals across all classes. Edit counts per class on the Classes
-          tab.
-        </p>
       </header>
 
       {classes.length === 0 ? (
-        <p className="empty-state">
-          Import a portal screenshot or add a class to start tracking.
-        </p>
+        <Empty
+          className="workspace-empty"
+          description="Import attendance or add a class on Classes & rosters."
+        />
       ) : (
-        <>
-          <AbsenceRiskLegend compact />
-
-          {mustReport && <ReportViolationNotice />}
-
-          {absenceSummaries.length > 0 ? (
-            <section className="dashboard-section" aria-labelledby="absence-counts-heading">
-              <div className="dashboard-section-header">
-                <h3 id="absence-counts-heading">Students with absence counts</h3>
-                <p className="dashboard-section-desc">
-                  Sorted by risk, then highest streak or total. {watchCount} student
-                  {watchCount === 1 ? '' : 's'} need watching or follow-up.
-                </p>
-              </div>
-
-              <div className="absence-summary-stats">
-                <div className="stat-tile">
-                  <span className="stat-tile-value">{absenceSummaries.length}</span>
-                  <span className="stat-tile-label">With counts</span>
-                </div>
-                <div className="stat-tile stat-tile-highlight">
-                  <span className="stat-tile-value">{maxScore}</span>
-                  <span className="stat-tile-label">Highest number</span>
-                </div>
-                <div className="stat-tile">
-                  <span className="stat-tile-value">{watchCount}</span>
-                  <span className="stat-tile-label">Watch or above</span>
-                </div>
-              </div>
-
-              {absenceSummaries.length > 25 && (
-                <p className="list-scroll-hint muted small">
-                  {absenceSummaries.length} students · scroll the list below for more
-                </p>
-              )}
-
-              <div className="scroll-panel dashboard-list-scroll" ref={absenceScrollRef}>
-                <ol className="absence-count-list absence-count-list-inset">
-                  {visibleAbsenceSummaries.map((row, index) => (
-                    <AbsenceCountRow
-                      key={row.id}
-                      row={row}
-                      rank={index + 1}
-                      maxScore={maxScore}
-                    />
-                  ))}
-                </ol>
-                <ScrollSentinel
-                  sentinelRef={absenceSentinelRef}
-                  hasMore={hasMoreAbsences}
-                  label="Loading more students…"
+        <div className="workspace-body dashboard-workspace dashboard-workspace-simple">
+          <div className="dashboard-at-risk-panel">
+            <div className="dashboard-at-risk-toolbar filter-toolbar dashboard-filter-toolbar">
+              <ModuleSearchSelect
+                options={moduleOptions}
+                value={selectedModule}
+                onChange={(value) => {
+                  setSelectedModule(value)
+                  setSelectedClassId('')
+                }}
+                allowEmpty
+                emptyLabel="All modules"
+                placeholder={
+                  moduleOptions.length ? 'Filter by module…' : 'No at-risk students by module'
+                }
+                label="Module"
+                disabled={moduleOptions.length === 0}
+              />
+              <SearchableSelect
+                options={classOptions}
+                value={selectedClassId}
+                onChange={setSelectedClassId}
+                allowEmpty
+                emptyLabel="All classes"
+                placeholder={
+                  classOptions.length ? 'Filter by class…' : 'No at-risk students in any class'
+                }
+                label="Class"
+                disabled={classOptions.length === 0}
+              />
+              <FormField label="Sort">
+                <Select
+                  value={sortBy}
+                  onChange={setSortBy}
+                  options={SORT_OPTIONS}
+                  style={{ width: '100%' }}
                 />
-              </div>
-            </section>
-          ) : (
-            <div className="success-banner dashboard-empty-counts">
-              No absence counts yet — they appear after you import attendance or set overrides
-              on the Classes tab.
-            </div>
-          )}
-
-          <section className="dashboard-section" aria-labelledby="warnings-heading">
-            <div className="dashboard-section-header">
-              <h3 id="warnings-heading">Automatic warnings</h3>
-              <p className="dashboard-section-desc">
-                Triggered at 14+ consecutive days, 2+ full absent weeks, or 30+ days without
-                prior notice. Continued violations must be reported via the official form.
-              </p>
+              </FormField>
+              <FormField label="Search" grow>
+                <Input
+                  allowClear
+                  placeholder="Name, class, module…"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </FormField>
             </div>
 
-            {alerts.length === 0 ? (
-              <div className="success-banner">
-                {absenceSummaries.length === 0
-                  ? 'Import attendance to start tracking.'
-                  : 'No students currently meet automatic warning rules.'}
-              </div>
-            ) : (
-              <>
-                {alerts.length > 12 && (
-                  <p className="list-scroll-hint muted small">
-                    {alerts.length} warnings · scroll the list below for more
-                  </p>
-                )}
-                <div className="scroll-panel alert-grid-scroll" ref={alertScrollRef}>
-                  <div className="alert-grid alert-grid-inset">
-                    {visibleAlerts.map((alert) => (
-                      <AlertCard key={alert.id} alert={alert} />
-                    ))}
-                  </div>
-                  <ScrollSentinel
-                    sentinelRef={alertSentinelRef}
-                    hasMore={hasMoreAlerts}
-                    label="Loading more warnings…"
-                  />
-                </div>
-              </>
-            )}
-          </section>
-        </>
+            <Typography.Text type="secondary" className="master-pane-hint">
+              {filteredStudents.length} student{filteredStudents.length === 1 ? '' : 's'} · click a
+              row to open · red names move to the Reporting tab
+              {selectedModule ? ` · ${formatModuleLabel(selectedModule)}` : ''}
+              {selectedClassId
+                ? ` · ${classOptions.find((option) => option.value === selectedClassId)?.label ?? ''}`
+                : ''}
+            </Typography.Text>
+
+            <div className="table-scroll-region dashboard-at-risk-scroll" ref={tableRegionRef}>
+              {filteredStudents.length === 0 ? (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description={
+                    atRiskRows.length === 0
+                      ? 'No students need follow-up right now.'
+                      : 'No matches for this search.'
+                  }
+                />
+              ) : (
+                <Table
+                  size="small"
+                  rowKey="id"
+                  columns={tableColumns}
+                  dataSource={filteredStudents}
+                  pagination={{ pageSize: 40, showSizeChanger: false, hideOnSinglePage: true }}
+                  scroll={{ y: tableHeight }}
+                  rowClassName={(row) =>
+                    [
+                      'dashboard-student-item',
+                      `dashboard-student-item-${row.risk}`,
+                      row.needsReport ? 'dashboard-student-item-report' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')
+                  }
+                  onRow={(row) => ({
+                    onClick: () => openFromRow(row),
+                    style: { cursor: 'pointer' },
+                  })}
+                />
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </section>
   )
