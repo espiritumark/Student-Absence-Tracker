@@ -54,6 +54,12 @@ function AbsenceCountRow({ row, rank, maxScore }) {
         <div className="absence-count-head">
           <span className="absence-count-name">{row.studentName}</span>
           <span className="absence-count-class">{row.className}</span>
+          {row.absentModules?.length > 0 && (
+            <span className="absence-count-modules">
+              Module{row.absentModules.length === 1 ? '' : 's'}:{' '}
+              {row.absentModules.join(' · ')}
+            </span>
+          )}
         </div>
         <div
           className={`absence-count-bar absence-count-bar-${row.risk}`}

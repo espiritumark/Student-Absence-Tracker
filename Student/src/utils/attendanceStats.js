@@ -1,7 +1,7 @@
 import { formatClassLabel } from './classFormat'
 import { compareAbsenceRisk, getOverallAbsenceRisk } from './absenceRisk'
 import { isConsecutiveDays, parseDateKey } from './dates'
-import { sessionDateFromKey } from './sessionKeys'
+import { sessionDateFromKey, listAbsentModulesForStudent } from './sessionKeys'
 
 export function getStudentAbsenceStats(classAttendance, studentId) {
   const absentDates = new Set()
@@ -72,12 +72,15 @@ export function getAllStudentAbsenceSummaries(classes, attendance) {
       const counts = getEffectiveAbsenceCounts(student, classAttendance)
       if (counts.total <= 0 && counts.consecutive <= 0) continue
 
+      const absentModules = listAbsentModulesForStudent(classAttendance, student.id)
+
       rows.push({
         id: `${cls.id}-${student.id}`,
         studentId: student.id,
         studentName: student.name,
         classId: cls.id,
         className,
+        absentModules,
         total: counts.total,
         consecutive: counts.consecutive,
         usesManualTotal: counts.usesManualTotal,

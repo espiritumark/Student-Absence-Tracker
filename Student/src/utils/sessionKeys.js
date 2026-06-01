@@ -53,3 +53,51 @@ export function findSessionKey(classAttendance, date, module) {
   )
   return match?.key ?? target
 }
+
+export function formatModuleLabel(module) {
+  const mod = String(module || '').trim()
+  return mod || 'General session'
+}
+
+export function listModulesForClass(classAttendance) {
+  const seen = new Map()
+
+  for (const [key, session] of Object.entries(classAttendance || {})) {
+    const raw = sessionModuleFromKey(key, session) || session?.module || ''
+    const normalized = normalizeModuleKey(raw)
+    const label = formatModuleLabel(raw)
+    if (!seen.has(normalized)) {
+      seen.set(normalized, label)
+    }
+  }
+
+  return [...seen.entries()]
+    .sort((a, b) => a[1].localeCompare(b[1]))
+    .map(([value, label]) => ({ value, label }))
+}
+
+export function filterAttendanceByModule(classAttendance, moduleFilter) {
+  const target = normalizeModuleKey(moduleFilter)
+  const filtered = {}
+
+  for (const [key, session] of Object.entries(classAttendance || {})) {
+    const mod = sessionModuleFromKey(key, session) || session?.module || ''
+    if (normalizeModuleKey(mod) === target) {
+      filtered[key] = session
+    }
+  }
+
+  return filtered
+}
+
+export function listAbsentModulesForStudent(classAttendance, studentId) {
+  const modules = new Set()
+
+  for (const [key, session] of Object.entries(classAttendance || {})) {
+    const rec = session?.records?.[studentId] ?? session?.[studentId]
+    if (rec?.status !== 'absent') continue
+    modules.add(formatModuleLabel(sessionModuleFromKey(key, session) || session?.module || ''))
+  }
+
+  return [...modules].sort((a, b) => a.localeCompare(b))
+}

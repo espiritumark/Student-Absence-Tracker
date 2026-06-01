@@ -5,7 +5,6 @@ import {
   dbAddStudent,
   dbImportPortalSession,
   dbImportStudentsBulk,
-  dbMigrateLocalState,
   dbRemoveClass,
   dbRemoveStudent,
   dbSetAttendance,
@@ -112,11 +111,6 @@ export function createId() {
 
 function normalizeName(name) {
   return name.trim().replace(/\s+/g, ' ').toUpperCase()
-}
-
-function hasLocalData() {
-  const s = loadLocalState()
-  return s.classes.length > 0
 }
 
 export function useStore() {
@@ -527,24 +521,6 @@ export function useStore() {
     [useCloud, user, refreshFromCloud, runLocal],
   )
 
-  const migrateLocalToCloud = useCallback(async () => {
-    if (!user) return
-    const local = loadLocalState()
-    if (!local.classes.length) return
-    setInitialLoading(true)
-    setSyncError('')
-    try {
-      await dbMigrateLocalState(user.id, local)
-      localStorage.removeItem(STORAGE_KEY)
-      await refreshFromCloud({ silent: false })
-    } catch (e) {
-      setSyncError(e.message || 'Migration failed')
-      throw e
-    } finally {
-      setInitialLoading(false)
-    }
-  }, [user, refreshFromCloud])
-
   const clearSyncError = useCallback(() => setSyncError(''), [])
 
   return {
@@ -555,7 +531,6 @@ export function useStore() {
     syncing,
     syncError,
     useCloud,
-    hasLocalData: hasLocalData(),
     clearSyncError,
     addClass,
     removeClass,
@@ -567,6 +542,5 @@ export function useStore() {
     setSessionMeta,
     importPortalSession,
     importStudentsBulk,
-    migrateLocalToCloud,
   }
 }

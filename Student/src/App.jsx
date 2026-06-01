@@ -54,7 +54,6 @@ function AppContent() {
   }
 
   const showSignInBanner = cloudEnabled && !user
-  const showLocalDataBanner = store.useCloud && store.hasLocalData
 
   return (
     <div className="app">
@@ -63,28 +62,17 @@ function AppContent() {
           <div>
             <h1>Student Absence Tracker</h1>
             <p className="tagline">
-              Import daily attendance from JSON, sync to the cloud, and get warned
-              about extended absences.
+              Import daily attendance from JSON, track absences locally or in the cloud, and
+              get warned about extended absences.
             </p>
           </div>
-          <AuthPanel
-            onMigrateLocal={
-              store.useCloud && store.hasLocalData ? store.migrateLocalToCloud : null
-            }
-          />
+          <AuthPanel />
         </div>
 
         {showSignInBanner && (
           <div className="info-banner app-banner">
-            <strong>Sign in</strong> to save attendance across devices and browsers.
-            Your data is currently stored only in this browser until you sign in.
-          </div>
-        )}
-
-        {showLocalDataBanner && (
-          <div className="info-banner app-banner">
-            You have unsynced data in this browser. Use <strong>Upload local data</strong>{' '}
-            in the header to move it to your account.
+            <strong>Sign in</strong> to save attendance to your cloud account across devices.
+            Without signing in, data stays in this browser only and is not uploaded.
           </div>
         )}
 
@@ -159,7 +147,7 @@ function AppContent() {
         {store.useCloud
           ? 'Signed in — changes save to your cloud account.'
           : cloudEnabled
-            ? 'Not signed in — data saves in this browser only.'
+            ? 'Not signed in — data saves in this browser only (not uploaded).'
             : 'Data saves in this browser only.'}
       </footer>
     </div>

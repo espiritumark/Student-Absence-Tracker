@@ -2,12 +2,10 @@ import { useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import AuthModal from './AuthModal'
 
-export default function AuthPanel({ onMigrateLocal }) {
+export default function AuthPanel() {
   const { user, cloudEnabled, signOut } = useAuth()
   const [modalOpen, setModalOpen] = useState(false)
   const [modalMode, setModalMode] = useState('signin')
-  const [migrating, setMigrating] = useState(false)
-  const [migrateMsg, setMigrateMsg] = useState('')
 
   if (!cloudEnabled) {
     return (
@@ -28,34 +26,6 @@ export default function AuthPanel({ onMigrateLocal }) {
           </span>
         </div>
         <div className="auth-actions">
-          {onMigrateLocal && (
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              disabled={migrating}
-              onClick={async () => {
-                if (
-                  !window.confirm(
-                    'Upload browser-saved data to your cloud account? This cannot be undone.',
-                  )
-                ) {
-                  return
-                }
-                setMigrating(true)
-                setMigrateMsg('')
-                try {
-                  await onMigrateLocal()
-                  setMigrateMsg('Local data uploaded successfully.')
-                } catch {
-                  setMigrateMsg('Upload failed. Try again.')
-                } finally {
-                  setMigrating(false)
-                }
-              }}
-            >
-              {migrating ? 'Uploading…' : 'Upload local data'}
-            </button>
-          )}
           <button
             type="button"
             className="btn btn-ghost btn-sm"
@@ -64,7 +34,6 @@ export default function AuthPanel({ onMigrateLocal }) {
             Sign out
           </button>
         </div>
-        {migrateMsg && <p className="auth-message auth-migrate-msg">{migrateMsg}</p>}
       </div>
     )
   }

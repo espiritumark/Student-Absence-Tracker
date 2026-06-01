@@ -1,9 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAutoDismiss } from '../hooks/useAutoDismiss'
 import AbsenceBulkEditor from './AbsenceBulkEditor'
 import { AbsenceCountBadge } from './AbsenceCountBadge'
 import { getEffectiveAbsenceCounts } from '../utils/attendanceStats'
 import { formatClassLabel } from '../utils/classFormat'
+import {
+  filterAttendanceByModule,
+  formatModuleLabel,
+  listModulesForClass,
+} from '../utils/sessionKeys'
 import ConfirmDialog from './ConfirmDialog'
 import SearchableSelect from './SearchableSelect'
 
@@ -39,6 +44,7 @@ export default function ClassManager({
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+  const [moduleFilter, setModuleFilter] = useState('')
 
   useAutoDismiss(Boolean(addClassMessage) && !form.qualification.trim(), () => setAddClassMessage(''))
   useAutoDismiss(Boolean(bulkMessage) && !bulkText.trim(), () => setBulkMessage(''))
@@ -54,6 +60,22 @@ export default function ClassManager({
 
   const selectedClass = classes.find((c) => c.id === selectedClassId)
   const classAttendance = selectedClass ? attendance?.[selectedClass.id] || {} : {}
+  const classModules = useMemo(
+    () => listModulesForClass(classAttendance),
+    [classAttendance],
+  )
+  const filteredAttendance = useMemo(
+    () =>
+      moduleFilter === ''
+        ? classAttendance
+        : filterAttendanceByModule(classAttendance, moduleFilter),
+    [classAttendance, moduleFilter],
+  )
+  const activeModuleLabel =
+    moduleFilter === ''
+      ? 'All modules'
+      : classModules.find((m) => m.value === moduleFilter)?.label ??
+        formatModuleLabel(moduleFilter)
   const sortedStudents = selectedClass
     ? [...selectedClass.students].sort((a, b) => a.name.localeCompare(b.name))
     : []
@@ -70,6 +92,10 @@ export default function ClassManager({
       setSelectedClassId(sorted[0]?.id ?? '')
     }
   }, [classes, selectedClassId])
+
+  useEffect(() => {
+    setModuleFilter('')
+  }, [selectedClassId])
 
   async function handleAddClass(e) {
     e.preventDefault()
@@ -245,6 +271,7 @@ export default function ClassManager({
               value={selectedClassId}
               onChange={(v) => {
                 setSelectedClassId(v)
+                setModuleFilter('')
                 setStudentInput('')
                 setBulkText('')
                 setBulkMessage('')
@@ -303,7 +330,42 @@ export default function ClassManager({
 
           {selectedClass && (
             <div className="class-detail-card">
-              <p className="class-detail-title">{formatClassLabel(selectedClass)}</p>
+              <div className="class-detail-header">
+                <p className="class-detail-title">{formatClassLabel(selectedClass)}</p>
+                <div className="class-detail-modules">
+                  <span className="class-detail-modules-label">Module</span>
+                  {classModules.length === 0 ? (
+                    <p className="class-detail-modules-empty muted small">
+                      No modules recorded yet. Set a module when importing or marking attendance.
+                    </p>
+                  ) : (
+                    <div className="class-module-chips" role="group" aria-label="Filter by module">
+                      <button
+                        type="button"
+                        className={`class-module-chip ${moduleFilter === '' ? 'is-active' : ''}`}
+                        onClick={() => setModuleFilter('')}
+                      >
+                        All modules
+                      </button>
+                      {classModules.map(({ value, label }) => (
+                        <button
+                          key={value || '__general__'}
+                          type="button"
+                          className={`class-module-chip ${moduleFilter === value ? 'is-active' : ''}`}
+                          onClick={() => setModuleFilter(value)}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {classModules.length > 0 && moduleFilter !== '' && (
+                    <p className="class-detail-scope muted small">
+                      Showing absence counts for <strong>{activeModuleLabel}</strong> only.
+                    </p>
+                  )}
+                </div>
+              </div>
 
               <form className="inline-form" onSubmit={handleAddStudent}>
                 <input
@@ -373,22 +435,24 @@ export default function ClassManager({
               ) : (
                 <ul className="student-list">
                   {sortedStudents.map((st) => {
-                    const counts = getEffectiveAbsenceCounts(st, classAttendance)
+                    const counts = getEffectiveAbsenceCounts(st, filteredAttendance)
 
                     return (
-                      <li key={st.id}>
-                        <div className="student-row">
+                      <li key={st.id} className="student-list-item">
+                        <div className="student-list-main">
                           <span className="student-name-text">{st.name}</span>
-                          <AbsenceCountBadge counts={counts} />
                         </div>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm btn-danger-text"
-                          onClick={() => handleRemoveStudent(selectedClassId, st)}
-                          aria-label={`Remove ${st.name}`}
-                        >
-                          Remove
-                        </button>
+                        <div className="student-list-aside">
+                          <AbsenceCountBadge counts={counts} />
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm btn-danger-text"
+                            onClick={() => handleRemoveStudent(selectedClassId, st)}
+                            aria-label={`Remove ${st.name}`}
+                          >
+                            Remove
+                          </button>
+                        </div>
                       </li>
                     )
                   })}
