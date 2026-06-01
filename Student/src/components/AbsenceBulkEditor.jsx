@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useAutoDismiss } from '../hooks/useAutoDismiss'
 import { AbsenceCountBadge } from './AbsenceCountBadge'
 import ConfirmDialog from './ConfirmDialog'
 import SearchableSelect from './SearchableSelect'
@@ -105,6 +106,8 @@ export default function AbsenceBulkEditor({
       )
 
   const changedCount = students.filter(({ changed }) => changed).length
+
+  useAutoDismiss(Boolean(message) && changedCount === 0, () => setMessage(''))
 
   useEffect(() => {
     if (!classId && sortedClasses[0]?.id) {

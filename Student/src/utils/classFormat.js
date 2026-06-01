@@ -1,9 +1,10 @@
 export function formatClassLabel(cls) {
+  if (!cls) return 'Unnamed class'
   if (cls.intake != null && cls.level != null && cls.group != null) {
     const qual = cls.qualification || cls.name || ''
     return `INTAKE ${cls.intake} LEVEL ${cls.level} ${qual} GROUP ${cls.group}`.trim()
   }
-  return cls.name || 'Unnamed class'
+  return cls.name || cls.qualification || 'Unnamed class'
 }
 
 export function classGroup(cls) {
@@ -21,6 +22,9 @@ export function normalizeQualification(text) {
 }
 
 export function classIdentity(cls) {
+  if (!cls) {
+    return { intake: null, level: null, group: null, qualification: '' }
+  }
   return {
     intake: cls.intake ?? null,
     level: cls.level ?? null,

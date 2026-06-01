@@ -13,6 +13,14 @@ import { isOcrRunning } from './utils/ocrSession'
 
 function AppContent() {
   const [tab, setTab] = useState('import')
+
+  function switchTab(nextTab) {
+    if (nextTab !== tab) {
+      document.activeElement?.blur?.()
+    }
+    setTab(nextTab)
+  }
+
   const { user, loading: authLoading, cloudEnabled } = useAuth()
   const store = useStore()
 
@@ -108,7 +116,7 @@ function AppContent() {
             key={t.id}
             type="button"
             className={`tab ${tab === t.id ? 'tab-active' : ''}`}
-            onClick={() => setTab(t.id)}
+            onClick={() => switchTab(t.id)}
             aria-current={tab === t.id ? 'page' : undefined}
           >
             {t.label}
@@ -127,7 +135,8 @@ function AppContent() {
             importPortalSession={store.importPortalSession}
             classes={store.classes}
             attendance={store.attendance}
-            onGoToWarnings={() => setTab('dashboard')}
+            isActive={tab === 'import'}
+            onGoToWarnings={() => switchTab('dashboard')}
           />
         </div>
         <div className="tab-panel" hidden={tab !== 'dashboard'} aria-hidden={tab !== 'dashboard'}>

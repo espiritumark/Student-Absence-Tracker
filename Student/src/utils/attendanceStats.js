@@ -67,7 +67,7 @@ export function getAllStudentAbsenceSummaries(classes, attendance) {
     const classAttendance = attendance[cls.id] || {}
     const className = formatClassLabel(cls)
 
-    for (const student of cls.students) {
+    for (const student of cls.students ?? []) {
       const counts = getEffectiveAbsenceCounts(student, classAttendance)
       if (counts.total <= 0 && counts.consecutive <= 0) continue
 

@@ -18,7 +18,7 @@ export function computeOverwriteSummary({ classMeta, date, students: incoming },
     return { needsConfirm: false, classId, classLabel, isNewClass: !cls }
   }
 
-  const nameToId = new Map(cls.students.map((st) => [normalizeName(st.name), st.id]))
+  const nameToId = new Map((cls.students ?? []).map((st) => [normalizeName(st.name), st.id]))
 
   const prevAbsent = Object.values(existingRecords).filter((r) => r?.status === 'absent').length
   const nextAbsent = incoming.filter((s) => !s.present).length

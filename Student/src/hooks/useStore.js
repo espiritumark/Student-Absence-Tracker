@@ -57,20 +57,27 @@ function normalizeSession(session) {
 }
 
 function migrateClass(cls) {
-  if (cls.intake != null) return cls
+  if (cls.intake != null) return normalizeClass(cls)
   const parsed = cls.name?.match(
     /INTAKE\s*(\d+)\s*LEVEL\s*(\d+)\s+(.+?)\s+GROUP\s*(\d+)/i,
   )
   if (parsed) {
-    return {
+    return normalizeClass({
       ...cls,
       intake: Number(parsed[1]),
       level: Number(parsed[2]),
       qualification: parsed[3].trim(),
       group: Number(parsed[4]),
-    }
+    })
   }
-  return cls
+  return normalizeClass(cls)
+}
+
+function normalizeClass(cls) {
+  return {
+    ...cls,
+    students: Array.isArray(cls.students) ? cls.students : [],
+  }
 }
 
 export function loadLocalState() {
@@ -422,19 +429,28 @@ export function useStore() {
       }
       runLocal((s) => {
         const { classMeta, date, module, startTime, duration, students } = payload
-        let classes = [...s.classes]
+        let classes = s.classes.map(normalizeClass)
         let classId = findMatchingClass(classes, classMeta)?.id
 
         if (!classId) {
           classId = createId()
           classes = [
             ...classes,
-            { id: classId, ...classMeta, name: formatClassLabel(classMeta), students: [] },
+            normalizeClass({
+              id: classId,
+              ...classMeta,
+              name: formatClassLabel(classMeta),
+              students: [],
+            }),
           ]
         }
 
         const clsIndex = classes.findIndex((c) => c.id === classId)
-        const cls = { ...classes[clsIndex] }
+        if (clsIndex < 0) {
+          throw new Error('Could not resolve class for this import.')
+        }
+
+        const cls = { ...classes[clsIndex], students: [...(classes[clsIndex].students ?? [])] }
         const nameToId = new Map(cls.students.map((st) => [st.name, st.id]))
 
         for (const row of students) {

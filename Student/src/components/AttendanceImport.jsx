@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useAutoDismiss } from '../hooks/useAutoDismiss'
 import { formatClassLabel } from '../utils/classFormat'
 import { dateKey, formatDateLabel } from '../utils/dates'
 import {
@@ -78,41 +79,56 @@ function OcrSpinner({ progress, stageLabel, elapsedSeconds = 0, progressStalled 
   )
 }
 
-function SaveSuccess({ meta, classLabel, savedCount, onGoToWarnings, onImportAnother }) {
+function SaveSuccess({
+  meta,
+  classLabel,
+  savedCount,
+  resetCountdown,
+  onGoToWarnings,
+  onImportAnother,
+}) {
   return (
-    <section className="panel">
-      <div className="save-success">
-        <div className="save-success-icon" aria-hidden="true">✓</div>
-        <h2>Attendance saved</h2>
-        <p>
-          <strong>{formatDateLabel(meta.date)}</strong>
-          {classLabel && <> — {classLabel}</>}
-        </p>
-        <p className="save-success-counts">
-          {savedCount.total} students ·{' '}
-          <span className={savedCount.absent > 0 ? 'absent-highlight' : ''}>
-            {savedCount.absent} absent
-          </span>
-        </p>
-        <div className="save-success-actions">
-          {savedCount.absent > 0 && (
-            <button type="button" className="btn btn-primary" onClick={onGoToWarnings}>
-              View Warnings →
-            </button>
-          )}
-          <button type="button" className="btn btn-secondary" onClick={onImportAnother}>
-            Import another
-          </button>
-        </div>
+    <div className="save-success">
+      <div className="save-success-icon" aria-hidden="true">
+        ✓
       </div>
-    </section>
+      <h2>Attendance saved</h2>
+      <p>
+        <strong>{formatDateLabel(meta.date)}</strong>
+        {classLabel && <> — {classLabel}</>}
+      </p>
+      <p className="save-success-counts">
+        {savedCount.total} students ·{' '}
+        <span className={savedCount.absent > 0 ? 'absent-highlight' : ''}>
+          {savedCount.absent} absent
+        </span>
+      </p>
+      {resetCountdown > 0 && (
+        <p className="save-success-reset muted small" role="status">
+          Ready for the next import in {resetCountdown}s — or use a button below.
+        </p>
+      )}
+      <div className="save-success-actions">
+        {savedCount.absent > 0 && (
+          <button type="button" className="btn btn-primary" onClick={onGoToWarnings}>
+            View Dashboard →
+          </button>
+        )}
+        <button type="button" className="btn btn-secondary" onClick={onImportAnother}>
+          Import another now
+        </button>
+      </div>
+    </div>
   )
 }
+
+const SUCCESS_RESET_SECONDS = 5
 
 export default function AttendanceImport({
   importPortalSession,
   classes,
   attendance,
+  isActive = true,
   onGoToWarnings,
 }) {
   const [importMode, setImportMode] = useState('json')
@@ -141,6 +157,71 @@ export default function AttendanceImport({
   const [saving, setSaving] = useState(false)
   const [parseMessage, setParseMessage] = useState('')
   const [jsonExportMessage, setJsonExportMessage] = useState('')
+  const [resetCountdown, setResetCountdown] = useState(0)
+  const savedRef = useRef(false)
+
+  const hasUnsavedDraft = useCallback(() => {
+    return (
+      students.length > 0 ||
+      Boolean(jsonText.trim()) ||
+      Boolean(pendingScreenshot) ||
+      processing
+    )
+  }, [students.length, jsonText, pendingScreenshot, processing])
+
+  const resetToFreshForm = useCallback(() => {
+    savedRef.current = false
+    setSaved(false)
+    setResetCountdown(0)
+    setMeta(emptyMeta)
+    setStudents([])
+    setPreviewUrl(null)
+    setPendingScreenshot(null)
+    setJsonText('')
+    setError('')
+    setParseMessage('')
+    setJsonExportMessage('')
+    setImportMode('json')
+    setConfirmOpen(false)
+    setPendingImport(null)
+    setConfirmSummary(null)
+    setConfirmError('')
+  }, [])
+
+  useEffect(() => {
+    savedRef.current = saved
+  }, [saved])
+
+  useEffect(() => {
+    if (!saved || !isActive) {
+      setResetCountdown(0)
+      return undefined
+    }
+
+    setResetCountdown(SUCCESS_RESET_SECONDS)
+    const interval = setInterval(() => {
+      setResetCountdown((value) => {
+        if (value <= 1) {
+          clearInterval(interval)
+          resetToFreshForm()
+          return 0
+        }
+        return value - 1
+      })
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [saved, isActive, resetToFreshForm])
+
+  useEffect(() => {
+    if (isActive) return
+    if (savedRef.current && !hasUnsavedDraft()) {
+      resetToFreshForm()
+    }
+  }, [isActive, hasUnsavedDraft, resetToFreshForm])
+
+  useAutoDismiss(Boolean(parseMessage) && !hasUnsavedDraft(), () => setParseMessage(''))
+  useAutoDismiss(Boolean(jsonExportMessage), () => setJsonExportMessage(''))
 
   const applyParsed = useCallback((parsed) => {
     const cm = parsed.meta.classMeta
@@ -388,22 +469,21 @@ export default function AttendanceImport({
     setError('')
     try {
       await commitImport(payload)
-    } catch {
-      setError('Failed to save attendance. Check your connection and try again.')
+    } catch (err) {
+      setError(err.message || 'Failed to save attendance. Please try again.')
     } finally {
       setSaving(false)
     }
   }
 
   function handleImportAnother() {
-    setSaved(false)
-    setMeta(emptyMeta)
-    setStudents([])
-    setPreviewUrl(null)
-    setJsonText('')
-    setError('')
-    setParseMessage('')
-    setJsonExportMessage('')
+    resetToFreshForm()
+  }
+
+  function handleGoToDashboard() {
+    document.activeElement?.blur?.()
+    resetToFreshForm()
+    onGoToWarnings?.()
   }
 
   async function handleCopyJson() {
@@ -442,13 +522,16 @@ export default function AttendanceImport({
 
   if (saved) {
     return (
-      <SaveSuccess
-        meta={meta}
-        classLabel={classLabel}
-        savedCount={savedCount}
-        onGoToWarnings={onGoToWarnings}
-        onImportAnother={handleImportAnother}
-      />
+      <section className="panel portal-panel">
+        <SaveSuccess
+          meta={meta}
+          classLabel={classLabel}
+          savedCount={savedCount}
+          resetCountdown={resetCountdown}
+          onGoToWarnings={handleGoToDashboard}
+          onImportAnother={handleImportAnother}
+        />
+      </section>
     )
   }
 
@@ -814,10 +897,8 @@ export default function AttendanceImport({
           setConfirmError('')
           try {
             await commitImport(pendingImport)
-          } catch {
-            setConfirmError(
-              'Failed to save attendance. Check your connection and try again.',
-            )
+          } catch (err) {
+            setConfirmError(err.message || 'Failed to save attendance. Please try again.')
           } finally {
             setSaving(false)
           }

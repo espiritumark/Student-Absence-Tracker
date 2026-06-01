@@ -15,7 +15,10 @@ export function parseDateKey(key) {
 }
 
 export function formatDateLabel(key) {
-  return parseDateKey(key).toLocaleDateString(undefined, {
+  if (!key || typeof key !== 'string') return 'Unknown date'
+  const parsed = parseDateKey(key)
+  if (Number.isNaN(parsed.getTime())) return key
+  return parsed.toLocaleDateString(undefined, {
     weekday: 'short',
     year: 'numeric',
     month: 'short',

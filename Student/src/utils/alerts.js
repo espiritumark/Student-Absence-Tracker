@@ -171,7 +171,7 @@ export function getAllAlerts(classes, attendance) {
   for (const cls of classes) {
     const classAttendance = attendance[cls.id] || {}
     const className = formatClassLabel(cls)
-    for (const student of cls.students) {
+    for (const student of cls.students ?? []) {
       all.push(
         ...evaluateStudentAlerts({
           student,

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useAutoDismiss } from '../hooks/useAutoDismiss'
 import AbsenceBulkEditor from './AbsenceBulkEditor'
 import { AbsenceCountBadge } from './AbsenceCountBadge'
 import { getEffectiveAbsenceCounts } from '../utils/attendanceStats'
@@ -38,6 +39,9 @@ export default function ClassManager({
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+
+  useAutoDismiss(Boolean(addClassMessage) && !form.qualification.trim(), () => setAddClassMessage(''))
+  useAutoDismiss(Boolean(bulkMessage) && !bulkText.trim(), () => setBulkMessage(''))
 
   const sortedClasses = [...classes].sort((a, b) =>
     formatClassLabel(a).localeCompare(formatClassLabel(b)),
@@ -113,7 +117,7 @@ export default function ClassManager({
       if (count > 0) {
         setBulkText('')
         setBulkMessage(
-          `Added ${count} student${count === 1 ? '' : 's'} to ${formatClassLabel(selectedClass)}.`,
+          `Added ${count} student${count === 1 ? '' : 's'} to ${formatClassLabel(selectedClass ?? {})}.`,
         )
       } else {
         setBulkMessage('No new students to add — all names were already in this class.')
@@ -285,10 +289,16 @@ export default function ClassManager({
             }}
             onConfirm={handleConfirmDeleteClass}
           >
-            <p className="modal-lead">
-              Delete <strong>{formatClassLabel(selectedClass)}</strong> and all of its
-              attendance records? This cannot be undone.
-            </p>
+            {selectedClass ? (
+              <p className="modal-lead">
+                Delete <strong>{formatClassLabel(selectedClass)}</strong> and all of its
+                attendance records? This cannot be undone.
+              </p>
+            ) : (
+              <p className="modal-lead">
+                Delete this class and all of its attendance records? This cannot be undone.
+              </p>
+            )}
           </ConfirmDialog>
 
           {selectedClass && (

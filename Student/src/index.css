@@ -1449,6 +1449,10 @@ kbd {
   margin-top: 1.5rem;
 }
 
+.save-success-reset {
+  margin-top: 0.75rem;
+}
+
 /* ── Modal ── */
 .modal-overlay {
   position: fixed;
