@@ -43,7 +43,7 @@ create table if not exists public.attendance_sessions (
   start_time text not null default '',
   duration text not null default '',
   created_at timestamptz not null default now(),
-  unique (class_id, session_date)
+  unique (class_id, session_date, module)
 );
 
 create index if not exists attendance_sessions_class_id_idx
@@ -104,3 +104,7 @@ create policy "records_update_own" on public.attendance_records
   for update using (auth.uid() = user_id);
 create policy "records_delete_own" on public.attendance_records
   for delete using (auth.uid() = user_id);
+
+-- Migration for existing databases (run once if you already deployed the old schema):
+-- alter table public.attendance_sessions drop constraint if exists attendance_sessions_class_id_session_date_key;
+-- alter table public.attendance_sessions add constraint attendance_sessions_class_id_session_date_module_key unique (class_id, session_date, module);

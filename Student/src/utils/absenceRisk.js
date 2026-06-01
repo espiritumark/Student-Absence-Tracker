@@ -5,7 +5,7 @@ export const RISK_ORDER = ['safe', 'watch', 'warning', 'critical']
 export const RISK_META = {
   safe: {
     label: 'Safe',
-    shortLabel: 'OK',
+    shortLabel: 'Safe',
     description: 'Low absence count — no action needed yet.',
     className: 'risk-safe',
   },
@@ -17,7 +17,7 @@ export const RISK_META = {
   },
   warning: {
     label: 'Warning',
-    shortLabel: 'Warn',
+    shortLabel: 'Warning',
     description: '14+ consecutive days or high total — follow up soon.',
     className: 'risk-warning',
   },

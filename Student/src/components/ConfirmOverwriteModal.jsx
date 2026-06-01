@@ -33,7 +33,8 @@ export default function ConfirmOverwriteModal({
             </p>
           ) : (
             <p className="modal-lead">
-              Attendance already exists for this class and date. Review changes before overwriting.
+              Attendance already exists for this class, date, and module. Review changes before
+              overwriting.
             </p>
           )}
 
@@ -43,6 +44,9 @@ export default function ConfirmOverwriteModal({
               <div className="diff-value">
                 <strong>{summary.classLabel || 'Class'}</strong>
                 <div className="muted">{formatDateLabel(summary.date)}</div>
+                {summary.module && (
+                  <div className="muted">Module: {summary.module}</div>
+                )}
               </div>
             </div>
             {!summary.isNewClass && (

@@ -1,21 +1,27 @@
 import { findMatchingClass, formatClassLabel } from './classFormat'
+import { findSessionKey, normalizeModuleKey } from './sessionKeys'
 
 export function normalizeName(name) {
   return name.trim().replace(/\s+/g, ' ').toUpperCase()
 }
 
-export function computeOverwriteSummary({ classMeta, date, students: incoming }, classes, attendance) {
+export function computeOverwriteSummary(
+  { classMeta, date, module, students: incoming },
+  classes,
+  attendance,
+) {
   const cls = findMatchingClass(classes, classMeta)
   const classId = cls?.id ?? null
-  const existingSession = classId ? attendance?.[classId]?.[date] : null
+  const classAttendance = classId ? attendance?.[classId] || {} : {}
+  const sessionKey = classId ? findSessionKey(classAttendance, date, module) : null
+  const existingSession = sessionKey ? classAttendance[sessionKey] : null
   const existingRecords = existingSession?.records ?? null
 
-  const classLabel = cls
-    ? formatClassLabel(cls)
-    : formatClassLabel(classMeta)
+  const classLabel = cls ? formatClassLabel(cls) : formatClassLabel(classMeta)
+  const moduleLabel = normalizeModuleKey(module) || 'General session'
 
   if (!cls || !existingRecords || Object.keys(existingRecords).length === 0) {
-    return { needsConfirm: false, classId, classLabel, isNewClass: !cls }
+    return { needsConfirm: false, classId, classLabel, module: moduleLabel, isNewClass: !cls }
   }
 
   const nameToId = new Map((cls.students ?? []).map((st) => [normalizeName(st.name), st.id]))
@@ -53,6 +59,7 @@ export function computeOverwriteSummary({ classMeta, date, students: incoming },
     classId,
     classLabel,
     date,
+    module: moduleLabel,
     prevAbsent,
     nextAbsent,
     toAbsent,

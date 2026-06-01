@@ -16,6 +16,7 @@ import {
 import { buildPortalJson, parseAttendanceJson } from '../utils/parseAttendanceJson'
 import { fileToDataUrl, isCloudOcrConfigured, isRoboflowCheckboxConfigured } from '../utils/parseScreenshot'
 import ConfirmOverwriteModal from './ConfirmOverwriteModal'
+import SaveFieldOverlay from './SaveFieldOverlay'
 
 const emptyMeta = {
   intake: '',
@@ -758,7 +759,8 @@ export default function AttendanceImport({
             </figure>
           )}
 
-          <form className="portal-form" onSubmit={handleSave}>
+          <SaveFieldOverlay busy={saving} label="Saving attendance…">
+            <form className="portal-form" onSubmit={handleSave}>
             <p className="portal-class-header">
               Class: <strong>{classLabel || 'Review class details below'}</strong>
             </p>
@@ -875,7 +877,8 @@ export default function AttendanceImport({
             <button type="submit" className="btn btn-primary btn-submit" disabled={saving}>
               {saving ? 'Saving attendance…' : 'Save daily attendance'}
             </button>
-          </form>
+            </form>
+          </SaveFieldOverlay>
         </>
       )}
 

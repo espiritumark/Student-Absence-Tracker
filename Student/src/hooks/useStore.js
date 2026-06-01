@@ -16,6 +16,7 @@ import {
 import { isSupabaseConfigured } from '../lib/supabase'
 import { findMatchingClass, formatClassLabel } from '../utils/classFormat'
 import { dateKey } from '../utils/dates'
+import { makeSessionKey } from '../utils/sessionKeys'
 
 const STORAGE_KEY = 'student-absence-tracker-v2'
 
@@ -464,8 +465,9 @@ export function useStore() {
         classes[clsIndex] = cls
 
         const day = date || dateKey()
+        const sessionKey = makeSessionKey(day, module)
         const classAtt = s.attendance[classId] || {}
-        const session = normalizeSession(classAtt[day])
+        const session = normalizeSession(classAtt[sessionKey])
         const records = { ...session.records }
 
         for (const row of students) {
@@ -481,8 +483,8 @@ export function useStore() {
             ...s.attendance,
             [classId]: {
               ...classAtt,
-              [day]: {
-                module: module || session.module,
+              [sessionKey]: {
+                module: module || session.module || '',
                 startTime: startTime || session.startTime,
                 duration: duration || session.duration,
                 records,

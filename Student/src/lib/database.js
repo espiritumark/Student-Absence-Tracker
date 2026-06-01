@@ -1,4 +1,5 @@
 import { findMatchingClass, formatClassLabel } from '../utils/classFormat'
+import { makeSessionKey, sessionDateFromKey, sessionModuleFromKey } from '../utils/sessionKeys'
 import { supabase } from './supabase'
 
 function normalizeName(name) {
@@ -27,6 +28,15 @@ function mapClass(row, students) {
   }
 }
 
+function sessionMetaFromKey(sessionKey, meta = {}) {
+  const date = sessionDateFromKey(sessionKey)
+  const module =
+    meta.module !== undefined && meta.module !== null
+      ? meta.module
+      : sessionModuleFromKey(sessionKey, meta)
+  return { date, module: module || '' }
+}
+
 export async function fetchAppState(userId) {
   const [classesRes, studentsRes, sessionsRes, recordsRes] = await Promise.all([
     supabase.from('classes').select('*').eq('user_id', userId).order('name'),
@@ -53,7 +63,8 @@ export async function fetchAppState(userId) {
         priorNotice: rec.prior_notice,
       }
     }
-    attendance[session.class_id][session.session_date] = {
+    const sessionKey = makeSessionKey(session.session_date, session.module)
+    attendance[session.class_id][sessionKey] = {
       module: session.module || '',
       startTime: session.start_time || '',
       duration: session.duration || '',
@@ -131,36 +142,58 @@ export async function dbRemoveStudent(studentId) {
   if (error) throw error
 }
 
-async function upsertSession(userId, classId, day, meta) {
+async function upsertSession(userId, classId, sessionKey, meta) {
+  const { date, module } = sessionMetaFromKey(sessionKey, meta)
+
+  const { data: existing } = await supabase
+    .from('attendance_sessions')
+    .select('*')
+    .eq('class_id', classId)
+    .eq('session_date', date)
+    .eq('module', module)
+    .maybeSingle()
+
+  const row = {
+    user_id: userId,
+    class_id: classId,
+    session_date: date,
+    module,
+    start_time: meta.startTime ?? existing?.start_time ?? '',
+    duration: meta.duration ?? existing?.duration ?? '',
+  }
+
+  if (existing) {
+    const { data, error } = await supabase
+      .from('attendance_sessions')
+      .update(row)
+      .eq('id', existing.id)
+      .select()
+      .single()
+    if (error) throw error
+    return data
+  }
+
   const { data, error } = await supabase
     .from('attendance_sessions')
-    .upsert(
-      {
-        user_id: userId,
-        class_id: classId,
-        session_date: day,
-        module: meta.module || '',
-        start_time: meta.startTime || '',
-        duration: meta.duration || '',
-      },
-      { onConflict: 'class_id,session_date' },
-    )
+    .insert(row)
     .select()
     .single()
   if (error) throw error
   return data
 }
 
-export async function dbSetAttendance(userId, classId, day, studentId, patch) {
+export async function dbSetAttendance(userId, classId, sessionKey, studentId, patch) {
+  const classAttendanceMeta = {}
   const { data: existingSession } = await supabase
     .from('attendance_sessions')
     .select('*')
     .eq('class_id', classId)
-    .eq('session_date', day)
+    .eq('session_date', sessionDateFromKey(sessionKey))
+    .eq('module', sessionMetaFromKey(sessionKey).module)
     .maybeSingle()
 
-  const session = await upsertSession(userId, classId, day, {
-    module: existingSession?.module || '',
+  const session = await upsertSession(userId, classId, sessionKey, {
+    module: sessionMetaFromKey(sessionKey, classAttendanceMeta).module,
     startTime: existingSession?.start_time || '',
     duration: existingSession?.duration || '',
   })
@@ -191,8 +224,8 @@ export async function dbSetAttendance(userId, classId, day, studentId, patch) {
   if (error) throw error
 }
 
-export async function dbSetSessionMeta(userId, classId, day, meta) {
-  await upsertSession(userId, classId, day, meta)
+export async function dbSetSessionMeta(userId, classId, sessionKey, meta) {
+  await upsertSession(userId, classId, sessionKey, meta)
 }
 
 export async function dbImportPortalSession(userId, payload) {
@@ -229,7 +262,8 @@ export async function dbImportPortalSession(userId, payload) {
     }
   }
 
-  const session = await upsertSession(userId, classId, date, {
+  const sessionKey = makeSessionKey(date, module)
+  const session = await upsertSession(userId, classId, sessionKey, {
     module,
     startTime,
     duration,
@@ -287,14 +321,18 @@ export async function dbMigrateLocalState(userId, localState) {
     }
 
     const classAtt = localState.attendance?.[cls.id] || {}
-    for (const [day, session] of Object.entries(classAtt)) {
-      await upsertSession(userId, classId, day, session)
+    for (const [sessionKey, session] of Object.entries(classAtt)) {
+      const { date, module } = sessionMetaFromKey(sessionKey, session)
+      await upsertSession(userId, classId, sessionKey, session)
       const { data: sess } = await supabase
         .from('attendance_sessions')
         .select('id')
         .eq('class_id', classId)
-        .eq('session_date', day)
-        .single()
+        .eq('session_date', date)
+        .eq('module', module)
+        .maybeSingle()
+
+      if (!sess) continue
 
       const records = Object.entries(session.records || {}).map(([oldStId, rec]) => ({
         user_id: userId,

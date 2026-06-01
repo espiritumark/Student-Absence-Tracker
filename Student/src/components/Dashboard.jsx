@@ -2,7 +2,6 @@ import { AbsenceCountBadge, AbsenceRiskLegend } from './AbsenceCountBadge'
 import ReportViolationNotice from './ReportViolationNotice'
 import { getAllAlerts } from '../utils/alerts'
 import { getAllStudentAbsenceSummaries } from '../utils/attendanceStats'
-import { RISK_META } from '../utils/absenceRisk'
 import { ABSENCE_VIOLATION_REPORT_LABEL, ABSENCE_VIOLATION_REPORT_URL } from '../constants/reporting'
 import { formatDateLabel } from '../utils/dates'
 
@@ -45,7 +44,6 @@ function AlertCard({ alert }) {
 function AbsenceCountRow({ row, rank, maxScore }) {
   const score = Math.max(row.total, row.consecutive)
   const barWidth = maxScore > 0 ? Math.max(8, Math.round((score / maxScore) * 100)) : 0
-  const meta = RISK_META[row.risk]
 
   return (
     <li className={`absence-count-row absence-count-row-${row.risk}`}>
@@ -55,7 +53,6 @@ function AbsenceCountRow({ row, rank, maxScore }) {
       <div className="absence-count-main">
         <div className="absence-count-head">
           <span className="absence-count-name">{row.studentName}</span>
-          <span className={`risk-pill ${meta.className}`}>{meta.label}</span>
           <span className="absence-count-class">{row.className}</span>
         </div>
         <div

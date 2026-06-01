@@ -1,6 +1,7 @@
 import { formatClassLabel } from './classFormat'
 import { getStudentAbsenceStats } from './attendanceStats'
 import { isConsecutiveDays, parseDateKey, weekKey } from './dates'
+import { sessionDateFromKey } from './sessionKeys'
 
 const CONSECUTIVE_WEEKS_DAYS = 14
 const MONTH_DAYS = 30
@@ -41,10 +42,10 @@ function getDayStreak(sortedAbsentKeys) {
 
 function getAbsentWeeks(classAttendance, studentId) {
   const byWeek = {}
-  for (const [dayKey, session] of Object.entries(classAttendance || {})) {
+  for (const [sessionKey, session] of Object.entries(classAttendance || {})) {
     const rec = session?.records?.[studentId] ?? session?.[studentId]
     if (rec?.status !== 'absent') continue
-    const wk = weekKey(parseDateKey(dayKey))
+    const wk = weekKey(parseDateKey(sessionDateFromKey(sessionKey)))
     if (!byWeek[wk]) byWeek[wk] = { absent: 0, total: 0, noNotice: true }
     byWeek[wk].absent += 1
     byWeek[wk].total += 1

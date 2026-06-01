@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAutoDismiss } from '../hooks/useAutoDismiss'
 import { AbsenceCountBadge } from './AbsenceCountBadge'
 import ConfirmDialog from './ConfirmDialog'
+import SaveFieldOverlay from './SaveFieldOverlay'
 import SearchableSelect from './SearchableSelect'
 import { getEffectiveAbsenceCounts } from '../utils/attendanceStats'
 import { formatClassLabel } from '../utils/classFormat'
@@ -148,9 +149,7 @@ export default function AbsenceBulkEditor({
         }))
       await bulkUpdateStudents(classId, updates)
       setDrafts({})
-      setMessage(
-        `Saved absence overrides for ${updates.length} student${updates.length === 1 ? '' : 's'}.`,
-      )
+      onClose?.()
     } catch (err) {
       setError(err.message || 'Failed to save changes.')
     } finally {
@@ -219,112 +218,118 @@ export default function AbsenceBulkEditor({
         )}
       </header>
 
-      <div className="bulk-absence-toolbar">
-        <SearchableSelect
-          options={classOptions}
-          value={classId}
-          onChange={setClassId}
-          placeholder="Select class…"
-          label="Class"
-        />
-        <label className="bulk-absence-filter">
-          <input
-            type="checkbox"
-            checked={!showAll}
-            onChange={(e) => setShowAll(!e.target.checked)}
-          />
-          Only students with absence counts
-        </label>
-      </div>
-
       {message && (
         <p className="auth-message" role="status">
           {message}
         </p>
       )}
-      {error && (
-        <p className="auth-error" role="alert">
-          {error}
-        </p>
-      )}
 
-      {visibleStudents.length === 0 ? (
-        <p className="empty-state">
-          No students in this class yet.
-        </p>
-      ) : (
-        <div className="bulk-absence-table-wrap">
-          <table className="bulk-absence-table">
-            <thead>
-              <tr>
-                <th scope="col">Student</th>
-                <th scope="col">Recorded</th>
-                <th scope="col">Manual total</th>
-                <th scope="col">Manual streak</th>
-                <th scope="col">No notice</th>
-                <th scope="col">Effective</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleStudents.map(({ student, counts, draft, previewCounts, changed }) => (
-                <tr key={student.id} className={changed ? 'bulk-row-changed' : ''}>
-                  <th scope="row" className="bulk-student-name">
-                    {student.name}
-                  </th>
-                  <td className="bulk-recorded">
-                    {counts.recorded.total} total
-                    {counts.recorded.consecutive > 0 && (
-                      <> · {counts.recorded.consecutive}d</>
-                    )}
-                  </td>
-                  <td>
-                    <input
-                      type="number"
-                      min="0"
-                      className="bulk-input"
-                      placeholder="auto"
-                      aria-label={`Manual total absences for ${student.name}`}
-                      value={draft.manualTotalAbsences}
-                      onChange={(e) =>
-                        updateDraft(student.id, { manualTotalAbsences: e.target.value })
-                      }
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="number"
-                      min="0"
-                      className="bulk-input"
-                      placeholder="auto"
-                      aria-label={`Manual consecutive days for ${student.name}`}
-                      value={draft.manualConsecutiveAbsences}
-                      onChange={(e) =>
-                        updateDraft(student.id, {
-                          manualConsecutiveAbsences: e.target.value,
-                        })
-                      }
-                    />
-                  </td>
-                  <td className="bulk-notice-cell">
-                    <input
-                      type="checkbox"
-                      aria-label={`No prior notice for ${student.name}`}
-                      checked={Boolean(draft.manualNoPriorNotice)}
-                      disabled={draft.manualConsecutiveAbsences === ''}
-                      onChange={(e) =>
-                        updateDraft(student.id, { manualNoPriorNotice: e.target.checked })
-                      }
-                    />
-                  </td>
-                  <td>
-                    <AbsenceCountBadge counts={previewCounts} size="sm" />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <SaveFieldOverlay busy={busy} label="Saving changes…">
+        <div className="bulk-absence-toolbar">
+          <SearchableSelect
+            options={classOptions}
+            value={classId}
+            onChange={setClassId}
+            placeholder="Select class…"
+            label="Class"
+          />
+          <label className="bulk-absence-filter">
+            <input
+              type="checkbox"
+              checked={!showAll}
+              disabled={busy}
+              onChange={(e) => setShowAll(!e.target.checked)}
+            />
+            Only students with absence counts
+          </label>
         </div>
-      )}
+
+        {error && (
+          <p className="auth-error" role="alert">
+            {error}
+          </p>
+        )}
+
+        {visibleStudents.length === 0 ? (
+          <p className="empty-state">
+            No students in this class yet.
+          </p>
+        ) : (
+          <div className="bulk-absence-table-wrap">
+            <table className="bulk-absence-table">
+              <thead>
+                <tr>
+                  <th scope="col">Student</th>
+                  <th scope="col">Recorded</th>
+                  <th scope="col">Manual total</th>
+                  <th scope="col">Manual streak</th>
+                  <th scope="col">No notice</th>
+                  <th scope="col">Effective</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleStudents.map(({ student, counts, draft, previewCounts, changed }) => (
+                  <tr key={student.id} className={changed ? 'bulk-row-changed' : ''}>
+                    <th scope="row" className="bulk-student-name">
+                      {student.name}
+                    </th>
+                    <td className="bulk-recorded">
+                      {counts.recorded.total} total
+                      {counts.recorded.consecutive > 0 && (
+                        <> · {counts.recorded.consecutive}d</>
+                      )}
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        min="0"
+                        className="bulk-input"
+                        placeholder="auto"
+                        disabled={busy}
+                        aria-label={`Manual total absences for ${student.name}`}
+                        value={draft.manualTotalAbsences}
+                        onChange={(e) =>
+                          updateDraft(student.id, { manualTotalAbsences: e.target.value })
+                        }
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        min="0"
+                        className="bulk-input"
+                        placeholder="auto"
+                        disabled={busy}
+                        aria-label={`Manual consecutive days for ${student.name}`}
+                        value={draft.manualConsecutiveAbsences}
+                        onChange={(e) =>
+                          updateDraft(student.id, {
+                            manualConsecutiveAbsences: e.target.value,
+                          })
+                        }
+                      />
+                    </td>
+                    <td className="bulk-notice-cell">
+                      <input
+                        type="checkbox"
+                        aria-label={`No prior notice for ${student.name}`}
+                        checked={Boolean(draft.manualNoPriorNotice)}
+                        disabled={busy || draft.manualConsecutiveAbsences === ''}
+                        onChange={(e) =>
+                          updateDraft(student.id, { manualNoPriorNotice: e.target.checked })
+                        }
+                      />
+                    </td>
+                    <td>
+                      <AbsenceCountBadge counts={previewCounts} size="sm" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SaveFieldOverlay>
 
       <div className="bulk-absence-actions">
         <button

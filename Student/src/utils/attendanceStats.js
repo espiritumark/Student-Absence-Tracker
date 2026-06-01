@@ -1,18 +1,19 @@
 import { formatClassLabel } from './classFormat'
 import { compareAbsenceRisk, getOverallAbsenceRisk } from './absenceRisk'
 import { isConsecutiveDays, parseDateKey } from './dates'
+import { sessionDateFromKey } from './sessionKeys'
 
 export function getStudentAbsenceStats(classAttendance, studentId) {
-  const absentDays = []
+  const absentDates = new Set()
 
-  for (const [dayKey, session] of Object.entries(classAttendance || {})) {
+  for (const [sessionKey, session] of Object.entries(classAttendance || {})) {
     const rec = session?.records?.[studentId] ?? session?.[studentId]
-    if (rec?.status === 'absent') absentDays.push(dayKey)
+    if (rec?.status === 'absent') {
+      absentDates.add(sessionDateFromKey(sessionKey))
+    }
   }
 
-  const sorted = [...absentDays].sort(
-    (a, b) => parseDateKey(a) - parseDateKey(b),
-  )
+  const sorted = [...absentDates].sort((a, b) => parseDateKey(a) - parseDateKey(b))
 
   let consecutive = 0
   if (sorted.length) {
