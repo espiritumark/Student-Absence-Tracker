@@ -115,7 +115,7 @@ export default function AttendanceImport({
   attendance,
   onGoToWarnings,
 }) {
-  const [importMode, setImportMode] = useState('screenshot')
+  const [importMode, setImportMode] = useState('json')
   const [jsonText, setJsonText] = useState('')
   const [pendingScreenshot, setPendingScreenshot] = useState(null)
   const pasteZoneRef = useRef(null)
@@ -469,20 +469,20 @@ export default function AttendanceImport({
         <button
           type="button"
           role="tab"
-          className={`import-mode-tab ${importMode === 'screenshot' ? 'import-mode-active' : ''}`}
-          aria-selected={importMode === 'screenshot'}
-          onClick={() => setImportMode('screenshot')}
-        >
-          Screenshot
-        </button>
-        <button
-          type="button"
-          role="tab"
           className={`import-mode-tab ${importMode === 'json' ? 'import-mode-active' : ''}`}
           aria-selected={importMode === 'json'}
           onClick={() => setImportMode('json')}
         >
           JSON
+        </button>
+        <button
+          type="button"
+          role="tab"
+          className={`import-mode-tab ${importMode === 'screenshot' ? 'import-mode-active' : ''}`}
+          aria-selected={importMode === 'screenshot'}
+          onClick={() => setImportMode('screenshot')}
+        >
+          Screenshot
         </button>
       </div>
 

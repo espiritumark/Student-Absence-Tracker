@@ -8,6 +8,7 @@ import LoadingScreen from './components/LoadingScreen'
 import { useAuth } from './contexts/AuthContext'
 import { useStore } from './hooks/useStore'
 import { getAllAlerts } from './utils/alerts'
+import { getAllStudentAbsenceSummaries } from './utils/attendanceStats'
 import { isOcrRunning } from './utils/ocrSession'
 
 function AppContent() {
@@ -16,10 +17,15 @@ function AppContent() {
   const store = useStore()
 
   const alertCount = getAllAlerts(store.classes, store.attendance).length
+  const trackedCount = getAllStudentAbsenceSummaries(store.classes, store.attendance).length
 
   const TABS = [
     { id: 'import', label: 'Record Attendance' },
-    { id: 'dashboard', label: 'Warnings', badge: alertCount },
+    {
+      id: 'dashboard',
+      label: 'Dashboard',
+      badge: alertCount || trackedCount,
+    },
     { id: 'attendance', label: 'Mark Manually' },
     { id: 'classes', label: 'Classes' },
   ]
@@ -107,7 +113,7 @@ function AppContent() {
           >
             {t.label}
             {t.badge > 0 && (
-              <span className="tab-badge" aria-label={`${t.badge} warnings`}>
+              <span className="tab-badge" aria-label={`${t.badge} items`}>
                 {t.badge}
               </span>
             )}

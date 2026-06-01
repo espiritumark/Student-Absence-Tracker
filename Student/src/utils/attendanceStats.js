@@ -1,4 +1,5 @@
 import { formatClassLabel } from './classFormat'
+import { compareAbsenceRisk, getOverallAbsenceRisk } from './absenceRisk'
 import { isConsecutiveDays, parseDateKey } from './dates'
 
 export function getStudentAbsenceStats(classAttendance, studentId) {
@@ -80,15 +81,10 @@ export function getAllStudentAbsenceSummaries(classes, attendance) {
         consecutive: counts.consecutive,
         usesManualTotal: counts.usesManualTotal,
         usesManualConsecutive: counts.usesManualConsecutive,
+        risk: getOverallAbsenceRisk(counts),
       })
     }
   }
 
-  return rows.sort(
-    (a, b) =>
-      b.total - a.total ||
-      b.consecutive - a.consecutive ||
-      a.className.localeCompare(b.className) ||
-      a.studentName.localeCompare(b.studentName),
-  )
+  return rows.sort((a, b) => compareAbsenceRisk(a, b))
 }

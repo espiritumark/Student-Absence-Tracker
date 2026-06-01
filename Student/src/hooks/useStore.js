@@ -277,6 +277,40 @@ export function useStore() {
     [useCloud, refreshFromCloud, runLocal],
   )
 
+  const bulkUpdateStudents = useCallback(
+    async (classId, updates) => {
+      if (!updates?.length) return
+      if (useCloud) {
+        try {
+          for (const { studentId, patch } of updates) {
+            await dbUpdateStudent(studentId, patch)
+          }
+          await refreshFromCloud({ silent: true })
+        } catch (e) {
+          setSyncError(e.message)
+          throw e
+        }
+        return
+      }
+      runLocal((s) => ({
+        ...s,
+        classes: s.classes.map((c) => {
+          if (c.id !== classId) return c
+          const patchById = Object.fromEntries(
+            updates.map(({ studentId, patch }) => [studentId, patch]),
+          )
+          return {
+            ...c,
+            students: c.students.map((st) =>
+              patchById[st.id] ? { ...st, ...patchById[st.id] } : st,
+            ),
+          }
+        }),
+      }))
+    },
+    [useCloud, refreshFromCloud, runLocal],
+  )
+
   const removeStudent = useCallback(
     async (classId, studentId) => {
       if (useCloud) {
@@ -509,6 +543,7 @@ export function useStore() {
     removeClass,
     addStudent,
     updateStudent,
+    bulkUpdateStudents,
     removeStudent,
     setAttendance,
     setSessionMeta,

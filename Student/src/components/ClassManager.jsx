@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import AbsenceBulkEditor from './AbsenceBulkEditor'
+import { AbsenceCountBadge } from './AbsenceCountBadge'
 import { getEffectiveAbsenceCounts } from '../utils/attendanceStats'
 import { formatClassLabel } from '../utils/classFormat'
 import ConfirmDialog from './ConfirmDialog'
@@ -10,9 +12,9 @@ export default function ClassManager({
   addClass,
   removeClass,
   addStudent,
-  updateStudent,
   removeStudent,
   importStudentsBulk,
+  bulkUpdateStudents,
 }) {
   const [form, setForm] = useState({
     intake: '',
@@ -25,7 +27,7 @@ export default function ClassManager({
   )
   const [studentInput, setStudentInput] = useState('')
   const [bulkText, setBulkText] = useState('')
-  const [expandedManual, setExpandedManual] = useState({})
+  const [bulkEditMode, setBulkEditMode] = useState(false)
   const [removedStudents, setRemovedStudents] = useState([])
   const [addClassBusy, setAddClassBusy] = useState(false)
   const [addClassMessage, setAddClassMessage] = useState('')
@@ -36,11 +38,6 @@ export default function ClassManager({
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState('')
-  const [manualDrafts, setManualDrafts] = useState({})
-  const [manualConfirm, setManualConfirm] = useState(null)
-  const [manualBusy, setManualBusy] = useState(false)
-  const [manualError, setManualError] = useState('')
-  const [manualMessage, setManualMessage] = useState('')
 
   const sortedClasses = [...classes].sort((a, b) =>
     formatClassLabel(a).localeCompare(formatClassLabel(b)),
@@ -160,102 +157,16 @@ export default function ClassManager({
     setRemovedStudents((prev) => prev.filter((r) => r.student.id !== token.student.id))
   }
 
-  function openManualEdit(student) {
-    setManualDrafts((prev) => ({
-      ...prev,
-      [student.id]: {
-        manualTotalAbsences: student.manualTotalAbsences ?? '',
-        manualConsecutiveAbsences: student.manualConsecutiveAbsences ?? '',
-        manualNoPriorNotice: Boolean(student.manualNoPriorNotice),
-      },
-    }))
-    setExpandedManual((prev) => ({ ...prev, [student.id]: true }))
-    setManualError('')
-  }
-
-  function cancelManualEdit(studentId) {
-    setManualDrafts((prev) => {
-      const next = { ...prev }
-      delete next[studentId]
-      return next
-    })
-    setExpandedManual((prev) => ({ ...prev, [studentId]: false }))
-    setManualError('')
-  }
-
-  function updateManualDraft(studentId, patch) {
-    setManualDrafts((prev) => ({
-      ...prev,
-      [studentId]: { ...prev[studentId], ...patch },
-    }))
-  }
-
-  function buildManualPatch(draft) {
-    return {
-      manualTotalAbsences:
-        draft.manualTotalAbsences === '' ? null : Number(draft.manualTotalAbsences),
-      manualConsecutiveAbsences:
-        draft.manualConsecutiveAbsences === ''
-          ? null
-          : Number(draft.manualConsecutiveAbsences),
-      manualNoPriorNotice: Boolean(draft.manualNoPriorNotice),
-    }
-  }
-
-  function describeManualPatch(student, patch) {
-    const parts = []
-    if (patch.manualTotalAbsences != null) {
-      parts.push(`total absences: ${patch.manualTotalAbsences}`)
-    } else if (student.manualTotalAbsences != null) {
-      parts.push('clear total absences override')
-    }
-    if (patch.manualConsecutiveAbsences != null) {
-      parts.push(`consecutive days: ${patch.manualConsecutiveAbsences}`)
-    } else if (student.manualConsecutiveAbsences != null) {
-      parts.push('clear consecutive days override')
-    }
-    if (patch.manualNoPriorNotice) {
-      parts.push('no prior notice: yes')
-    } else if (student.manualNoPriorNotice) {
-      parts.push('no prior notice: no')
-    }
-    return parts.length ? parts.join(' · ') : 'clear all manual overrides'
-  }
-
-  async function handleConfirmManual() {
-    if (!manualConfirm || manualBusy || !selectedClassId) return
-    setManualBusy(true)
-    setManualError('')
-    try {
-      if (manualConfirm.action === 'clear') {
-        await updateStudent(selectedClassId, manualConfirm.student.id, {
-          manualTotalAbsences: null,
-          manualConsecutiveAbsences: null,
-          manualNoPriorNotice: false,
-        })
-      } else {
-        await updateStudent(
-          selectedClassId,
-          manualConfirm.student.id,
-          manualConfirm.patch,
-        )
-      }
-      cancelManualEdit(manualConfirm.student.id)
-      setManualConfirm(null)
-      setManualMessage(`Updated manual absences for ${manualConfirm.student.name}.`)
-    } catch (err) {
-      setManualError(err.message || 'Failed to save manual absences.')
-    } finally {
-      setManualBusy(false)
-    }
-  }
-
-  function toggleManual(student) {
-    if (expandedManual[student.id]) {
-      cancelManualEdit(student.id)
-      return
-    }
-    openManualEdit(student)
+  if (bulkEditMode) {
+    return (
+      <AbsenceBulkEditor
+        classes={classes}
+        attendance={attendance}
+        initialClassId={selectedClassId}
+        bulkUpdateStudents={bulkUpdateStudents}
+        onClose={() => setBulkEditMode(false)}
+      />
+    )
   }
 
   return (
@@ -263,12 +174,10 @@ export default function ClassManager({
       <header className="panel-header">
         <h2>Classes &amp; students</h2>
         <p className="panel-desc">
-          Classes are usually created automatically when you import a screenshot.
-          You can also add them manually below.
+          Manage classes and rosters. Use bulk edit for absence count overrides on one page.
         </p>
       </header>
 
-      {/* ── Add class form ── */}
       <details className="collapsible-form">
         <summary className="collapsible-summary">Add a new class manually</summary>
         <form className="portal-meta-grid add-class-form" onSubmit={handleAddClass}>
@@ -326,7 +235,6 @@ export default function ClassManager({
         <p className="empty-state">No classes yet. Import a screenshot or add one above.</p>
       ) : (
         <>
-          {/* ── Class selector ── */}
           <div className="class-selector-row">
             <SearchableSelect
               options={classOptions}
@@ -341,6 +249,14 @@ export default function ClassManager({
               placeholder="Search and select a class…"
               label="Select class"
             />
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={!selectedClass}
+              onClick={() => setBulkEditMode(true)}
+            >
+              Bulk edit this class
+            </button>
             <button
               type="button"
               className="btn btn-ghost btn-danger-text"
@@ -375,56 +291,10 @@ export default function ClassManager({
             </p>
           </ConfirmDialog>
 
-          <ConfirmDialog
-            open={Boolean(manualConfirm)}
-            title={
-              manualConfirm?.action === 'clear'
-                ? 'Clear manual absences?'
-                : 'Save manual absences?'
-            }
-            confirmLabel={manualConfirm?.action === 'clear' ? 'Clear overrides' : 'Save changes'}
-            cancelLabel="Cancel"
-            danger={manualConfirm?.action === 'clear'}
-            busy={manualBusy}
-            error={manualError}
-            onCancel={() => {
-              if (manualBusy) return
-              setManualConfirm(null)
-              setManualError('')
-            }}
-            onConfirm={handleConfirmManual}
-          >
-            {manualConfirm && (
-              <p className="modal-lead">
-                {manualConfirm.action === 'clear' ? (
-                  <>
-                    Clear manual absence overrides for{' '}
-                    <strong>{manualConfirm.student.name}</strong>?
-                  </>
-                ) : (
-                  <>
-                    Save manual absence overrides for{' '}
-                    <strong>{manualConfirm.student.name}</strong>?
-                    <span className="muted small block">
-                      {describeManualPatch(manualConfirm.student, manualConfirm.patch)}
-                    </span>
-                  </>
-                )}
-              </p>
-            )}
-          </ConfirmDialog>
-
-          {manualMessage && (
-            <p className="auth-message" role="status">
-              {manualMessage}
-            </p>
-          )}
-
           {selectedClass && (
             <div className="class-detail-card">
               <p className="class-detail-title">{formatClassLabel(selectedClass)}</p>
 
-              {/* ── Add student ── */}
               <form className="inline-form" onSubmit={handleAddStudent}>
                 <input
                   type="text"
@@ -471,7 +341,6 @@ export default function ClassManager({
                 )}
               </details>
 
-              {/* ── Undo toasts ── */}
               {removedStudents.length > 0 && (
                 <div className="undo-stack">
                   {removedStudents.map((r) => (
@@ -495,132 +364,22 @@ export default function ClassManager({
                 <ul className="student-list">
                   {sortedStudents.map((st) => {
                     const counts = getEffectiveAbsenceCounts(st, classAttendance)
-                    const hasManualOnly =
-                      (st.manualTotalAbsences != null || st.manualConsecutiveAbsences != null) &&
-                      counts.total <= 0 &&
-                      counts.consecutive <= 0
 
                     return (
-                    <li key={st.id}>
-                      <div className="student-row">
-                        <span className="student-name-text">{st.name}</span>
-
-                        {/* Manual override section — collapsed by default */}
-                        {expandedManual[st.id] ? (
-                          <div className="student-manual">
-                            <label>
-                              Total absences (manual override)
-                              <input
-                                type="number"
-                                min="0"
-                                value={manualDrafts[st.id]?.manualTotalAbsences ?? ''}
-                                onChange={(e) =>
-                                  updateManualDraft(st.id, {
-                                    manualTotalAbsences: e.target.value,
-                                  })
-                                }
-                              />
-                            </label>
-                            <label>
-                              Consecutive days (manual override)
-                              <input
-                                type="number"
-                                min="0"
-                                value={manualDrafts[st.id]?.manualConsecutiveAbsences ?? ''}
-                                onChange={(e) =>
-                                  updateManualDraft(st.id, {
-                                    manualConsecutiveAbsences: e.target.value,
-                                  })
-                                }
-                              />
-                            </label>
-                            <label className="manual-notice">
-                              <input
-                                type="checkbox"
-                                checked={Boolean(manualDrafts[st.id]?.manualNoPriorNotice)}
-                                onChange={(e) =>
-                                  updateManualDraft(st.id, {
-                                    manualNoPriorNotice: e.target.checked,
-                                  })
-                                }
-                                disabled={manualDrafts[st.id]?.manualConsecutiveAbsences === ''}
-                              />
-                              No prior notice (manual)
-                            </label>
-                            <div className="manual-actions">
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-sm"
-                                onClick={() =>
-                                  setManualConfirm({
-                                    student: st,
-                                    action: 'clear',
-                                  })
-                                }
-                              >
-                                Clear manual
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-sm"
-                                onClick={() => cancelManualEdit(st.id)}
-                              >
-                                Cancel
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-secondary btn-sm"
-                                onClick={() => {
-                                  const draft = manualDrafts[st.id]
-                                  if (!draft) return
-                                  setManualConfirm({
-                                    student: st,
-                                    action: 'save',
-                                    patch: buildManualPatch(draft),
-                                  })
-                                }}
-                              >
-                                Save changes
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="student-meta-row">
-                            {counts.total > 0 || counts.consecutive > 0 ? (
-                              <span className="student-absence-counts">
-                                <strong>{counts.total}</strong> total
-                                {counts.consecutive > 0 && (
-                                  <>
-                                    {' · '}
-                                    <strong>{counts.consecutive}</strong> consecutive
-                                  </>
-                                )}
-                                {(counts.usesManualTotal || counts.usesManualConsecutive) && (
-                                  <span className="manual-badge">manual</span>
-                                )}
-                              </span>
-                            ) : hasManualOnly ? (
-                              <span className="manual-badge">manual override</span>
-                            ) : null}
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm"
-                              onClick={() => toggleManual(st)}
-                            >
-                              Edit absences
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm btn-danger-text"
-                        onClick={() => handleRemoveStudent(selectedClassId, st)}
-                        aria-label={`Remove ${st.name}`}
-                      >
-                        Remove
-                      </button>
-                    </li>
+                      <li key={st.id}>
+                        <div className="student-row">
+                          <span className="student-name-text">{st.name}</span>
+                          <AbsenceCountBadge counts={counts} />
+                        </div>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm btn-danger-text"
+                          onClick={() => handleRemoveStudent(selectedClassId, st)}
+                          aria-label={`Remove ${st.name}`}
+                        >
+                          Remove
+                        </button>
+                      </li>
                     )
                   })}
                 </ul>
