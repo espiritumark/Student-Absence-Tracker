@@ -42,21 +42,27 @@ export function addDaysToKey(key, deltaDays) {
   return formatDate(date)
 }
 
+/** Portal / vision JSON display format: DD/MM/YYYY */
 export function formatPortalDate(key) {
   if (!key) return ''
   const [y, m, d] = key.split('-')
-  return `${Number(m)}/${Number(d)}/${y}`
+  return `${Number(d)}/${Number(m)}/${y}`
 }
 
+/** Parse portal dates as DD/MM/YYYY (matches on-screen format and vision LLM output). */
 export function parsePortalDate(text) {
   const labeled = text.match(/Date:?\s*(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/i)
   const m = labeled || text.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/)
   if (!m) return null
-  const month = Number(m[1])
-  const day = Number(m[2])
+  const day = Number(m[1])
+  const month = Number(m[2])
   const year = Number(m[3])
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null
   const d = new Date(year, month - 1, day)
   if (Number.isNaN(d.getTime())) return null
+  if (d.getDate() !== day || d.getMonth() !== month - 1 || d.getFullYear() !== year) {
+    return null
+  }
   return formatDate(d)
 }
 

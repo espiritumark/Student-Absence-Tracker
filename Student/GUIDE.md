@@ -27,7 +27,7 @@ Open the URL shown in the terminal (usually `http://localhost:5173`).
 {
   "session_details": {
     "class": "INTAKE 17 LEVEL 5 HND IN COMPUTING GROUP 1",
-    "date": "05/05/2026",
+    "date": "02/06/2026",
     "module": "L5C | Network Management",
     "start_time": "9:00 AM",
     "duration": "1 Session"
@@ -37,22 +37,28 @@ Open the URL shown in the terminal (usually `http://localhost:5173`).
     { "no": 2, "name": "ANOTHER STUDENT", "status": "Absent" }
   ],
   "summary": {
-    "total_students": 21,
-    "present": 19,
-    "absent": 2
+    "total_students": 2,
+    "present": 1,
+    "absent": 1
   }
 }
 ```
 
 - **class** — parsed into intake, level, qualification, and group
-- **date** — `MM/DD/YYYY` (e.g. `05/05/2026`)
+- **date** — `DD/MM/YYYY` (e.g. `02/06/2026` = 2 June 2026)
 - **status** — `Present` or `Absent`
 - If the class does not exist yet, it is **created automatically**
 - If attendance for that class + date already exists, you get a **confirm overwrite** modal
 
-## 3) Screenshot import (optional)
+## 3) Screenshot import (vision AI)
 
-Use the **Screenshot (OCR)** tab if you only have an image. OCR is less reliable than JSON.
+1. Go to **Record Attendance** → **Screenshot** tab
+2. Configure vision AI in `.env` (see `.env.example`) — free local option: Ollama + `qwen2.5vl:7b`
+3. Paste or upload your portal screenshot
+4. Click **Scan screenshot**
+5. Review the extracted JSON and student table, then **Save daily attendance**
+
+Screenshot import uses vision AI only (no OCR). Output matches the same JSON format as manual paste.
 
 ## 4) Manual attendance
 

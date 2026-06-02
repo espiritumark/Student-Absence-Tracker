@@ -1,5 +1,52 @@
 import { parseClassHeader, formatClassLabel } from './classFormat'
-import { formatPortalDate, parsePortalDate } from './dates'
+import { dateKey, formatPortalDate, parsePortalDate } from './dates'
+
+/** Pull class header text from session fields when the model left class empty. */
+export function repairPortalSessionData(data) {
+  if (!data || typeof data !== 'object') return data
+
+  const session = data.session_details ?? data.sessionDetails ?? data.session ?? {}
+  if (!data.session_details) data.session_details = session
+
+  let classText = String(session.class ?? session.class_name ?? session.className ?? '').trim()
+  if (classText) return data
+
+  const candidates = [
+    session.module,
+    session.title,
+    session.programme,
+    session.course,
+    data.class,
+    data.class_name,
+    data.className,
+  ]
+
+  for (const value of Object.values(session)) {
+    if (typeof value === 'string') candidates.push(value)
+  }
+
+  for (const text of candidates) {
+    const candidate = String(text ?? '').trim()
+    if (!candidate) continue
+    if (parseClassHeader(candidate) || /INTAKE\s*\d+\s*LEVEL\s*\d+/i.test(candidate)) {
+      session.class = candidate
+      break
+    }
+  }
+
+  return data
+}
+
+function firstClassHeaderMatch(...texts) {
+  for (const text of texts) {
+    const candidate = String(text ?? '').trim()
+    if (!candidate) continue
+    if (parseClassHeader(candidate) || /INTAKE\s*\d+\s*LEVEL\s*\d+/i.test(candidate)) {
+      return candidate
+    }
+  }
+  return ''
+}
 
 function normalizeStatus(status) {
   const s = String(status ?? '').trim().toLowerCase()
@@ -43,9 +90,12 @@ function parseClassMetaFromSession(session, classText) {
 }
 
 /**
- * Build portal-style JSON from parsed import data (e.g. after OCR).
+ * Build portal-style JSON from parsed import data (e.g. after screenshot scan).
  */
 export function buildPortalJson(meta, students) {
+  const sorted = [...students].sort((a, b) => a.index - b.index)
+  const presentCount = sorted.filter((row) => row.present).length
+
   const classMeta = {
     intake: Number(meta.intake) || null,
     level: Number(meta.level) || null,
@@ -55,7 +105,7 @@ export function buildPortalJson(meta, students) {
   const classLabel =
     classMeta.intake != null && classMeta.level != null && classMeta.group != null
       ? formatClassLabel(classMeta)
-      : classMeta.qualification || meta.classLabel || ''
+      : meta.qualification || meta.classLabel || ''
 
   return JSON.stringify(
     {
@@ -66,11 +116,16 @@ export function buildPortalJson(meta, students) {
         start_time: meta.startTime || '',
         duration: meta.duration || '',
       },
-      attendance: students.map((row) => ({
+      attendance: sorted.map((row) => ({
         no: row.index,
         name: row.name,
-        status: row.present ? 'present' : 'absent',
+        status: row.present ? 'Present' : 'Absent',
       })),
+      summary: {
+        total_students: sorted.length,
+        present: presentCount,
+        absent: sorted.length - presentCount,
+      },
     },
     null,
     2,
@@ -79,11 +134,17 @@ export function buildPortalJson(meta, students) {
 
 /**
  * Parse portal export JSON into the same shape used by screenshot import.
+ * @param {object} [options]
+ * @param {boolean} [options.lenient] — allow missing class/date (screenshot review); sets warnings
+ * @param {boolean} [options.repairSession] — infer class from other session fields before validate
  */
-export function parseAttendanceJson(raw) {
+export function parseAttendanceJson(raw, options = {}) {
+  const { lenient = false, repairSession = false } = options
+  const warnings = []
+
   let data
   try {
-    data = typeof raw === 'string' ? JSON.parse(raw) : raw
+    data = typeof raw === 'string' ? JSON.parse(raw) : { ...raw }
   } catch {
     throw new Error('Invalid JSON. Check brackets, commas, and quotes.')
   }
@@ -92,12 +153,28 @@ export function parseAttendanceJson(raw) {
     throw new Error('JSON must be an object.')
   }
 
+  if (repairSession) {
+    repairPortalSessionData(data)
+  }
+
   const session = data.session_details ?? data.sessionDetails ?? data.session ?? {}
-  const classText = session.class ?? session.class_name ?? session.className ?? ''
+  let classText = String(session.class ?? session.class_name ?? session.className ?? '').trim()
+
+  if (!classText) {
+    classText = firstClassHeaderMatch(
+      session.module,
+      session.title,
+      session.programme,
+      session.course,
+      ...Object.values(session),
+    )
+    if (classText) session.class = classText
+  }
+
   const classMeta = parseClassMetaFromSession(session, classText)
 
   const dateRaw = session.date ?? session.session_date ?? ''
-  const date = parsePortalDate(String(dateRaw)) || parsePortalDate(classText)
+  let date = parsePortalDate(String(dateRaw)) || parsePortalDate(classText)
 
   const module = session.module ?? ''
   const startTime = session.start_time ?? session.startTime ?? ''
@@ -127,12 +204,21 @@ export function parseAttendanceJson(raw) {
     throw new Error('No valid student names found in attendance array.')
   }
 
-  if (!classMeta && !classText.trim()) {
-    throw new Error('session_details.class is required (e.g. INTAKE 17 LEVEL 5 … GROUP 1).')
+  const hasClass = Boolean(classMeta) || Boolean(classText.trim())
+
+  if (!hasClass) {
+    if (!lenient) {
+      throw new Error('session_details.class is required (e.g. INTAKE 17 LEVEL 5 … GROUP 1).')
+    }
+    warnings.push('missing_class')
   }
 
   if (!date) {
-    throw new Error('session_details.date is required (e.g. 05/05/2026).')
+    if (!lenient) {
+      throw new Error('session_details.date is required (e.g. 02/06/2026 as DD/MM/YYYY).')
+    }
+    date = dateKey()
+    warnings.push('missing_date')
   }
 
   return {
@@ -151,5 +237,6 @@ export function parseAttendanceJson(raw) {
     },
     students,
     summary: data.summary ?? null,
+    warnings,
   }
 }

@@ -2,10 +2,9 @@ import { findMatchingClass, formatClassLabel } from './classFormat'
 import { previewRosterImpact } from './attendanceStats'
 import { UI } from './uiCopy'
 import { findSessionKey, makeSessionKey, normalizeModuleKey } from './sessionKeys'
+import { normalizeName } from './nameMatching'
 
-export function normalizeName(name) {
-  return name.trim().replace(/\s+/g, ' ').toUpperCase()
-}
+export { normalizeName } from './nameMatching'
 
 function statusLabel(status) {
   if (status === 'absent') return 'Absent'
@@ -87,7 +86,8 @@ export function computeImportSaveSummary(
   const baseRecordPatch = {}
   for (const row of incoming) {
     const nameKey = normalizeName(row.name)
-    const existingId = nameToId.get(nameKey) || null
+    const existingId =
+      row.rosterStudentId || nameToId.get(nameKey) || null
     const nextStatus = row.present ? 'present' : 'absent'
     if (existingId) {
       incomingIds.add(existingId)
@@ -107,7 +107,8 @@ export function computeImportSaveSummary(
   for (const row of incoming) {
     const nameKey = normalizeName(row.name)
     const displayName = row.name.trim()
-    const existingId = nameToId.get(nameKey) || null
+    const existingId =
+      row.rosterStudentId || nameToId.get(nameKey) || null
     const nextStatus = row.present ? 'present' : 'absent'
     const nextLabel = statusLabel(nextStatus)
 
@@ -263,6 +264,12 @@ export function buildImportPayload(meta, students) {
     module: meta.module,
     startTime: meta.startTime,
     duration: meta.duration,
-    students,
+    students: students.map((row) => ({
+      index: row.index,
+      name: row.name,
+      present: row.present,
+      rosterStudentId: row.rosterStudentId ?? null,
+      importName: row.importName ?? row.name,
+    })),
   }
 }

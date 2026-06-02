@@ -446,14 +446,23 @@ export function useStore() {
         }
 
         const cls = { ...classes[clsIndex], students: [...(classes[clsIndex].students ?? [])] }
-        const nameToId = new Map(cls.students.map((st) => [st.name, st.id]))
+        const nameToId = new Map(
+          cls.students.map((st) => [normalizeName(st.name), st.id]),
+        )
 
         for (const row of students) {
+          let id = row.rosterStudentId || null
           const name = normalizeName(row.name)
-          if (!nameToId.has(name)) {
-            const id = createId()
-            nameToId.set(name, id)
-            cls.students = [...cls.students, { id, name }]
+
+          if (!id) {
+            id = nameToId.get(name)
+          }
+
+          if (!id) {
+            const newId = createId()
+            nameToId.set(name, newId)
+            cls.students = [...cls.students, { id: newId, name: row.name }]
+            id = newId
           }
         }
         classes[clsIndex] = cls
@@ -465,8 +474,7 @@ export function useStore() {
         const records = { ...session.records }
 
         for (const row of students) {
-          const name = normalizeName(row.name)
-          const id = nameToId.get(name)
+          let id = row.rosterStudentId || nameToId.get(normalizeName(row.name))
           if (!id) continue
           records[id] = { status: row.present ? 'present' : 'absent', priorNotice: false }
         }

@@ -7,19 +7,21 @@ import {
   Input,
   InputNumber,
   Progress,
-  Radio,
   Result,
   Row,
   Col,
   Space,
   Table,
   Tag,
+  Modal,
   Tabs,
   Typography,
   Upload,
 } from 'antd'
+import { ExclamationCircleFilled } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react'
+import { formatSimilarityPercent } from '../utils/nameMatching'
 import { useAutoDismiss } from '../hooks/useAutoDismiss'
 import { useReportTabActivity } from '../hooks/useReportTabActivity'
 import { useScrollRegionHeight } from '../hooks/useScrollRegionHeight'
@@ -32,14 +34,25 @@ import {
 import {
   cancelOcrJob,
   consumeOcrResult,
-  prewarmOcr,
   runOcrJob,
   subscribeOcr,
 } from '../utils/ocrSession'
 import { UI } from '../utils/uiCopy'
-import { fileToDataUrl, isCloudOcrConfigured, isRoboflowCheckboxConfigured } from '../utils/parseScreenshot'
-import { parseAttendanceJson } from '../utils/parseAttendanceJson'
+import { fileToDataUrl, isVisionLlmConfigured, checkVisionLlmConnection } from '../utils/parseScreenshot'
+import { buildPortalJson, parseAttendanceJson } from '../utils/parseAttendanceJson'
+import {
+  enrichImportStudentsWithRoster,
+  hasUnresolvedSimilarNames,
+  linkImportRowToRoster,
+  markImportRowAsNewStudent,
+  countSimilarPending,
+  polishImportRow,
+  needsSimilarReviewWarning,
+  shouldShowRosterNameReplacement,
+  topSimilarityScore,
+} from '../utils/importNameResolution'
 import ImportSaveConfirmModal from './ImportSaveConfirmModal'
+import SimilarNameResolveModal from './SimilarNameResolveModal'
 import BackButton from './BackButton'
 import SaveFieldOverlay from './SaveFieldOverlay'
 
@@ -60,7 +73,7 @@ function formatElapsed(seconds) {
   return m > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${s}s`
 }
 
-function OcrSpinner({ progress, stageLabel, elapsedSeconds = 0, progressStalled = false, onCancel }) {
+function ScanSpinner({ progress, stageLabel, elapsedSeconds = 0, progressStalled = false, onCancel }) {
   const pct = Math.round((progress ?? 0) * 100)
   return (
     <div className="ocr-spinner" aria-live="polite">
@@ -71,14 +84,9 @@ function OcrSpinner({ progress, stageLabel, elapsedSeconds = 0, progressStalled 
           {pct}% complete · {formatElapsed(elapsedSeconds)} elapsed
         </Typography.Text>
         <Progress percent={pct} showInfo={false} style={{ marginTop: 8 }} />
-        {pct < 62 && (
-          <Typography.Text type="secondary" style={{ display: 'block', fontSize: '0.85rem' }}>
-            First run downloads OCR files — this can take about a minute.
-          </Typography.Text>
-        )}
         {progressStalled && (
           <Typography.Text type="warning" style={{ display: 'block', fontSize: '0.85rem' }}>
-            Still working — add a cloud OCR key in .env for much faster scans.
+            Still working — large screenshots can take a minute with vision AI.
           </Typography.Text>
         )}
         {onCancel && (
@@ -157,8 +165,8 @@ export default function AttendanceImport({
   const [ocrProgressStalled, setOcrProgressStalled] = useState(false)
   const ocrStartedAtRef = useRef(null)
   const ocrProgressAtRef = useRef(0)
-  const [highAccuracy, setHighAccuracy] = useState(false)
-  const [scanMode, setScanMode] = useState('full')
+  const [reviewSource, setReviewSource] = useState(null)
+  const [visionConnection, setVisionConnection] = useState(null)
   const [error, setError] = useState('')
   const [meta, setMeta] = useState(emptyMeta)
   const [students, setStudents] = useState([])
@@ -174,7 +182,12 @@ export default function AttendanceImport({
   const [jsonExportMessage, setJsonExportMessage] = useState('')
   const [resetCountdown, setResetCountdown] = useState(0)
   const [importView, setImportView] = useState('input')
+  const [importWarnings, setImportWarnings] = useState([])
+  const [lastScannedScreenshot, setLastScannedScreenshot] = useState(null)
+  const [lastScanModalOpen, setLastScanModalOpen] = useState(false)
+  const [similarModalKey, setSimilarModalKey] = useState(null)
   const savedRef = useRef(false)
+  const screenshotSessionRef = useRef(null)
 
   const hasUnsavedDraft = useCallback(() => {
     return (
@@ -185,14 +198,124 @@ export default function AttendanceImport({
     )
   }, [students.length, jsonText, pendingScreenshot, processing])
 
-  const resetParsedReview = useCallback(() => {
+  const resetJsonImportReview = useCallback(() => {
     setStudents([])
     setMeta(emptyMeta)
     setParseMessage('')
     setJsonExportMessage('')
     setError('')
+    setReviewSource(null)
+    setImportWarnings([])
     setImportView('input')
   }, [])
+
+  const snapshotScreenshotSession = useCallback(() => {
+    const hasScreenshotWork =
+      lastScannedScreenshot ||
+      pendingScreenshot ||
+      (reviewSource === 'screenshot' && students.length > 0)
+
+    if (!hasScreenshotWork) {
+      screenshotSessionRef.current = null
+      return
+    }
+
+    screenshotSessionRef.current = {
+      students,
+      meta,
+      importView,
+      importWarnings,
+      parseMessage,
+      reviewSource,
+      lastScannedScreenshot,
+      pendingScreenshot,
+      previewUrl,
+      portalJson: reviewSource === 'screenshot' ? jsonText : '',
+    }
+  }, [
+    students,
+    meta,
+    importView,
+    importWarnings,
+    parseMessage,
+    reviewSource,
+    lastScannedScreenshot,
+    pendingScreenshot,
+    previewUrl,
+    jsonText,
+  ])
+
+  const restoreScreenshotSession = useCallback(() => {
+    const snap = screenshotSessionRef.current
+    if (!snap) return
+
+    setStudents(snap.students ?? [])
+    setMeta(snap.meta ?? emptyMeta)
+    setImportView(snap.importView ?? 'input')
+    setImportWarnings(snap.importWarnings ?? [])
+    setParseMessage(snap.parseMessage ?? '')
+    setReviewSource(snap.reviewSource ?? null)
+    setLastScannedScreenshot(snap.lastScannedScreenshot ?? null)
+    setPendingScreenshot(snap.pendingScreenshot ?? null)
+    setPreviewUrl(snap.previewUrl ?? null)
+    setError('')
+  }, [])
+
+  const clearScreenshotSession = useCallback(() => {
+    screenshotSessionRef.current = null
+    setLastScannedScreenshot(null)
+    setPendingScreenshot(null)
+    setPreviewUrl(null)
+    setStudents([])
+    setMeta(emptyMeta)
+    setImportView('input')
+    setReviewSource(null)
+    setImportWarnings([])
+    setParseMessage('')
+    setError('')
+    setLastScanModalOpen(false)
+  }, [])
+
+  const handleImportModeChange = useCallback(
+    (mode) => {
+      if (mode === importMode) return
+
+      if (importMode === 'screenshot') {
+        snapshotScreenshotSession()
+      }
+
+      resetJsonImportReview()
+
+      if (mode === 'json') {
+        setPendingScreenshot(null)
+        setPreviewUrl(null)
+        setLastScannedScreenshot(null)
+        setLastScanModalOpen(false)
+        if (importMode === 'screenshot') {
+          setJsonText('')
+        }
+      } else {
+        restoreScreenshotSession()
+      }
+
+      setImportMode(mode)
+    },
+    [
+      importMode,
+      snapshotScreenshotSession,
+      resetJsonImportReview,
+      restoreScreenshotSession,
+    ],
+  )
+
+  const backFromReview = useCallback(() => {
+    if (reviewSource === 'json') {
+      resetJsonImportReview()
+      return
+    }
+    setImportView('input')
+    setError('')
+  }, [reviewSource, resetJsonImportReview])
 
   const resetToFreshForm = useCallback(() => {
     savedRef.current = false
@@ -202,6 +325,8 @@ export default function AttendanceImport({
     setStudents([])
     setPreviewUrl(null)
     setPendingScreenshot(null)
+    setLastScannedScreenshot(null)
+    setLastScanModalOpen(false)
     setJsonText('')
     setError('')
     setParseMessage('')
@@ -212,6 +337,9 @@ export default function AttendanceImport({
     setPendingImport(null)
     setConfirmSummary(null)
     setConfirmError('')
+    setReviewSource(null)
+    setImportWarnings([])
+    screenshotSessionRef.current = null
   }, [])
 
   useEffect(() => {
@@ -249,28 +377,120 @@ export default function AttendanceImport({
   useAutoDismiss(Boolean(parseMessage) && !hasUnsavedDraft(), () => setParseMessage(''))
   useAutoDismiss(Boolean(jsonExportMessage), () => setJsonExportMessage(''))
 
-  const applyParsed = useCallback((parsed) => {
-    const cm = parsed.meta.classMeta
-    setMeta({
-      intake: cm?.intake ?? '',
-      level: cm?.level ?? '',
-      qualification: cm?.qualification ?? parsed.meta.classLabel ?? '',
-      group: cm?.group ?? '',
-      date: parsed.meta.date || dateKey(),
-      module: parsed.meta.module || '',
-      startTime: parsed.meta.startTime || '',
-      duration: parsed.meta.duration || '',
+  const applyParsed = useCallback(
+    (parsed, source = 'json') => {
+      const cm = parsed.meta.classMeta
+      const nextMeta = {
+        intake: cm?.intake ?? '',
+        level: cm?.level ?? '',
+        qualification: cm?.qualification ?? parsed.meta.classLabel ?? '',
+        group: cm?.group ?? '',
+        date: parsed.meta.date || dateKey(),
+        module: parsed.meta.module || '',
+        startTime: parsed.meta.startTime || '',
+        duration: parsed.meta.duration || '',
+      }
+      const enriched = enrichImportStudentsWithRoster(parsed.students, classes, nextMeta)
+      const pendingSimilar = countSimilarPending(enriched)
+      const warnings = parsed.warnings ?? []
+      const missingClass = warnings.includes('missing_class')
+      const count = parsed.students.length
+      const studentWord = `${count} student${count === 1 ? '' : 's'}`
+
+      setMeta(nextMeta)
+      setStudents(
+        [...enriched].sort((a, b) => a.name.localeCompare(b.name)).map(polishImportRow),
+      )
+      if (parsed.previewUrl) setPreviewUrl(parsed.previewUrl)
+      if (source === 'screenshot' && parsed.previewUrl) {
+        setLastScannedScreenshot(parsed.previewUrl)
+      }
+      setError('')
+      setReviewSource(source)
+      setImportWarnings(warnings)
+
+      let message = ''
+      if (pendingSimilar > 0) {
+        message = `${source === 'screenshot' ? 'Scanned' : 'Parsed'} ${studentWord}. ${pendingSimilar} name${pendingSimilar === 1 ? '' : 's'} under 95% match need Review in the table.`
+      } else if (missingClass && source === 'screenshot') {
+        message = `Scanned ${studentWord}. Class header was not detected — fill Intake, Level, Group, and Programme below before saving.`
+      } else if (source === 'screenshot') {
+        message = `Scanned ${studentWord}. Review attendance in the table below, then save.`
+      } else {
+        message = `Parsed ${studentWord}. Review details below, then save.`
+      }
+      if (warnings.includes('missing_date') && source === 'screenshot') {
+        message += ' Date was not detected — confirm the session date below.'
+      }
+
+      setParseMessage(message)
+      setImportView('review')
+    },
+    [classes],
+  )
+
+  const applyFromExtractedJson = useCallback(
+    (jsonRaw, source, { previewUrl } = {}) => {
+      const parsed = parseAttendanceJson(jsonRaw, {
+        lenient: source === 'screenshot',
+        repairSession: source === 'screenshot',
+      })
+      applyParsed({ ...parsed, previewUrl }, source)
+    },
+    [applyParsed],
+  )
+
+  const finishScreenshotScan = useCallback(
+    (result) => {
+      if (!result) return
+
+      if (result.portalJson) {
+        setJsonText(result.portalJson)
+        try {
+          applyFromExtractedJson(result.portalJson, 'screenshot', {
+            previewUrl: result.previewUrl,
+          })
+          return
+        } catch (e) {
+          setError(e.message || 'Failed to parse extracted JSON.')
+          setStudents([])
+          setImportView('input')
+          return
+        }
+      }
+
+      applyParsed(result, 'screenshot')
+    },
+    [applyFromExtractedJson, applyParsed],
+  )
+
+  useEffect(() => {
+    if (importView !== 'review' || !students.length) return
+
+    setStudents((current) => {
+      const base = current.map((row) => ({
+        index: row.index,
+        name: row.importName || row.name,
+        present: row.present,
+      }))
+      const enriched = enrichImportStudentsWithRoster(base, classes, meta)
+
+      return enriched.map((fresh) => {
+        const prev = current.find(
+          (p) =>
+            p.index === fresh.index &&
+            (p.importName || p.name) === (fresh.importName || fresh.name),
+        )
+        if (prev?.matchStatus === 'exact' || prev?.matchStatus === 'new') {
+          return prev
+        }
+        if (prev?.matchStatus === 'linked_roster') {
+          return polishImportRow(prev)
+        }
+        return fresh
+      }).map(polishImportRow)
     })
-    setStudents(
-      [...parsed.students].sort((a, b) => a.name.localeCompare(b.name)),
-    )
-    if (parsed.previewUrl) setPreviewUrl(parsed.previewUrl)
-    setError('')
-    setParseMessage(
-      `Parsed ${parsed.students.length} student${parsed.students.length === 1 ? '' : 's'}. Review details below, then save.`,
-    )
-    setImportView('review')
-  }, [])
+  }, [meta.intake, meta.level, meta.group, meta.qualification, classes, importView])
 
   useEffect(() => {
     if (!processing) return undefined
@@ -298,20 +518,31 @@ export default function AttendanceImport({
         return
       }
 
-      const result = consumeOcrResult()
-      if (result) {
-        applyParsed(result)
-      }
+      const leftover = consumeOcrResult()
+      if (leftover) finishScreenshotScan(leftover)
       setProcessing(false)
     })
-  }, [applyParsed])
+  }, [finishScreenshotScan])
 
   useEffect(() => {
-    if (importMode === 'screenshot' && !isCloudOcrConfigured()) {
-      prewarmOcr()
-    }
     if (importMode === 'screenshot') {
       setTimeout(() => pasteZoneRef.current?.focus(), 50)
+    }
+  }, [importMode])
+
+  useEffect(() => {
+    if (importMode !== 'screenshot' || !isVisionLlmConfigured()) {
+      setVisionConnection(null)
+      return undefined
+    }
+
+    let cancelled = false
+    checkVisionLlmConnection().then((result) => {
+      if (!cancelled) setVisionConnection(result)
+    })
+
+    return () => {
+      cancelled = true
     }
   }, [importMode])
 
@@ -321,13 +552,11 @@ export default function AttendanceImport({
       return
     }
     const dataUrl = await fileToDataUrl(file)
+    clearScreenshotSession()
     setPendingScreenshot(dataUrl)
     setPreviewUrl(dataUrl)
-    setStudents([])
-    setParseMessage('')
     setSaved(false)
-    setError('')
-  }, [])
+  }, [clearScreenshotSession])
 
   const handlePasteImageEvent = useCallback(
     (e) => {
@@ -370,7 +599,9 @@ export default function AttendanceImport({
 
   function clearPendingScreenshot() {
     setPendingScreenshot(null)
-    setPreviewUrl(null)
+    if (!students.length) {
+      setPreviewUrl(null)
+    }
     setError('')
   }
 
@@ -378,14 +609,12 @@ export default function AttendanceImport({
     setError('')
     setParseMessage('')
     setSaved(false)
+    screenshotSessionRef.current = null
     try {
-      const parsed = parseAttendanceJson(jsonText)
-      applyParsed(parsed)
+      applyFromExtractedJson(jsonText, 'json')
     } catch (e) {
       setError(e.message || 'Failed to parse JSON.')
-      setStudents([])
-      setParseMessage('')
-      setImportView('input')
+      resetJsonImportReview()
     }
   }
 
@@ -413,23 +642,28 @@ export default function AttendanceImport({
 
   async function processImage(source) {
     setImportMode('screenshot')
+    setProcessing(true)
     setOcrElapsedSeconds(0)
     setOcrProgressStalled(false)
+    ocrStartedAtRef.current = Date.now()
+    ocrProgressAtRef.current = Date.now()
     setError('')
+    setParseMessage('')
     setSaved(false)
     try {
-      await runOcrJob(
-        source,
-        ({ progress, label }) => {
-          setOcrProgress(progress)
-          setOcrStageLabel(label)
-          ocrProgressAtRef.current = Date.now()
-          setOcrProgressStalled(false)
-        },
-        { highAccuracy, scanMode },
-      )
+      const result = await runOcrJob(source, ({ progress, label }) => {
+        setOcrProgress(progress)
+        setOcrStageLabel(label)
+        ocrProgressAtRef.current = Date.now()
+        setOcrProgressStalled(false)
+      })
+      finishScreenshotScan(result)
+      consumeOcrResult()
     } catch (e) {
       setError(e.message || 'Failed to read screenshot.')
+      consumeOcrResult()
+    } finally {
+      setProcessing(false)
     }
   }
 
@@ -442,12 +676,44 @@ export default function AttendanceImport({
     return () => document.removeEventListener('paste', onPaste)
   }, [importMode, processing, handlePasteImageEvent])
 
-  function togglePresent(name) {
+  function togglePresent(importName) {
     setStudents((rows) =>
       rows.map((r) =>
-        r.name === name ? { ...r, present: !r.present } : r,
+        (r.importName || r.name) === importName ? { ...r, present: !r.present } : r,
       ),
     )
+  }
+
+  function importRowKey(row) {
+    return `${row.index}-${row.importName || row.name}`
+  }
+
+  function openSimilarModal(row) {
+    setSimilarModalKey(importRowKey(row))
+  }
+
+  function handleLinkSimilarRow(row, candidate) {
+    setStudents((rows) =>
+      rows.map((r) =>
+        (r.importName || r.name) === (row.importName || row.name)
+          ? linkImportRowToRoster(r, candidate)
+          : r,
+      ),
+    )
+    setSimilarModalKey(null)
+    setError('')
+  }
+
+  function handleMarkSimilarRowAsNew(row) {
+    setStudents((rows) =>
+      rows.map((r) =>
+        (r.importName || r.name) === (row.importName || row.name)
+          ? markImportRowAsNewStudent(r)
+          : r,
+      ),
+    )
+    setSimilarModalKey(null)
+    setError('')
   }
 
   function setAllPresent(present) {
@@ -479,6 +745,11 @@ export default function AttendanceImport({
       setError('No students to save.')
       return
     }
+    if (hasUnresolvedSimilarNames(students)) {
+      setError('Resolve similar student names in the table before saving.')
+      return
+    }
+
     const payload = buildImportPayload(meta, students)
     if (!payload.classMeta.qualification && !payload.classMeta.intake) {
       setError('Class details are required.')
@@ -554,6 +825,15 @@ export default function AttendanceImport({
   const showImportInput = !showReview
   const backToInputLabel = importMode === 'json' ? 'Back to JSON' : 'Back to Screenshot'
 
+  const visionReady = isVisionLlmConfigured() && visionConnection?.ok !== false
+
+  const similarPendingCount = countSimilarPending(students)
+
+  const similarModalRow = useMemo(() => {
+    if (!similarModalKey) return null
+    return students.find((r) => importRowKey(r) === similarModalKey) ?? null
+  }, [similarModalKey, students])
+
   const importTabActivity = useMemo(() => {
     if (saving || processing) return 'processing'
     if (students.length > 0 || jsonText.trim() || pendingScreenshot) return 'draft'
@@ -581,7 +861,7 @@ export default function AttendanceImport({
     <section className="panel portal-panel workspace-panel">
       {showReview && (
         <div className="panel-nav-bar">
-          <BackButton onClick={resetParsedReview}>{backToInputLabel}</BackButton>
+          <BackButton onClick={backFromReview}>{backToInputLabel}</BackButton>
         </div>
       )}
 
@@ -590,9 +870,8 @@ export default function AttendanceImport({
           Record Attendance
         </Typography.Title>
         <Typography.Paragraph type="secondary" className="panel-desc" style={{ marginBottom: 0 }}>
-          Upload or paste a screenshot, preview it, then scan. JSON import is instant if your
-          portal exports a file.
-          {isCloudOcrConfigured() && <> Cloud OCR is enabled for fast scans.</>}
+          Use <strong>Screenshot</strong> for vision AI import, or <strong>JSON</strong> to paste
+          portal export manually if a scan fails.
         </Typography.Paragraph>
       </header>
 
@@ -600,8 +879,8 @@ export default function AttendanceImport({
         <Alert
           type="success"
           showIcon
+          className="import-alert-banner"
           title={parseMessage}
-          style={{ flexShrink: 0, marginBottom: '0.5rem' }}
         />
       )}
 
@@ -610,16 +889,12 @@ export default function AttendanceImport({
       <div className="import-mode-region">
       <Tabs
         activeKey={importMode}
-        onChange={(mode) => {
-          if (mode === importMode) return
-          resetParsedReview()
-          setImportMode(mode)
-        }}
+        onChange={handleImportModeChange}
         items={[
           { key: 'json', label: 'JSON' },
           { key: 'screenshot', label: 'Screenshot' },
         ]}
-        style={{ marginBottom: '0.75rem' }}
+        className="import-tabs"
       />
 
       {importMode === 'json' ? (
@@ -656,36 +931,74 @@ export default function AttendanceImport({
           </Space>
         </div>
       ) : (
-        <>
-          {isCloudOcrConfigured() ? (
-            <Alert
-              type="success"
-              showIcon
-              title="Cloud OCR active — scans use OCR.space Engine 3 (table + checkbox text)."
-              description={
-                isRoboflowCheckboxConfigured()
-                  ? 'Full scan falls back to Roboflow AI when checkbox symbols are missing.'
-                  : 'Full scan falls back to layout detection when checkbox symbols are missing; add VITE_ROBOFLOW_API_KEY for better accuracy.'
-              }
-              style={{ marginBottom: '0.65rem' }}
-            />
+        <div className="import-screenshot-panel">
+          {isVisionLlmConfigured() ? (
+            visionConnection?.ok === false ? (
+              <Alert
+                type="error"
+                showIcon
+                className="import-alert-banner"
+                title="Ollama is not reachable"
+                description={visionConnection.message}
+              />
+            ) : (
+              <Alert
+                type="success"
+                showIcon
+                className="import-alert-banner"
+                title="Vision AI ready — full screenshot scan (class, names, checkboxes)."
+                description={
+                  visionConnection?.ok
+                    ? 'Paste your portal screenshot and click Scan screenshot. Attendance opens in the review table (same as JSON import).'
+                    : 'Checking connection to Ollama…'
+                }
+              />
+            )
           ) : (
             <Alert
-              type="info"
+              type="warning"
               showIcon
-              title={
+              className="import-alert-banner"
+              title="Vision AI is not configured."
+              description={
                 <>
-                  For faster scans, add a free <strong>OCR.space</strong> API key to your{' '}
-                  <code>.env</code> as <code>VITE_OCR_SPACE_API_KEY</code>. Without it, scanning
-                  runs slowly in your browser.
+                  Add <code>VITE_VISION_LLM_*</code> to your <code>.env</code> file. For free local
+                  scanning, install Ollama and run <code>ollama pull qwen2.5vl:7b</code> (see{' '}
+                  <code>.env.example</code>).
                 </>
               }
-              style={{ marginBottom: '0.65rem' }}
             />
           )}
 
           {!processing ? (
             <>
+              {reviewSource === 'screenshot' &&
+                students.length > 0 &&
+                importView === 'input' && (
+                  <Alert
+                    type="info"
+                    showIcon
+                    className="import-alert-banner import-alert-with-action"
+                    title={`Screenshot scan review — ${students.length} student${students.length === 1 ? '' : 's'}`}
+                    action={
+                      <Button size="small" type="primary" onClick={() => setImportView('review')}>
+                        Continue review
+                      </Button>
+                    }
+                  />
+                )}
+
+              {lastScannedScreenshot && (
+                <div className="import-screenshot-toolbar">
+                  <Button onClick={() => setLastScanModalOpen(true)}>View last scanned screenshot</Button>
+                  {!pendingScreenshot && (
+                    <Typography.Text type="secondary" className="import-screenshot-hint">
+                      Pasting a new image replaces this scan and clears review data.
+                    </Typography.Text>
+                  )}
+                </div>
+              )}
+
               <div
                 ref={pasteZoneRef}
                 tabIndex={0}
@@ -737,14 +1050,14 @@ export default function AttendanceImport({
                   <Button>Choose image</Button>
                 </Upload>
                 <Button onClick={pasteScreenshotFromClipboard}>Paste screenshot</Button>
-                <Button type="primary" disabled={!pendingScreenshot} onClick={handleScanScreenshot}>
+                <Button type="primary" disabled={!pendingScreenshot || !visionReady} onClick={handleScanScreenshot}>
                   Scan screenshot
                 </Button>
                 {pendingScreenshot && <Button type="link" onClick={clearPendingScreenshot}>Clear</Button>}
               </Space>
             </>
           ) : (
-            <OcrSpinner
+            <ScanSpinner
               progress={ocrProgress}
               stageLabel={ocrStageLabel}
               elapsedSeconds={ocrElapsedSeconds}
@@ -752,53 +1065,40 @@ export default function AttendanceImport({
               onCancel={handleCancelOcr}
             />
           )}
-          <div className="import-options">
-            <Radio.Group value={scanMode} onChange={(e) => setScanMode(e.target.value)}>
-              <Space direction="vertical">
-                <Radio value="full">
-                  Full — detect present/absent from checkboxes
-                  {isCloudOcrConfigured() && ' (recommended)'}
-                </Radio>
-                <Radio value="fast">Fast — names only; mark absences yourself</Radio>
-              </Space>
-            </Radio.Group>
-            {scanMode === 'full' && (
-              <Checkbox
-                checked={highAccuracy}
-                onChange={(e) => setHighAccuracy(e.target.checked)}
-                style={{ marginTop: '0.5rem' }}
-              >
-                High resolution checkbox scan (slower)
-              </Checkbox>
-            )}
-          </div>
-        </>
+        </div>
       )}
       </div>
       )}
 
-      {error && showImportInput && (
-        <Alert type="error" showIcon title={error} style={{ marginTop: '0.5rem', flexShrink: 0 }} />
-      )}
-      {parseMessage && !error && showImportInput && (
-        <Alert type="success" showIcon title={parseMessage} style={{ marginTop: '0.5rem', flexShrink: 0 }} />
+      {showImportInput && (error || (parseMessage && !error)) && (
+        <div className="import-status-stack">
+          {error && <Alert type="error" showIcon className="import-alert-banner" title={error} />}
+          {parseMessage && !error && (
+            <Alert type="success" showIcon className="import-alert-banner" title={parseMessage} />
+          )}
+        </div>
       )}
 
       {showReview && (
         <>
-          {previewUrl && (
-            <figure className="screenshot-preview screenshot-preview-compact">
-              <img src={previewUrl} alt="Screenshot preview" />
-            </figure>
-          )}
-
           <SaveFieldOverlay busy={saving} label="Saving attendance…" className="import-review-overlay">
             <form className="portal-form import-review-form" onSubmit={handleSave}>
               <fieldset className="portal-form-fields import-review-fields" disabled={saving}>
                 <div className="import-review-toolbar">
+                  {importWarnings.includes('missing_class') && (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      className="import-alert-banner"
+                      title="Class header not detected from screenshot"
+                      description="The scan could not read the INTAKE / LEVEL / GROUP line. Enter those fields below before saving."
+                    />
+                  )}
+
                   <Alert
                     type="info"
                     showIcon={false}
+                    className="import-alert-banner import-alert-class-summary"
                     title={
                       <>
                         Class: <strong>{classLabel || 'Review class details below'}</strong>
@@ -879,6 +1179,11 @@ export default function AttendanceImport({
                       Check All
                     </Button>
                     <Button onClick={() => setAllPresent(false)}>Uncheck All</Button>
+                    {reviewSource === 'screenshot' && lastScannedScreenshot && (
+                      <Button onClick={() => setLastScanModalOpen(true)}>
+                        View screenshot
+                      </Button>
+                    )}
                     <Button onClick={handleCopyJson}>Copy as JSON</Button>
                     <Button onClick={handleDownloadJson}>Download JSON</Button>
                   </Space>
@@ -886,16 +1191,36 @@ export default function AttendanceImport({
                     Checked = present · Unchecked = absent
                   </Typography.Text>
                   {jsonExportMessage && (
-                    <Alert type="success" showIcon title={jsonExportMessage} />
+                    <Alert
+                      type="success"
+                      showIcon
+                      className="import-alert-banner"
+                      title={jsonExportMessage}
+                    />
                   )}
                 </div>
 
                 <div className="table-scroll-region portal-student-list-scroll" ref={studentTableRef}>
+                  {similarPendingCount > 0 && (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      className="import-similar-notice import-alert-banner"
+                      title={`${similarPendingCount} name${similarPendingCount === 1 ? '' : 's'} under 95% match — click Review in the table to confirm`}
+                    />
+                  )}
+
                   <Table
                     size="small"
                     pagination={{ pageSize: 30, showSizeChanger: false, hideOnSinglePage: true }}
                     scroll={{ y: studentTableHeight }}
-                    dataSource={students.map((row) => ({ key: `${row.index}-${row.name}`, ...row }))}
+                    rowClassName={(row) =>
+                      needsSimilarReviewWarning(row) ? 'import-row-similar-pending' : ''
+                    }
+                    dataSource={students.map((row) => ({
+                      key: `${row.index}-${row.importName || row.name}`,
+                      ...row,
+                    }))}
                     columns={[
                       {
                         title: '#',
@@ -909,14 +1234,74 @@ export default function AttendanceImport({
                         render: (_, row) => (
                           <Checkbox
                             checked={row.present}
-                            onChange={() => togglePresent(row.name)}
+                            onChange={() => togglePresent(row.importName || row.name)}
                           />
                         ),
                       },
                       {
                         title: 'Student',
-                        dataIndex: 'name',
+                        key: 'name',
                         ellipsis: true,
+                        render: (_, row) => {
+                          if (shouldShowRosterNameReplacement(row)) {
+                            return (
+                              <>
+                                <Typography.Text type="secondary" delete style={{ display: 'block' }}>
+                                  {row.importName}
+                                </Typography.Text>
+                                <Typography.Text strong>{row.name}</Typography.Text>
+                              </>
+                            )
+                          }
+
+                          if (needsSimilarReviewWarning(row)) {
+                            const score = topSimilarityScore(row)
+                            return (
+                              <button
+                                type="button"
+                                className="import-similar-name-trigger"
+                                onClick={() => openSimilarModal(row)}
+                                title="Review roster match"
+                              >
+                                <ExclamationCircleFilled aria-hidden />
+                                <span className="import-similar-name-text">{row.name}</span>
+                                <Typography.Text type="secondary" className="import-similar-score">
+                                  {formatSimilarityPercent(score)}
+                                </Typography.Text>
+                              </button>
+                            )
+                          }
+
+                          return <Typography.Text>{row.name}</Typography.Text>
+                        },
+                      },
+                      {
+                        title: 'Match',
+                        key: 'match',
+                        width: 120,
+                        render: (_, row) => {
+                          if (needsSimilarReviewWarning(row)) {
+                            return (
+                              <Tag
+                                color="warning"
+                                className="import-similar-match-tag import-similar-match-tag-review"
+                                onClick={() => openSimilarModal(row)}
+                              >
+                                Review
+                              </Tag>
+                            )
+                          }
+                          if (shouldShowRosterNameReplacement(row)) {
+                            return <Tag color="processing">Roster</Tag>
+                          }
+                          if (row.matchStatus === 'exact' || row.matchStatus === 'linked_roster') {
+                            return <Tag color="success">Exact</Tag>
+                          }
+                          if (row.matchStatus === 'new') {
+                            return <Tag>New</Tag>
+                          }
+                          return null
+                        },
                       },
                       {
                         title: 'Status',
@@ -938,9 +1323,18 @@ export default function AttendanceImport({
                   <Typography.Text strong type="danger">
                     {students.filter((s) => !s.present).length} absent
                   </Typography.Text>
+                  {similarPendingCount > 0 ? (
+                    <> · {similarPendingCount} similar name{similarPendingCount === 1 ? '' : 's'} pending</>
+                  ) : null}
                 </Typography.Paragraph>
 
-                <Button type="primary" htmlType="submit" loading={saving} block>
+                <Button
+                  type="primary"
+                  htmlType="submit"
+                  loading={saving}
+                  disabled={similarPendingCount > 0}
+                  block
+                >
                   {UI.saveDailyAttendance}
                 </Button>
               </fieldset>
@@ -949,6 +1343,14 @@ export default function AttendanceImport({
         </>
       )}
       </div>
+
+      <SimilarNameResolveModal
+        open={Boolean(similarModalKey && similarModalRow?.matchStatus === 'similar_pending')}
+        row={similarModalRow?.matchStatus === 'similar_pending' ? similarModalRow : null}
+        onClose={() => setSimilarModalKey(null)}
+        onLinkRoster={handleLinkSimilarRow}
+        onMarkNew={handleMarkSimilarRowAsNew}
+      />
 
       <ImportSaveConfirmModal
         open={confirmOpen}
@@ -965,6 +1367,30 @@ export default function AttendanceImport({
         }}
         onConfirm={handleConfirmSaveImport}
       />
+
+      <Modal
+        title="Last scanned screenshot"
+        open={lastScanModalOpen}
+        onCancel={() => setLastScanModalOpen(false)}
+        footer={
+          <Button type="primary" onClick={() => setLastScanModalOpen(false)}>
+            Close
+          </Button>
+        }
+        width="min(920px, 96vw)"
+        destroyOnHidden
+        className="last-scan-modal"
+      >
+        {lastScannedScreenshot ? (
+          <img
+            src={lastScannedScreenshot}
+            alt="Last scanned attendance screenshot"
+            className="last-scan-modal-img"
+          />
+        ) : (
+          <Empty description="No screenshot saved" />
+        )}
+      </Modal>
     </section>
   )
 }

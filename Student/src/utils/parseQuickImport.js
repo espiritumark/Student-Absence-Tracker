@@ -1,6 +1,6 @@
 import { formatClassLabel } from './classFormat'
 import { dateKey } from './dates'
-import { parseMetadataFromText, parseStudentsFromText } from './parseScreenshot'
+import { parseMetadataFromText, parseStudentsFromText } from './screenshotTextParse'
 
 function normalizeName(name) {
   return name.trim().replace(/\s+/g, ' ').toUpperCase()

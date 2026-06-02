@@ -115,7 +115,7 @@ export default function ImportSaveConfirmModal({
       width={860}
       className="import-save-confirm-modal"
     >
-      <Typography.Paragraph style={{ marginBottom: '0.75rem' }}>
+      <Typography.Paragraph className="import-save-confirm-intro">
         {summary.isNewClass
           ? 'A new class will be created. '
           : summary.needsConfirm
@@ -124,7 +124,7 @@ export default function ImportSaveConfirmModal({
         {intro}
       </Typography.Paragraph>
 
-      <Row gutter={[12, 12]} style={{ marginBottom: '0.75rem' }}>
+      <Row gutter={[12, 12]} className="import-save-confirm-cards">
         <Col xs={24} md={10}>
           <Card size="small" title={UI.session}>
             <Typography.Text strong>{summary.classLabel}</Typography.Text>
@@ -181,14 +181,14 @@ export default function ImportSaveConfirmModal({
             scroll={{ y: tableHeight }}
           />
         ) : (
-          <Typography.Paragraph type="secondary" style={{ margin: '0.5rem 0 0', textAlign: 'center' }}>
+          <Typography.Paragraph type="secondary" className="import-save-confirm-empty">
             No roster streak or total changes in this import. Session data will still be saved for
             all {pendingImport.students.length} students.
           </Typography.Paragraph>
         )}
       </div>
 
-      {error && <Alert type="error" showIcon title={error} style={{ marginTop: '0.75rem' }} />}
+      {error && <Alert type="error" showIcon className="import-alert-banner" title={error} />}
     </Modal>
   )
 }

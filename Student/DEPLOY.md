@@ -120,39 +120,24 @@ Each user only sees their own classes and attendance (Row Level Security).
 
 ---
 
-## Optional: Fast screenshot OCR (OCR.space)
+## Screenshot import (vision AI)
 
-Browser OCR is slow. For scans that finish in seconds:
+The **Screenshot** tab uses a vision language model to read class details, student names, and present/absent checkboxes into the same JSON format as manual import.
 
-1. Sign up at [https://ocr.space/ocrapi](https://ocr.space/ocrapi) (free tier: 25,000 requests/month).
-2. Copy your API key into `.env` and Vercel env vars:
+**Free local option (Ollama):**
 
-   ```
-   VITE_OCR_SPACE_API_KEY=your_key_here
-   ```
-
-3. Restart the dev server or redeploy.
-
-**Fast scan** reads names only (you mark absences). **Full scan** uses OCR.space **Engine 3** for table text and checkbox symbols (☑/☐); if those are missing it falls back to Engine 2 layout + Roboflow or pixel sampling. Both use cloud OCR when the OCR.space key is set.
-
----
-
-## Optional: AI checkbox detection (Roboflow)
-
-Pixel sampling often misses portal checkboxes. For **Full scan**, you can use the public [checkbox-detector](https://universe.roboflow.com/test-racmu/checkbox-detector) model on Roboflow:
-
-1. Sign up at [https://roboflow.com](https://roboflow.com) (free tier available).
-2. Copy your API key from Roboflow settings into `.env` and Vercel env vars:
+1. Install [Ollama](https://ollama.com) and run `ollama pull qwen2.5vl:7b`
+2. Add to `.env` (and Vercel env vars if deploying):
 
    ```
-   VITE_ROBOFLOW_API_KEY=your_key_here
+   VITE_VISION_LLM_API_KEY=ollama
+   VITE_VISION_LLM_BASE_URL=http://localhost:11434/v1
+   VITE_VISION_LLM_MODEL=qwen2.5vl:7b
    ```
 
-3. Restart the dev server or redeploy.
+**Cloud option (DashScope Qwen VL):** set `VITE_VISION_LLM_API_KEY`, `VITE_VISION_LLM_BASE_URL`, and `VITE_VISION_LLM_MODEL` — see `.env.example`.
 
-The app calls `test-racmu/checkbox-detector/1` by default (`oncheckbox` / `offcheckbox` classes). Override with `VITE_ROBOFLOW_CHECKBOX_MODEL` if needed.
-
-Without this key, full scan falls back to improved local pixel detection (less reliable on some screenshots).
+Restart the dev server or redeploy after changing env vars.
 
 ---
 

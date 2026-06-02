@@ -1,7 +1,8 @@
-import { parseAttendanceScreenshot, prewarmOcrWorker, terminateOcrWorker } from './parseScreenshot'
+import { parseAttendanceScreenshot } from './parseScreenshot'
 
 let activeJob = null
 let pendingResult = null
+let activeAbortController = null
 const listeners = new Set()
 
 function snapshot() {
@@ -41,14 +42,11 @@ export function subscribeOcr(listener) {
   return () => listeners.delete(listener)
 }
 
-export function prewarmOcr() {
-  prewarmOcrWorker()
-}
-
 export async function cancelOcrJob() {
+  activeAbortController?.abort()
+  activeAbortController = null
   pendingResult = null
   activeJob = null
-  await terminateOcrWorker()
   notify()
 }
 
@@ -74,12 +72,21 @@ export async function runOcrJob(source, onProgress, opts) {
     onProgress?.(info)
   }
 
+  activeAbortController = new AbortController()
+
   activeJob.promise = parseAttendanceScreenshot(source, wrappedProgress, opts)
     .then((result) => {
       pendingResult = result
       return result
     })
+    .catch((err) => {
+      if (err?.name === 'AbortError') {
+        throw new Error('Scan cancelled.')
+      }
+      throw err
+    })
     .finally(() => {
+      activeAbortController = null
       activeJob = null
       notify()
     })

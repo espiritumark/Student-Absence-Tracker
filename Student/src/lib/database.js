@@ -293,13 +293,22 @@ export async function dbImportPortalSession(userId, payload) {
     .select('*')
     .eq('class_id', classId)
 
-  const nameToId = new Map((existingStudents || []).map((s) => [s.name, s.id]))
+  const nameToId = new Map(
+    (existingStudents || []).map((s) => [normalizeName(s.name), s.id]),
+  )
 
   for (const row of students) {
+    let studentId = row.rosterStudentId || null
     const name = normalizeName(row.name)
-    if (!nameToId.has(name)) {
-      const created = await dbAddStudent(userId, classId, name)
-      if (created) nameToId.set(name, created.id)
+
+    if (!studentId && !nameToId.has(name)) {
+      const created = await dbAddStudent(userId, classId, row.name)
+      if (created) {
+        studentId = created.id
+        nameToId.set(name, created.id)
+      }
+    } else if (!studentId) {
+      studentId = nameToId.get(name)
     }
   }
 
@@ -310,13 +319,20 @@ export async function dbImportPortalSession(userId, payload) {
     duration,
   })
 
-  const records = students.map((row) => ({
-    user_id: userId,
-    session_id: session.id,
-    student_id: nameToId.get(normalizeName(row.name)),
-    status: row.present ? 'present' : 'absent',
-    prior_notice: false,
-  })).filter((r) => r.student_id)
+  const records = students
+    .map((row) => {
+      const studentId =
+        row.rosterStudentId || nameToId.get(normalizeName(row.name))
+      if (!studentId) return null
+      return {
+        user_id: userId,
+        session_id: session.id,
+        student_id: studentId,
+        status: row.present ? 'present' : 'absent',
+        prior_notice: false,
+      }
+    })
+    .filter(Boolean)
 
   if (records.length) {
     const { error } = await supabase

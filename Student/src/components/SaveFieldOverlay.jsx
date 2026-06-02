@@ -7,7 +7,11 @@ export default function SaveFieldOverlay({
   className = '',
 }) {
   return (
-    <Spin spinning={busy} tip={label} wrapperClassName={`save-field-spin-wrap ${className}`.trim()}>
+    <Spin
+      spinning={busy}
+      description={label}
+      classNames={{ root: `save-field-spin-wrap ${className}`.trim() }}
+    >
       <div className="save-field-overlay-content">{children}</div>
     </Spin>
   )
