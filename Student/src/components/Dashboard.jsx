@@ -9,6 +9,7 @@ import { DashboardRiskSummary } from './AbsenceCountBadge'
 import { UI } from '../utils/uiCopy'
 import FormField from './FormField'
 import ModuleSearchSelect from './ModuleSearchSelect'
+import PanelChrome from './PanelChrome'
 import SearchableSelect from './SearchableSelect'
 
 function sortStudentRows(rows, sortBy) {
@@ -277,21 +278,16 @@ export default function Dashboard({
 
   return (
     <section className="panel dashboard-panel workspace-panel">
-      <header className="panel-header dashboard-header-compact">
-        <div className="panel-header-copy">
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            Dashboard
-          </Typography.Title>
-          <Typography.Paragraph type="secondary" className="panel-desc-compact" style={{ marginBottom: 0 }}>
-            Warnings and {UI.learningPartners.toLowerCase()} who need follow-up. Safe counts are hidden — manage rosters on
-            Classes &amp; rosters.
-          </Typography.Paragraph>
-        </div>
-        <DashboardRiskSummary
-          activeTiers={activeRiskTiers}
-          showReportRequired={pendingReportCount > 0}
-        />
-      </header>
+      <PanelChrome
+        title="Dashboard"
+        description={`Warnings and ${UI.learningPartners.toLowerCase()} who need follow-up. Safe counts are hidden — manage rosters on Classes & rosters.`}
+        actions={
+          <DashboardRiskSummary
+            activeTiers={activeRiskTiers}
+            showReportRequired={pendingReportCount > 0}
+          />
+        }
+      />
 
       {classes.length === 0 ? (
         <Empty

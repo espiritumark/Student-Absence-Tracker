@@ -14,6 +14,7 @@ import {
 } from '../utils/feedbackTraits'
 import { formatClassLabel } from '../utils/classFormat'
 import FormField from './FormField'
+import PanelChrome from './PanelChrome'
 import SearchableSelect from './SearchableSelect'
 
 export default function FeedbackPanel({ classes = [], attendance = {} }) {
@@ -141,12 +142,13 @@ export default function FeedbackPanel({ classes = [], attendance = {} }) {
   const aiReady = isFeedbackLlmConfigured()
 
   return (
-    <div className="feedback-panel">
-      <Typography.Paragraph type="secondary" className="feedback-panel-intro">
-        Build report-style feedback using absence totals and streaks from your records, plus
-        participation and assignment quality. Add your own notes, then copy or refine with AI.
-      </Typography.Paragraph>
+    <section className="panel feedback-panel workspace-panel">
+      <PanelChrome
+        title="Feedback"
+        description="Build report-style feedback from absence totals and streaks, participation and assignment quality, and your own notes. Copy or refine with AI when configured."
+      />
 
+      <div className="workspace-body">
       <div className="feedback-panel-grid">
         <Card size="small" title="Select" className="feedback-panel-card">
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -283,6 +285,7 @@ export default function FeedbackPanel({ classes = [], attendance = {} }) {
           />
         </Card>
       </div>
-    </div>
+      </div>
+    </section>
   )
 }

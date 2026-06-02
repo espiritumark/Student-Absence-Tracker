@@ -8,7 +8,7 @@ export const antdTheme = {
     colorLinkHover: '#0f766e',
     colorSuccess: '#059669',
     colorWarning: '#c2410c',
-    colorError: '#b91c1c',
+    colorError: '#b45353',
     colorInfo: '#0284c7',
     colorBgLayout: '#eef2f6',
     colorBgContainer: '#ffffff',
@@ -35,7 +35,7 @@ export const antdTheme = {
     },
     Select: {
       controlHeight: 40,
-      optionSelectedBg: '#ccfbf1',
+      optionSelectedBg: '#e6f4f2',
     },
     Input: {
       controlHeight: 40,
@@ -45,9 +45,11 @@ export const antdTheme = {
       borderRadius: 8,
     },
     Segmented: {
-      itemSelectedBg: '#0d9488',
-      itemSelectedColor: '#ffffff',
-      trackBg: '#e2e8f0',
+      itemSelectedBg: '#e6f4f2',
+      itemSelectedColor: '#0f5c56',
+      trackBg: '#f1f5f9',
+      itemColor: '#64748b',
+      itemHoverColor: '#0f172a',
     },
     Table: {
       headerBg: '#f8fafc',

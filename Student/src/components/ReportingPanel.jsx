@@ -4,7 +4,9 @@ import { useScrollRegionHeight } from '../hooks/useScrollRegionHeight'
 import { CONSECUTIVE_REPORT_DAYS, MONTH_REPORT_DAYS } from '../utils/alerts'
 import { formatDateLabel } from '../utils/dates'
 import { UI } from '../utils/uiCopy'
+import PanelChrome from './PanelChrome'
 import ReportStudentModal from './ReportStudentModal'
+import WorkspaceSectionTitle from './WorkspaceSectionTitle'
 
 export default function ReportingPanel({
   reportingPending = [],
@@ -131,15 +133,10 @@ export default function ReportingPanel({
 
   return (
     <section className="panel reporting-panel workspace-panel">
-      <header className="panel-header">
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          {UI.officialReporting}
-        </Typography.Title>
-        <Typography.Paragraph type="secondary" className="panel-desc" style={{ marginBottom: 0 }}>
-          {UI.learningPartners} opened from the Dashboard appear here for the official form. Mark as reported
-          when done — they return to the Dashboard with live attendance updates.
-        </Typography.Paragraph>
-      </header>
+      <PanelChrome
+        title={UI.officialReporting}
+        description={`${UI.learningPartners} opened from the Dashboard appear here for the official form. Mark as reported when done — they return to the Dashboard with live attendance updates.`}
+      />
 
       <Alert
         type="info"
@@ -156,17 +153,16 @@ export default function ReportingPanel({
         }
       />
 
+      <div className="workspace-body">
       <div className="reporting-section">
-        <Typography.Title level={5} style={{ margin: '0 0 0.5rem' }}>
-          To report ({pending.length})
-        </Typography.Title>
+        <WorkspaceSectionTitle>To report ({pending.length})</WorkspaceSectionTitle>
         {pending.length === 0 ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
             description={`No ${UI.learningPartners.toLowerCase()} in the reporting queue. Open one from the Dashboard when ready.`}
           />
         ) : (
-          <div className="table-scroll-region" ref={pendingTableRef}>
+          <div className="table-scroll-region reporting-pending-scroll" ref={pendingTableRef}>
             <Table
               size="small"
               rowKey="key"
@@ -184,16 +180,14 @@ export default function ReportingPanel({
       </div>
 
       <div className="reporting-section">
-        <Typography.Title level={5} style={{ margin: '0 0 0.5rem' }}>
-          Reported ({reported.length})
-        </Typography.Title>
+        <WorkspaceSectionTitle>Reported ({reported.length})</WorkspaceSectionTitle>
         {reported.length === 0 ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
             description={`No reported ${UI.learningPartners.toLowerCase()} yet.`}
           />
         ) : (
-          <div className="table-scroll-region" ref={reportedTableRef}>
+          <div className="table-scroll-region reporting-reported-scroll" ref={reportedTableRef}>
             <Table
               size="small"
               rowKey="key"
@@ -208,6 +202,7 @@ export default function ReportingPanel({
             />
           </div>
         )}
+      </div>
       </div>
 
       <ReportStudentModal

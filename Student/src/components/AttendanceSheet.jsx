@@ -24,13 +24,15 @@ import {
 import ConfirmDialog from './ConfirmDialog'
 import ModuleSearchSelect from './ModuleSearchSelect'
 import SaveFieldOverlay from './SaveFieldOverlay'
+import PanelChrome from './PanelChrome'
 import SearchableSelect from './SearchableSelect'
+import { UI } from '../utils/uiCopy'
 
 function getSessionRecords(classAttendance, sessionKey) {
   return classAttendance?.[sessionKey]?.records ?? {}
 }
 
-export default function AttendanceSheet({
+function AttendanceSheet({
   classes,
   attendance,
   setAttendance,
@@ -179,21 +181,19 @@ export default function AttendanceSheet({
 
   return (
     <section className="panel portal-panel workspace-panel attendance-workspace">
-      <header className="panel-header">
-        <Typography.Title level={3} style={{ margin: 0 }}>
-          Daily attendance (manual)
-        </Typography.Title>
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-          Mark attendance by hand for any class and date. The same class can have separate sessions
-          per module or subject on the same day.
-        </Typography.Paragraph>
-      </header>
+      <PanelChrome
+        title="Mark Manually"
+        description="Mark attendance by hand for any class and date. The same class can have separate sessions per module or subject on the same day."
+      />
 
       {classes.length === 0 ? (
-        <Empty description="Import a screenshot or add a class on Classes & rosters." />
+        <Empty
+          className="workspace-empty"
+          description="Import a screenshot or add a class on Classes & rosters."
+        />
       ) : (
         <SaveFieldOverlay busy={locked} label={overlayLabel} className="attendance-workspace-overlay">
-          <div className="attendance-sheet-body">
+          <div className="attendance-sheet-body workspace-body">
             <div className="attendance-sheet-toolbar">
               <fieldset className="attendance-sheet-fields" disabled={locked}>
                 <div className="portal-meta-grid attendance-meta">
@@ -258,15 +258,19 @@ export default function AttendanceSheet({
                 </Space>
 
                 {sortedStudents.length > 30 && (
-                  <Typography.Text type="secondary" style={{ fontSize: '0.85rem' }}>
-                    {sortedStudents.length} students · scroll the list below for more
+                  <Typography.Text type="secondary" className="master-pane-hint">
+                    {sortedStudents.length} {UI.learningPartners.toLowerCase()} · scroll the list
+                    below for more
                   </Typography.Text>
                 )}
               </fieldset>
             </div>
 
             {!selectedClass?.students.length ? (
-              <Empty className="attendance-sheet-empty" description="No students in this class." />
+              <Empty
+                className="attendance-sheet-empty"
+                description={`No ${UI.learningPartners.toLowerCase()} in this class.`}
+              />
             ) : (
               <div className="table-scroll-region attendance-sheet-list-scroll" ref={studentTableRef}>
                 <Table
@@ -296,7 +300,7 @@ export default function AttendanceSheet({
                       ),
                     },
                     {
-                      title: 'Student',
+                      title: UI.learningPartner,
                       key: 'name',
                       render: (_, row) => row.student.name,
                     },
@@ -355,3 +359,5 @@ export default function AttendanceSheet({
     </section>
   )
 }
+
+export default AttendanceSheet

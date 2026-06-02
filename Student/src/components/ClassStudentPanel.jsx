@@ -326,7 +326,12 @@ export default function ClassStudentPanel({
           <Button disabled={panelBusy} onClick={onBulkEdit}>
             Bulk Edit This Class
           </Button>
-          <Button type="link" danger disabled={panelBusy} onClick={onDeleteRequest}>
+          <Button
+            type="link"
+            className="link-destructive-muted"
+            disabled={panelBusy}
+            onClick={onDeleteRequest}
+          >
             Delete Class
           </Button>
         </div>

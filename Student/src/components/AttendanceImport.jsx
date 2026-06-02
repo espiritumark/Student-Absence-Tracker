@@ -60,6 +60,7 @@ import {
 import ImportSaveConfirmModal from './ImportSaveConfirmModal'
 import SimilarNameResolveModal from './SimilarNameResolveModal'
 import BackButton from './BackButton'
+import PanelChrome from './PanelChrome'
 import SaveFieldOverlay from './SaveFieldOverlay'
 
 const emptyMeta = {
@@ -874,15 +875,15 @@ export default function AttendanceImport({
         </div>
       )}
 
-      <header className="panel-header">
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          Record Attendance
-        </Typography.Title>
-        <Typography.Paragraph type="secondary" className="panel-desc" style={{ marginBottom: 0 }}>
-          Use <strong>Screenshot</strong> for vision AI import, or <strong>JSON</strong> to paste
-          portal export manually if a scan fails.
-        </Typography.Paragraph>
-      </header>
+      <PanelChrome
+        title="Record Attendance"
+        description={
+          <span>
+            Use <strong>Screenshot</strong> for vision AI import, or <strong>JSON</strong> to paste
+            portal export manually if a scan fails.
+          </span>
+        }
+      />
 
       {showReview && parseMessage && (
         <Alert

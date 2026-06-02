@@ -7,6 +7,7 @@ import { getEffectiveAbsenceCounts } from '../utils/attendanceStats'
 import { formatClassLabel } from '../utils/classFormat'
 import { UI } from '../utils/uiCopy'
 import BackButton from './BackButton'
+import PanelChrome from './PanelChrome'
 import ConfirmDialog from './ConfirmDialog'
 import SaveFieldOverlay from './SaveFieldOverlay'
 import SearchableSelect from './SearchableSelect'
@@ -219,7 +220,7 @@ export default function AbsenceBulkEditor({
   const columns = useMemo(
     () => [
       {
-        title: 'Student',
+        title: UI.learningPartner,
         dataIndex: ['student', 'name'],
         key: 'name',
         fixed: 'left',
@@ -361,8 +362,13 @@ export default function AbsenceBulkEditor({
 
   if (classes.length === 0) {
     return (
-      <section className="panel">
-        <Empty description="Add a class first, then edit absence counts here." />
+      <section className="panel bulk-absence-panel workspace-panel">
+        <PanelChrome
+          className="bulk-absence-header"
+          title="Bulk Edit Absence Counts"
+          description="Add a class first, then set manual absence overrides per learning partner."
+        />
+        <Empty className="workspace-empty" description="Add a class on Classes & rosters first." />
       </section>
     )
   }
@@ -376,70 +382,72 @@ export default function AbsenceBulkEditor({
           </BackButton>
         </div>
       )}
-      <header className="panel-header bulk-absence-header">
-        <div>
-          <Typography.Title level={3} style={{ margin: 0 }}>
-            Bulk Edit Absence Counts
-          </Typography.Title>
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            Set manual overrides for every student in the selected class. Leave a field blank to use
-            recorded attendance.
-          </Typography.Paragraph>
-        </div>
-      </header>
+      <PanelChrome
+        className="bulk-absence-header"
+        title="Bulk Edit Absence Counts"
+        description={`Set manual overrides for each ${UI.learningPartner.toLowerCase()} in the selected class. Leave a field blank to use recorded attendance.`}
+      />
 
-      {message && <Alert type="success" showIcon title={message} style={{ marginBottom: '0.5rem' }} />}
+      {message && <Alert type="success" showIcon title={message} className="import-alert-banner" />}
 
       <SaveFieldOverlay busy={busy} label="Saving changes…">
-        <div className="bulk-absence-toolbar">
-          <SearchableSelect
-            options={classOptions}
-            value={classId}
-            onChange={setClassId}
-            placeholder="Select class…"
-            label="Class"
-            disabled={busy}
-          />
-          <Checkbox
-            checked={!showAll}
-            disabled={busy}
-            onChange={(e) => setShowAll(!e.target.checked)}
-          >
-            Only Students With Absence Counts
-          </Checkbox>
-        </div>
-
-        {error && <Alert type="error" showIcon title={error} style={{ marginBottom: '0.5rem' }} />}
-
-        {visibleStudents.length === 0 ? (
-          <Empty description="No students in this class yet." />
-        ) : (
-          <div className="table-scroll-region bulk-table-scroll" ref={tableRegionRef}>
-            <Table
-              size="small"
-              columns={columns}
-              dataSource={visibleStudents}
-              pagination={{ pageSize: 30, showSizeChanger: false, hideOnSinglePage: true }}
-              scroll={{ x: 980, y: tableHeight }}
-              rowClassName={(record) => (record.changed ? 'bulk-row-changed' : '')}
+        <div className="workspace-body">
+          <div className="bulk-absence-toolbar filter-toolbar">
+            <SearchableSelect
+              options={classOptions}
+              value={classId}
+              onChange={setClassId}
+              placeholder="Select class…"
+              label="Class"
+              disabled={busy}
             />
+            <Checkbox
+              checked={!showAll}
+              disabled={busy}
+              onChange={(e) => setShowAll(!e.target.checked)}
+            >
+              Only {UI.learningPartners} With Absence Counts
+            </Checkbox>
           </div>
-        )}
 
-        <Space wrap style={{ marginTop: '0.75rem' }}>
-          <Button
-            type="primary"
-            disabled={busy || changedCount === 0}
-            onClick={() => setConfirmSaveOpen(true)}
-          >
-            {changedCount === 0
-              ? 'Save Changes'
-              : `Save ${changedCount} Change${changedCount === 1 ? '' : 's'}`}
-          </Button>
-          <Button danger type="link" disabled={busy} onClick={() => setConfirmClear(true)}>
-            Clear All Manual Overrides
-          </Button>
-        </Space>
+          {error && <Alert type="error" showIcon title={error} className="import-alert-banner" />}
+
+          {visibleStudents.length === 0 ? (
+            <Empty description={`No ${UI.learningPartners.toLowerCase()} in this class yet.`} />
+          ) : (
+            <div className="table-scroll-region bulk-table-scroll" ref={tableRegionRef}>
+              <Table
+                size="small"
+                columns={columns}
+                dataSource={visibleStudents}
+                pagination={{ pageSize: 30, showSizeChanger: false, hideOnSinglePage: true }}
+                scroll={{ x: 980, y: tableHeight }}
+                rowClassName={(record) => (record.changed ? 'bulk-row-changed' : '')}
+              />
+            </div>
+          )}
+
+          <Space wrap style={{ marginTop: '0.75rem' }}>
+            <Button
+              type="primary"
+              disabled={busy || changedCount === 0}
+              onClick={() => setConfirmSaveOpen(true)}
+            >
+              {changedCount === 0
+                ? 'Save Changes'
+                : `Save ${changedCount} Change${changedCount === 1 ? '' : 's'}`}
+            </Button>
+            <Button
+              type="link"
+              danger
+              className="link-destructive"
+              disabled={busy}
+              onClick={() => setConfirmClear(true)}
+            >
+              Clear All Manual Overrides
+            </Button>
+          </Space>
+        </div>
       </SaveFieldOverlay>
 
       <ConfirmDialog
@@ -452,7 +460,8 @@ export default function AbsenceBulkEditor({
         onConfirm={handleSave}
       >
         <Typography.Paragraph>
-          Save manual absence overrides for <strong>{changedCount}</strong> student
+          Save manual absence overrides for <strong>{changedCount}</strong>{' '}
+          {UI.learningPartner.toLowerCase()}
           {changedCount === 1 ? '' : 's'} in <strong>{formatClassLabel(selectedClass)}</strong>?
         </Typography.Paragraph>
       </ConfirmDialog>

@@ -23,6 +23,8 @@ import ClassStudentPanel from './ClassStudentPanel'
 import ConfirmDialog from './ConfirmDialog'
 import ModuleSearchSelect from './ModuleSearchSelect'
 import FormField from './FormField'
+import PanelChrome from './PanelChrome'
+import WorkspaceSectionTitle from './WorkspaceSectionTitle'
 import { UI } from '../utils/uiCopy'
 import SaveFieldOverlay from './SaveFieldOverlay'
 
@@ -267,18 +269,16 @@ export default function ClassManager({
 
   return (
     <section className="panel classes-panel workspace-panel">
-      <header className="panel-header dashboard-header-compact classes-panel-header">
-        <div>
-          <h2>Classes &amp; Rosters</h2>
-          <p className="panel-desc panel-desc-compact">
-            Browse by module to see every intake/group in a subject, or switch to all classes for
-            per-class bulk edits.
-          </p>
-        </div>
-        <Button type="default" icon={<PlusOutlined />} onClick={() => setAddClassOpen(true)}>
-          Add Class Manually
-        </Button>
-      </header>
+      <PanelChrome
+        className="classes-panel-header"
+        title="Classes & Rosters"
+        description="Browse by module to see every intake and group in a subject, or switch to all classes for per-class bulk edits."
+        actions={
+          <Button type="default" icon={<PlusOutlined />} onClick={() => setAddClassOpen(true)}>
+            Add Class Manually
+          </Button>
+        }
+      />
 
       <Modal
         title="Add Class Manually"
@@ -394,12 +394,12 @@ export default function ClassManager({
               )}
             </div>
 
-            <p className="master-pane-hint muted small">
+            <Typography.Text type="secondary" className="master-pane-hint">
               {filteredClasses.length} class{filteredClasses.length === 1 ? '' : 'es'}
               {browseMode === 'module' && selectedModule
                 ? ` · ${formatModuleLabel(selectedModule)}`
                 : ''}
-            </p>
+            </Typography.Text>
 
             {classes.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No classes yet. Import attendance or add one above." />
@@ -450,7 +450,7 @@ export default function ClassManager({
             {selectedClass ? (
               <>
                 <div className="detail-pane-header">
-                  <h3>{formatClassLabel(selectedClass)}</h3>
+                  <WorkspaceSectionTitle>{formatClassLabel(selectedClass)}</WorkspaceSectionTitle>
                 </div>
                 <div className="detail-pane-body">
                   <ClassStudentPanel
