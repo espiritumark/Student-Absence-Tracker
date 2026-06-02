@@ -1,25 +1,54 @@
 # Rebranding: Learning Partner Hub
 
-The app display name is **Learning Partner Hub**. User-facing copy uses **Learning partner** instead of “student”. Database tables and code identifiers still use `students` for compatibility.
+The app display name is **Learning Partner Hub**. User-facing copy uses **learning partner** instead of “student”. Database tables and code identifiers still use `students` for compatibility.
 
-## Rename the GitHub repository
+## One-shot terminal rebrand (Windows)
 
-1. On GitHub: **Settings → General → Repository name** → e.g. `Learning-Partner-Hub` → Rename.
-2. Update your local remote:
-   ```bash
-   git remote set-url origin https://github.com/YOUR_USER/Learning-Partner-Hub.git
-   ```
-3. Update Vercel project name / root directory if needed (still `Student` until you rename the folder below).
+1. **Stop** `npm run dev` and close editors using the `Student/` folder (Cursor locks the folder on Windows).
+2. From PowerShell at the repo root:
 
-## Rename the app folder (optional)
+```powershell
+cd "C:\Github Repositories\Student-Absence-Tracker"
+.\scripts\rebrand.ps1
+```
 
-The Vite app lives in `Student/`. To rename to `LearningPartnerHub/`:
+The script renames `Student` → `LearningPartnerHub`, prompts you to rename the repo on GitHub, then updates `git remote`.
 
-1. Close the dev server.
-2. Rename the folder at repo root.
-3. Update any docs that say `cd Student` (README, DEPLOY.md, GUIDE.md).
-4. In Vercel: set **Root Directory** to the new folder name and redeploy.
+## Manual steps (if the script cannot move the folder)
+
+### GitHub repository name
+
+1. https://github.com/espiritumark/Student-Absence-Tracker/settings  
+2. **General → Repository name** → `Learning-Partner-Hub` → **Rename**
+
+```powershell
+git remote set-url origin https://github.com/espiritumark/Learning-Partner-Hub.git
+git remote -v
+```
+
+### App folder
+
+```powershell
+cd "C:\Github Repositories\Student-Absence-Tracker"
+git mv Student LearningPartnerHub
+```
+
+If you see *Permission denied*, something still has `Student/` open — stop the dev server and retry, or close Cursor and run the command in an external terminal.
+
+### Local clone folder (optional)
+
+```powershell
+cd "C:\Github Repositories"
+Rename-Item -LiteralPath "Student-Absence-Tracker" -NewName "Learning-Partner-Hub"
+```
+
+Re-open the project from the new path in Cursor.
+
+### Vercel
+
+- **Root Directory**: `LearningPartnerHub`  
+- Redeploy after the folder rename is pushed.
 
 ## Change branding in one place
 
-Edit `Student/src/constants/branding.js` for `APP_NAME`, tagline, and learning-partner labels.
+Edit `LearningPartnerHub/src/constants/branding.js` for `APP_NAME`, tagline, and learning-partner labels.

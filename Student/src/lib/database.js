@@ -205,7 +205,7 @@ async function upsertSession(userId, classId, sessionKey, meta) {
     normalizeModuleKey(legacy.module) !== normalizeModuleKey(module)
   ) {
     throw new Error(
-      'Your cloud database still allows only one session per class and date. Run the module migration in Supabase (see Student/supabase/schema.sql) to save separate modules on the same day.',
+      'Your cloud database still allows only one session per class and date. Run the module migration in Supabase (see LearningPartnerHub/supabase/schema.sql) to save separate modules on the same day.',
     )
   }
 

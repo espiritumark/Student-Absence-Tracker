@@ -5,7 +5,7 @@ Track daily attendance for your learning partners, import from JSON or screensho
 ## Quick start (local)
 
 ```bash
-cd Student
+cd LearningPartnerHub
 npm install
 npm run dev
 ```

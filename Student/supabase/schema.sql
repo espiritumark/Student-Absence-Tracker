@@ -1,4 +1,4 @@
--- Student Absence Tracker — run in Supabase SQL Editor
+-- Learning Partner Hub — run in Supabase SQL Editor
 -- Dashboard → SQL → New query → paste → Run
 
 create extension if not exists "pgcrypto";

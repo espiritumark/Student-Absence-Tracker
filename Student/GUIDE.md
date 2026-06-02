@@ -5,7 +5,7 @@ This app helps you record learning partner attendance daily, draft report feedba
 ## 1) Run the app
 
 ```bash
-cd Student
+cd LearningPartnerHub
 npm install
 npm run dev
 ```

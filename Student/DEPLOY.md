@@ -1,6 +1,6 @@
 # Deploy to Supabase + Vercel
 
-This guide gets the Student Absence Tracker running online with a real database.
+This guide gets **Learning Partner Hub** running online with a real database.
 
 ## Overview
 
@@ -48,7 +48,7 @@ You should see success messages for tables and RLS policies.
 
 ## Step 5: Local development with Supabase
 
-1. In the `Student` folder, copy the example env file:
+1. In the `LearningPartnerHub` folder, copy the example env file:
 
    ```bash
    cp .env.example .env
@@ -77,7 +77,7 @@ If you had local browser data before signing in, use **Upload local data** to mi
 1. Push this project to **GitHub** (if not already).
 2. Go to [https://vercel.com](https://vercel.com) and sign up.
 3. Click **Add New → Project** and import your GitHub repo.
-4. Set **Root Directory** to `Student` (if the repo root is the parent folder).
+4. Set **Root Directory** to `LearningPartnerHub` (if the repo root is the parent folder).
 5. Under **Environment Variables**, add:
 
    | Name | Value |
@@ -90,7 +90,7 @@ If you had local browser data before signing in, use **Upload local data** to mi
 ### Option B: Vercel CLI
 
 ```bash
-cd Student
+cd LearningPartnerHub
 npm i -g vercel
 vercel
 ```
@@ -163,7 +163,7 @@ Optional `.env` tuning (see `.env.example`): lower `VITE_VISION_MAX_IMAGE_WIDTH`
 | Sign up shows "Network error" | Use the **Project URL** for `VITE_SUPABASE_URL` (e.g. `https://xxx.supabase.co`), not the REST URL ending in `/rest/v1/` |
 | Sign up doesn't work | Check Supabase Auth settings; disable email confirmation for testing |
 | RLS / permission errors | Re-run `supabase/schema.sql` |
-| Blank page after deploy | Check Vercel build logs; ensure root directory is `Student` |
+| Blank page after deploy | Check Vercel build logs; ensure root directory is `LearningPartnerHub` |
 
 ---
 
