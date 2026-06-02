@@ -6,8 +6,10 @@ import AuthPanel from './components/AuthPanel'
 import ClassManager from './components/ClassManager'
 import Dashboard from './components/Dashboard'
 import LoadingScreen from './components/LoadingScreen'
+import FeedbackPanel from './components/FeedbackPanel'
 import ReportingPanel from './components/ReportingPanel'
 import TabLabel from './components/TabLabel'
+import { APP_NAME, APP_TAGLINE } from './constants/branding'
 import { useAuth } from './contexts/AuthContext'
 import { useReportedViolations } from './hooks/useReportedViolations'
 import { pruneReportingQueue, useReportingQueue } from './hooks/useReportingQueue'
@@ -93,6 +95,7 @@ function AppContent() {
   const TABS = [
     { id: 'import', label: 'Record Attendance' },
     { id: 'dashboard', label: 'Dashboard' },
+    { id: 'feedback', label: 'Feedback' },
     { id: 'reporting', label: 'Reporting' },
     { id: 'classes', label: 'Classes & Rosters' },
     { id: 'attendance', label: 'Mark Manually' },
@@ -127,11 +130,10 @@ function AppContent() {
         <div className="app-header-row">
           <div className="app-header-copy">
             <Typography.Title level={3} style={{ margin: 0 }}>
-              Student Absence Tracker
+              {APP_NAME}
             </Typography.Title>
             <Typography.Paragraph type="secondary" className="tagline" style={{ marginBottom: 0 }}>
-              Import daily attendance, track absences locally or in the cloud, and get warned about
-              extended absences.
+              {APP_TAGLINE}
             </Typography.Paragraph>
           </div>
           <AuthPanel />
@@ -210,6 +212,9 @@ function AppContent() {
               onOpenInClasses={openInClasses}
               onOpenReporting={openReporting}
             />
+          </div>
+          <div className="tab-panel" hidden={tab !== 'feedback'} aria-hidden={tab !== 'feedback'}>
+            <FeedbackPanel classes={store.classes} attendance={store.attendance} />
           </div>
           <div className="tab-panel" hidden={tab !== 'reporting'} aria-hidden={tab !== 'reporting'}>
             <ReportingPanel

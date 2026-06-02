@@ -23,6 +23,7 @@ import {
   formatModuleLabel,
   listModulesForClass,
 } from '../utils/sessionKeys'
+import { UI } from '../utils/uiCopy'
 
 function countBulkNames(text) {
   return text
@@ -126,7 +127,7 @@ export default function ClassStudentPanel({
   function requestBulkImport() {
     if (panelBusy) return
     if (!bulkText.trim()) {
-      setBulkError('Enter at least one student name.')
+      setBulkError(`Enter at least one ${UI.learningPartner.toLowerCase()} name.`)
       setBulkMessage('')
       return
     }
@@ -144,13 +145,17 @@ export default function ClassStudentPanel({
       if (count > 0) {
         setBulkText('')
         setBulkMessage(
-          `Added ${count} student${count === 1 ? '' : 's'} to ${formatClassLabel(cls)}.`,
+          `Added ${count} ${UI.learningPartner.toLowerCase()}${count === 1 ? '' : 's'} to ${formatClassLabel(cls)}.`,
         )
       } else {
-        setBulkMessage('No new students to add — all names were already in this class.')
+        setBulkMessage(
+          `No new ${UI.learningPartners.toLowerCase()} to add — all names were already in this class.`,
+        )
       }
     } catch (err) {
-      setBulkError(err.message || 'Failed to import students. Try again.')
+      setBulkError(
+        err.message || `Failed to import ${UI.learningPartners.toLowerCase()}. Try again.`,
+      )
     } finally {
       setBulkBusy(false)
     }
@@ -194,7 +199,7 @@ export default function ClassStudentPanel({
   const studentColumns = useMemo(
     () => [
       {
-        title: 'Student',
+        title: UI.learningPartner,
         key: 'name',
         ellipsis: true,
         render: (_, row) => row.student.name,
@@ -279,11 +284,11 @@ export default function ClassStudentPanel({
   )
 
   const overlayLabel = bulkBusy
-    ? 'Importing students…'
+    ? `Importing ${UI.learningPartners.toLowerCase()}…`
     : addStudentBusy
-      ? 'Adding student…'
+      ? `Adding ${UI.learningPartner.toLowerCase()}…`
       : removingStudentId
-        ? 'Removing student…'
+        ? `Removing ${UI.learningPartner.toLowerCase()}…`
         : syncing
           ? 'Syncing…'
           : 'Saving…'
@@ -328,13 +333,13 @@ export default function ClassStudentPanel({
 
         <form className="inline-form antd-inline-form" onSubmit={handleAddStudent}>
           <Input
-            placeholder="Student name"
+            placeholder={`${UI.learningPartner} name`}
             value={studentInput}
             disabled={panelBusy}
             onChange={(e) => setStudentInput(e.target.value)}
           />
           <Button type="default" htmlType="submit" disabled={panelBusy} loading={addStudentBusy}>
-            Add Student
+            {`Add ${UI.learningPartner}`}
           </Button>
         </form>
 
@@ -395,7 +400,10 @@ export default function ClassStudentPanel({
         )}
 
         {sortedStudents.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No students in this class." />
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={`No ${UI.learningPartners.toLowerCase()} in this class.`}
+          />
         ) : (
           <div className="table-scroll-region student-list-scroll" ref={studentTableRef}>
             <Table
@@ -410,9 +418,9 @@ export default function ClassStudentPanel({
 
         <ConfirmDialog
           open={removeConfirmOpen}
-          title="Remove student?"
-          confirmLabel="Remove student"
-          cancelLabel="Keep student"
+          title={`Remove ${UI.learningPartner.toLowerCase()}?`}
+          confirmLabel={`Remove ${UI.learningPartner.toLowerCase()}`}
+          cancelLabel={`Keep ${UI.learningPartner.toLowerCase()}`}
           danger
           busy={Boolean(removingStudentId)}
           onCancel={() => {
@@ -433,8 +441,8 @@ export default function ClassStudentPanel({
 
         <ConfirmDialog
           open={addConfirmOpen}
-          title="Add this student?"
-          confirmLabel="Add Student"
+          title={`Add this ${UI.learningPartner.toLowerCase()}?`}
+          confirmLabel={`Add ${UI.learningPartner}`}
           cancelLabel="Cancel"
           busy={addStudentBusy}
           onCancel={() => {
@@ -451,8 +459,8 @@ export default function ClassStudentPanel({
 
         <ConfirmDialog
           open={bulkConfirmOpen}
-          title="Import these students?"
-          confirmLabel="Import students"
+          title={`Import these ${UI.learningPartners.toLowerCase()}?`}
+          confirmLabel={`Import ${UI.learningPartners.toLowerCase()}`}
           cancelLabel="Cancel"
           busy={bulkBusy}
           onCancel={() => {
@@ -462,7 +470,8 @@ export default function ClassStudentPanel({
           onConfirm={handleBulkImport}
         >
           <p className="modal-lead">
-            Add up to <strong>{countBulkNames(bulkText)}</strong> student name
+            Add up to <strong>{countBulkNames(bulkText)}</strong>{' '}
+            {UI.learningPartner.toLowerCase()} name
             {countBulkNames(bulkText) === 1 ? '' : 's'} to{' '}
             <strong>{formatClassLabel(cls)}</strong>? Names already in the class will be skipped.
           </p>

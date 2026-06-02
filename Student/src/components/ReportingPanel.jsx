@@ -34,7 +34,7 @@ export default function ReportingPanel({
   const pendingColumns = useMemo(
     () => [
       {
-        title: 'Student',
+        title: UI.learningPartner,
         dataIndex: 'studentName',
         key: 'studentName',
         ellipsis: true,
@@ -136,7 +136,7 @@ export default function ReportingPanel({
           {UI.officialReporting}
         </Typography.Title>
         <Typography.Paragraph type="secondary" className="panel-desc" style={{ marginBottom: 0 }}>
-          Students opened from the Dashboard appear here for the official form. Mark as reported
+          {UI.learningPartners} opened from the Dashboard appear here for the official form. Mark as reported
           when done — they return to the Dashboard with live attendance updates.
         </Typography.Paragraph>
       </header>
@@ -151,7 +151,7 @@ export default function ReportingPanel({
             Submit the official form at{' '}
             <strong>{CONSECUTIVE_REPORT_DAYS}+ consecutive absence days</strong> (about two weeks)
             or <strong>{MONTH_REPORT_DAYS} days absent without prior notice</strong>. Click a red
-            name on the Dashboard to move a student here.
+            name on the Dashboard to move a {UI.learningPartner.toLowerCase()} here.
           </>
         }
       />
@@ -163,7 +163,7 @@ export default function ReportingPanel({
         {pending.length === 0 ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description="No students in the reporting queue. Open one from the Dashboard when ready."
+            description={`No ${UI.learningPartners.toLowerCase()} in the reporting queue. Open one from the Dashboard when ready.`}
           />
         ) : (
           <div className="table-scroll-region" ref={pendingTableRef}>
@@ -188,7 +188,10 @@ export default function ReportingPanel({
           Reported ({reported.length})
         </Typography.Title>
         {reported.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No reported students yet." />
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={`No reported ${UI.learningPartners.toLowerCase()} yet.`}
+          />
         ) : (
           <div className="table-scroll-region" ref={reportedTableRef}>
             <Table

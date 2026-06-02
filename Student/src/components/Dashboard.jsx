@@ -30,7 +30,7 @@ function sortStudentRows(rows, sortBy) {
 
 const SORT_OPTIONS = [
   { value: 'risk', label: 'Risk (highest first)' },
-  { value: 'name', label: 'Student name' },
+  { value: 'name', label: `${UI.learningPartner} name` },
   { value: 'class', label: 'Class' },
 ]
 
@@ -147,7 +147,7 @@ export default function Dashboard({
   const tableColumns = useMemo(() => {
     const columns = [
       {
-        title: 'Student',
+        title: UI.learningPartner,
         dataIndex: 'studentName',
         key: 'studentName',
         ellipsis: true,
@@ -158,7 +158,7 @@ export default function Dashboard({
           return (
             <Popover
               title={UI.officialReportingRequired}
-              content="This student must be reported on the official form. Click to open the Reporting tab."
+              content={`This ${UI.learningPartner.toLowerCase()} must be reported on the official form. Click to open the Reporting tab.`}
             >
               <Typography.Link
                 type="danger"
@@ -283,7 +283,7 @@ export default function Dashboard({
             Dashboard
           </Typography.Title>
           <Typography.Paragraph type="secondary" className="panel-desc-compact" style={{ marginBottom: 0 }}>
-            Warnings and students who need follow-up. Safe counts are hidden — manage rosters on
+            Warnings and {UI.learningPartners.toLowerCase()} who need follow-up. Safe counts are hidden — manage rosters on
             Classes &amp; rosters.
           </Typography.Paragraph>
         </div>
@@ -312,7 +312,7 @@ export default function Dashboard({
                 allowEmpty
                 emptyLabel="All modules"
                 placeholder={
-                  moduleOptions.length ? 'Filter by module…' : 'No at-risk students by module'
+                  moduleOptions.length ? 'Filter by module…' : `No at-risk ${UI.learningPartners.toLowerCase()} by module`
                 }
                 label="Module"
                 disabled={moduleOptions.length === 0}
@@ -324,7 +324,7 @@ export default function Dashboard({
                 allowEmpty
                 emptyLabel="All classes"
                 placeholder={
-                  classOptions.length ? 'Filter by class…' : 'No at-risk students in any class'
+                  classOptions.length ? 'Filter by class…' : `No at-risk ${UI.learningPartners.toLowerCase()} in any class`
                 }
                 label="Class"
                 disabled={classOptions.length === 0}
@@ -348,8 +348,9 @@ export default function Dashboard({
             </div>
 
             <Typography.Text type="secondary" className="master-pane-hint">
-              {filteredStudents.length} student{filteredStudents.length === 1 ? '' : 's'} · click a
-              row to open · red names move to the Reporting tab
+              {filteredStudents.length} {UI.learningPartner.toLowerCase()}
+              {filteredStudents.length === 1 ? '' : 's'} · click a row to open · red names move to
+              the Reporting tab
               {selectedModule ? ` · ${formatModuleLabel(selectedModule)}` : ''}
               {selectedClassId
                 ? ` · ${classOptions.find((option) => option.value === selectedClassId)?.label ?? ''}`
@@ -362,7 +363,7 @@ export default function Dashboard({
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
                   description={
                     atRiskRows.length === 0
-                      ? 'No students need follow-up right now.'
+                      ? `No ${UI.learningPartners.toLowerCase()} need follow-up right now.`
                       : 'No matches for this search.'
                   }
                 />

@@ -145,7 +145,7 @@ export function buildReportCopyFields(candidate) {
       : '—'
 
   return [
-    { label: 'Student name', value: candidate.studentName },
+    { label: 'Learning partner name', value: candidate.studentName },
     { label: 'Class', value: candidate.className },
     { label: 'Consecutive absence days', value: String(candidate.consecutiveAbsences ?? candidate.streakLength) },
     { label: 'Total absences', value: String(candidate.totalAbsences ?? 0) },

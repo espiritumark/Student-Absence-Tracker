@@ -126,7 +126,7 @@ function SaveSuccess({
       extra={
         <div className="import-save-success-extra">
           <Typography.Paragraph style={{ marginBottom: 0 }}>
-            {savedCount.total} students ·{' '}
+            {savedCount.total} {UI.learningPartners.toLowerCase()} ·{' '}
             <Typography.Text type={savedCount.absent > 0 ? 'danger' : undefined} strong>
               {savedCount.absent} absent
             </Typography.Text>
@@ -401,7 +401,7 @@ export default function AttendanceImport({
       const warnings = parsed.warnings ?? []
       const missingClass = warnings.includes('missing_class')
       const count = parsed.students.length
-      const studentWord = `${count} student${count === 1 ? '' : 's'}`
+      const studentWord = `${count} ${UI.learningPartner.toLowerCase()}${count === 1 ? '' : 's'}`
 
       setMeta(nextMeta)
       setStudents(
@@ -749,11 +749,13 @@ export default function AttendanceImport({
     e.preventDefault()
     if (saving) return
     if (!students.length) {
-      setError('No students to save.')
+      setError(`No ${UI.learningPartners.toLowerCase()} to save.`)
       return
     }
     if (hasUnresolvedSimilarNames(students)) {
-      setError('Resolve similar student names in the table before saving.')
+      setError(
+        `Resolve similar ${UI.learningPartner.toLowerCase()} names in the table before saving.`,
+      )
       return
     }
 
@@ -1248,7 +1250,7 @@ export default function AttendanceImport({
                         ),
                       },
                       {
-                        title: 'Student',
+                        title: UI.learningPartner,
                         key: 'name',
                         ellipsis: true,
                         render: (_, row) => {

@@ -23,6 +23,7 @@ import ClassStudentPanel from './ClassStudentPanel'
 import ConfirmDialog from './ConfirmDialog'
 import ModuleSearchSelect from './ModuleSearchSelect'
 import FormField from './FormField'
+import { UI } from '../utils/uiCopy'
 import SaveFieldOverlay from './SaveFieldOverlay'
 
 export default function ClassManager({
@@ -425,7 +426,8 @@ export default function ClassManager({
                           <Typography.Text strong>{row.name}</Typography.Text>
                           <div>
                             <Typography.Text type="secondary" style={{ fontSize: '0.78rem' }}>
-                              {row.count} student{row.count === 1 ? '' : 's'}
+                              {row.count} {UI.learningPartner.toLowerCase()}
+                              {row.count === 1 ? '' : 's'}
                             </Typography.Text>
                           </div>
                         </div>
@@ -477,7 +479,9 @@ export default function ClassManager({
               </>
             ) : (
               <div className="detail-pane-empty">
-                <Empty description="Select a class on the left to manage students, absence overrides, and bulk edits." />
+                <Empty
+                  description={`Select a class on the left to manage ${UI.learningPartners.toLowerCase()}, absence overrides, and bulk edits.`}
+                />
               </div>
             )}
           </div>
@@ -528,7 +532,7 @@ export default function ClassManager({
         {pendingClassFields && (
           <p className="modal-lead">
             Create class <strong>{formatClassLabel(pendingClassFields)}</strong>? You can add
-            students after it is created.
+            {UI.learningPartners.toLowerCase()} after it is created.
           </p>
         )}
       </ConfirmDialog>

@@ -1,6 +1,6 @@
-# Student Absence Tracker
+# Learning Partner Hub
 
-Track daily student attendance, import from JSON, and get warnings for extended absences.
+Track daily attendance for your learning partners, import from JSON or screenshots, draft report feedback, and get warnings for extended absences.
 
 ## Quick start (local)
 

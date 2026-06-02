@@ -41,7 +41,9 @@ export default function ReportStudentModal({
 
   return (
     <Modal
-      title={candidate ? `Report — ${candidate.studentName}` : 'Report Student'}
+      title={
+        candidate ? `Report — ${candidate.studentName}` : `Report ${UI.learningPartner}`
+      }
       open={open}
       onCancel={onClose}
       width="min(960px, 96vw)"

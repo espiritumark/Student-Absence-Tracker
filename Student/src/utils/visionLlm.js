@@ -263,7 +263,7 @@ export async function parseAttendanceWithVisionLlm(dataUrl, onProgress, opts = {
 
   if (config.baseUrl.includes('openrouter.ai')) {
     headers['HTTP-Referer'] = window.location.origin
-    headers['X-Title'] = 'Student Absence Tracker'
+    headers['X-Title'] = 'Learning Partner Hub'
   }
 
   const { maxTokens, keepAlive } = visionTuning()

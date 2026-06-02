@@ -1,6 +1,6 @@
-# Student Absence Tracker — How to Use
+# Learning Partner Hub — How to Use
 
-This app helps you record student attendance daily and warns you when a student has an extended absence.
+This app helps you record learning partner attendance daily, draft report feedback, and warns you when absences need follow-up.
 
 ## 1) Run the app
 
@@ -12,7 +12,11 @@ npm run dev
 
 Open the URL shown in the terminal (usually `http://localhost:5173`).
 
-## 2) Record daily attendance with JSON (recommended)
+## 2) Generate report feedback
+
+Open the **Feedback** tab, choose a class and learning partner. The app uses **total absence days** and **streak** from your records (including manual overrides from Classes & Rosters). Pick participation and assignment quality, add optional notes, then **Generate feedback**. Edit the text, **Copy**, or use **Refine with AI** if Ollama or a cloud LLM is configured (`VITE_FEEDBACK_LLM_MODEL` in `.env.example`).
+
+## 3) Record daily attendance with JSON (recommended)
 
 1. Go to **Record Attendance**
 2. Select the **JSON** tab
@@ -50,7 +54,7 @@ Open the URL shown in the terminal (usually `http://localhost:5173`).
 - If the class does not exist yet, it is **created automatically**
 - If attendance for that class + date already exists, you get a **confirm overwrite** modal
 
-## 3) Screenshot import (vision AI)
+## 4) Screenshot import (vision AI)
 
 1. Go to **Record Attendance** → **Screenshot** tab
 2. Configure vision AI in `.env` (see `.env.example`) — free local option: Ollama + `qwen2.5vl:7b`
@@ -60,7 +64,7 @@ Open the URL shown in the terminal (usually `http://localhost:5173`).
 
 Screenshot import uses vision AI only (no OCR). Output matches the same JSON format as manual paste.
 
-## 4) Manual attendance
+## 5) Manual attendance
 
 Go to **Mark Manually** to edit a class and date by hand, including **Prior notice** for absent students.
 
@@ -71,7 +75,7 @@ The **Warnings** tab flags students for:
 - **14+ consecutive absent days** (2+ weeks)
 - **30+ consecutive absent days** without prior notice (~1 month)
 
-## 6) Manual absence override
+## 7) Manual absence override
 
 In **Classes**, click **Edit absences** on a student to override totals when needed.
 

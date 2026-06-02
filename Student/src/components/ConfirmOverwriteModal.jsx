@@ -1,5 +1,6 @@
 import { Alert, Card, Col, Modal, Row, Typography } from 'antd'
 import { formatDateLabel } from '../utils/dates'
+import { UI } from '../utils/uiCopy'
 
 export default function ConfirmOverwriteModal({
   open,
@@ -83,7 +84,7 @@ export default function ConfirmOverwriteModal({
           </>
         )}
         <Col xs={24} sm={12}>
-          <Card size="small" title="New students">
+          <Card size="small" title={`New ${UI.learningPartners.toLowerCase()}`}>
             <Typography.Text strong>{summary.newStudents ?? 0}</Typography.Text> will be added
             {summary.newStudentNames?.length > 0 && (
               <Typography.Paragraph type="secondary" style={{ marginBottom: 0, fontSize: '0.85rem' }}>

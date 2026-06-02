@@ -1,5 +1,7 @@
 /** Shared UI labels — Title Case for controls/headers, sentence case for body copy. */
 
+import { LEARNING_PARTNER } from '../constants/branding'
+
 export const UI = {
   saveAttendance: 'Save Attendance',
   saveDailyAttendance: 'Save Daily Attendance',
@@ -23,7 +25,9 @@ export const UI = {
   attendanceSaved: 'Attendance Saved',
   session: 'Session',
   summary: 'Summary',
-  student: 'Student',
+  student: LEARNING_PARTNER.singularTitle,
+  learningPartner: LEARNING_PARTNER.singularTitle,
+  learningPartners: LEARNING_PARTNER.pluralTitle,
   current: 'Current',
   change: 'Change',
   streak: 'Streak',
