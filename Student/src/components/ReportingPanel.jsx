@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useScrollRegionHeight } from '../hooks/useScrollRegionHeight'
 import { CONSECUTIVE_REPORT_DAYS, MONTH_REPORT_DAYS } from '../utils/alerts'
 import { formatDateLabel } from '../utils/dates'
+import { UI } from '../utils/uiCopy'
 import ReportStudentModal from './ReportStudentModal'
 
 export default function ReportingPanel({
@@ -72,7 +73,7 @@ export default function ReportingPanel({
         width: 96,
         render: (_, row) => (
           <Tag
-            bordered={false}
+            variant="filled"
             className={`absence-risk-tag absence-risk-tag-${row.severity === 'high' ? 'critical' : 'warning'}`}
           >
             {row.severity === 'high' ? 'High' : 'Medium'}
@@ -132,7 +133,7 @@ export default function ReportingPanel({
     <section className="panel reporting-panel workspace-panel">
       <header className="panel-header">
         <Typography.Title level={4} style={{ margin: 0 }}>
-          Official reporting
+          {UI.officialReporting}
         </Typography.Title>
         <Typography.Paragraph type="secondary" className="panel-desc" style={{ marginBottom: 0 }}>
           Students opened from the Dashboard appear here for the official form. Mark as reported
@@ -144,7 +145,7 @@ export default function ReportingPanel({
         type="info"
         showIcon
         className="reporting-threshold-alert"
-        message="Reporting thresholds"
+        title={UI.reportingThresholds}
         description={
           <>
             Submit the official form at{' '}

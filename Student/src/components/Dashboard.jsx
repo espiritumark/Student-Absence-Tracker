@@ -6,6 +6,7 @@ import { RISK_META } from '../utils/absenceRisk'
 import { formatModuleLabel, listModulesAcrossClasses } from '../utils/sessionKeys'
 import { studentReportKey } from '../utils/reportingQueue'
 import { DashboardRiskSummary } from './AbsenceCountBadge'
+import { UI } from '../utils/uiCopy'
 import FormField from './FormField'
 import ModuleSearchSelect from './ModuleSearchSelect'
 import SearchableSelect from './SearchableSelect'
@@ -156,7 +157,7 @@ export default function Dashboard({
           const reportKey = studentReportKey(row.classId, row.studentId)
           return (
             <Popover
-              title="Official reporting required"
+              title={UI.officialReportingRequired}
               content="This student must be reported on the official form. Click to open the Reporting tab."
             >
               <Typography.Link
@@ -191,7 +192,7 @@ export default function Dashboard({
       width: 92,
       render: (_, row) => (
         <Tag
-          bordered={false}
+          variant="filled"
           className={`absence-risk-tag absence-risk-tag-${row.risk}`}
           title={RISK_META[row.risk]?.description}
         >
@@ -243,8 +244,8 @@ export default function Dashboard({
         width: 118,
         render: (_, row) =>
           row.needsReport ? (
-            <Tag bordered={false} className="dashboard-student-report-tag">
-              Report required
+            <Tag variant="filled" className="dashboard-student-report-tag">
+              {UI.reportRequired}
             </Tag>
           ) : null,
       })

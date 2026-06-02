@@ -1,5 +1,6 @@
 import { Flex, Space, Tag, Typography } from 'antd'
 import { getOverallAbsenceRisk, hasAbsenceNumbers, RISK_META } from '../utils/absenceRisk'
+import { UI } from '../utils/uiCopy'
 
 export function AbsenceCountBadge({ counts, showManual = true, size = 'md', placeholder = false }) {
   const hasNumbers = counts && hasAbsenceNumbers(counts)
@@ -20,7 +21,7 @@ export function AbsenceCountBadge({ counts, showManual = true, size = 'md', plac
   return (
     <Flex gap={4} wrap="wrap" align="center" className={`absence-tag-group absence-tag-${size}`}>
       <Tag
-        bordered={false}
+        variant="filled"
         className={`absence-risk-tag absence-risk-tag-${risk}`}
         title={meta.description}
       >
@@ -51,7 +52,7 @@ export function AbsenceRiskLegend({ compact = false }) {
     >
       {tiers.map((tier) => (
         <Flex key={tier} gap={6} align="center">
-          <Tag bordered={false} className={`absence-risk-tag absence-risk-tag-${tier}`}>
+          <Tag variant="filled" className={`absence-risk-tag absence-risk-tag-${tier}`}>
             {RISK_META[tier].label}
           </Tag>
           {!compact && (
@@ -75,7 +76,7 @@ export function DashboardRiskSummary({ activeTiers, showReportRequired = false }
         return (
           <Tag
             key={tier}
-            bordered={false}
+            variant="filled"
             className={`absence-risk-tag absence-risk-tag-${tier}${active ? '' : ' absence-risk-tag-inactive'}`}
             title={RISK_META[tier].description}
           >
@@ -84,16 +85,16 @@ export function DashboardRiskSummary({ activeTiers, showReportRequired = false }
         )
       })}
       {showReportRequired ? (
-        <Tag bordered={false} className="dashboard-student-report-tag" title="Must be reported on the official form">
-          Report required
+        <Tag variant="filled" className="dashboard-student-report-tag" title="Must be reported on the official form">
+          {UI.reportRequired}
         </Tag>
       ) : (
         <Tag
-          bordered={false}
+          variant="filled"
           className="dashboard-student-report-tag dashboard-student-report-tag-inactive"
           title="Shown when a student must be reported on the official form"
         >
-          Report required
+          {UI.reportRequired}
         </Tag>
       )}
     </div>

@@ -205,7 +205,7 @@ export default function ClassStudentPanel({
         width: 92,
         render: (_, row) => (
           <Tag
-            bordered={false}
+            variant="filled"
             className={`absence-risk-tag absence-risk-tag-${row.risk}`}
             title={RISK_META[row.risk]?.description}
           >
@@ -368,8 +368,8 @@ export default function ClassStudentPanel({
                   >
                     Import
                   </Button>
-                  {bulkMessage && <Alert type="success" showIcon message={bulkMessage} style={{ marginTop: '0.5rem' }} />}
-                  {bulkError && <Alert type="error" showIcon message={bulkError} style={{ marginTop: '0.5rem' }} />}
+                  {bulkMessage && <Alert type="success" showIcon title={bulkMessage} style={{ marginTop: '0.5rem' }} />}
+                  {bulkError && <Alert type="error" showIcon title={bulkError} style={{ marginTop: '0.5rem' }} />}
                 </>
               ),
             },
@@ -383,7 +383,7 @@ export default function ClassStudentPanel({
                 key={r.student.id}
                 type="info"
                 showIcon
-                message={`Removed ${r.student.name}`}
+                title={`Removed ${r.student.name}`}
                 action={
                   <Button size="small" disabled={panelBusy} onClick={() => handleUndo(r)}>
                     Undo

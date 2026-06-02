@@ -6,7 +6,7 @@ export default function ReportViolationNotice({ compact = false, pendingCount = 
       type="error"
       showIcon
       className={compact ? 'report-violation-notice-compact' : ''}
-      message={
+      title={
         pendingCount > 0
           ? `${pendingCount} student${pendingCount === 1 ? '' : 's'} must be reported on the official form.`
           : "Must report if a student's absences continue to violate policy."

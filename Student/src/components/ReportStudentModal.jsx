@@ -6,6 +6,7 @@ import {
   ABSENCE_VIOLATION_REPORT_URL,
 } from '../constants/reporting'
 import { buildReportCopyFields } from '../utils/reportingQueue'
+import { UI } from '../utils/uiCopy'
 
 export default function ReportStudentModal({
   open,
@@ -40,22 +41,22 @@ export default function ReportStudentModal({
 
   return (
     <Modal
-      title={candidate ? `Report — ${candidate.studentName}` : 'Report student'}
+      title={candidate ? `Report — ${candidate.studentName}` : 'Report Student'}
       open={open}
       onCancel={onClose}
       width="min(960px, 96vw)"
       className="report-student-modal"
-      destroyOnClose
+      destroyOnHidden
       footer={
         <Space wrap>
           <Button onClick={onClose} disabled={marking}>
             Close
           </Button>
           <Button href={ABSENCE_VIOLATION_REPORT_URL} target="_blank" rel="noopener noreferrer">
-            Open form in new tab
+            Open Form in New Tab
           </Button>
           <Button type="primary" loading={marking} disabled={!candidate} onClick={onMarkReported}>
-            Mark as reported
+            {UI.markAsReported}
           </Button>
         </Space>
       }
@@ -68,7 +69,7 @@ export default function ReportStudentModal({
                 Copy details into the form fields on the right.
               </Typography.Text>
               <Button size="small" icon={<CopyOutlined />} onClick={copyAll}>
-                Copy all
+                Copy All
               </Button>
             </Space>
             <Descriptions column={1} size="small" bordered className="report-copy-descriptions">

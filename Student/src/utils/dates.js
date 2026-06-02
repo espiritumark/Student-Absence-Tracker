@@ -36,6 +36,12 @@ export function isConsecutiveDays(dayA, dayB) {
   return daysBetween(dayA, dayB) === 1
 }
 
+export function addDaysToKey(key, deltaDays) {
+  const date = parseDateKey(key)
+  date.setDate(date.getDate() + deltaDays)
+  return formatDate(date)
+}
+
 export function formatPortalDate(key) {
   if (!key) return ''
   const [y, m, d] = key.split('-')

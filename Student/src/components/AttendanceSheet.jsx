@@ -233,7 +233,7 @@ export default function AttendanceSheet({
                   <Alert
                     type="info"
                     showIcon={false}
-                    message={
+                    title={
                       <>
                         Class: <strong>{formatClassLabel(selectedClass)}</strong>
                         {moduleInput.trim() && (

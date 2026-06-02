@@ -5,6 +5,7 @@ import { useScrollRegionHeight } from '../hooks/useScrollRegionHeight'
 import { RISK_META, getOverallAbsenceRisk } from '../utils/absenceRisk'
 import { getEffectiveAbsenceCounts } from '../utils/attendanceStats'
 import { formatClassLabel } from '../utils/classFormat'
+import { UI } from '../utils/uiCopy'
 import BackButton from './BackButton'
 import ConfirmDialog from './ConfirmDialog'
 import SaveFieldOverlay from './SaveFieldOverlay'
@@ -231,7 +232,7 @@ export default function AbsenceBulkEditor({
         width: 92,
         render: (_, record) => (
           <Tag
-            bordered={false}
+            variant="filled"
             className={`absence-risk-tag absence-risk-tag-${record.previewRisk}`}
             title={RISK_META[record.previewRisk]?.description}
           >
@@ -387,7 +388,7 @@ export default function AbsenceBulkEditor({
         </div>
       </header>
 
-      {message && <Alert type="success" showIcon message={message} style={{ marginBottom: '0.5rem' }} />}
+      {message && <Alert type="success" showIcon title={message} style={{ marginBottom: '0.5rem' }} />}
 
       <SaveFieldOverlay busy={busy} label="Saving changes…">
         <div className="bulk-absence-toolbar">
@@ -408,7 +409,7 @@ export default function AbsenceBulkEditor({
           </Checkbox>
         </div>
 
-        {error && <Alert type="error" showIcon message={error} style={{ marginBottom: '0.5rem' }} />}
+        {error && <Alert type="error" showIcon title={error} style={{ marginBottom: '0.5rem' }} />}
 
         {visibleStudents.length === 0 ? (
           <Empty description="No students in this class yet." />
@@ -443,9 +444,9 @@ export default function AbsenceBulkEditor({
 
       <ConfirmDialog
         open={confirmSaveOpen}
-        title="Save absence overrides?"
+        title="Save Absence Overrides?"
         confirmLabel="Save Changes"
-        cancelLabel="Keep editing"
+        cancelLabel={UI.keepEditing}
         busy={busy}
         onCancel={() => !busy && setConfirmSaveOpen(false)}
         onConfirm={handleSave}

@@ -142,7 +142,7 @@ function AppContent() {
             type="info"
             showIcon
             className="app-banner"
-            message={
+            title={
               <>
                 <strong>Sign in</strong> to save attendance to your cloud account across devices.
                 Without signing in, data stays in this browser only.
@@ -157,7 +157,7 @@ function AppContent() {
             showIcon
             closable
             className="app-banner"
-            message={store.syncError}
+            title={store.syncError}
             onClose={store.clearSyncError}
           />
         )}

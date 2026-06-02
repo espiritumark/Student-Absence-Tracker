@@ -1862,6 +1862,22 @@ kbd {
 }
 
 /* ── Save success screen ── */
+.import-save-table-hint {
+  display: block;
+  margin-bottom: 0.45rem;
+  font-size: 0.85rem;
+}
+
+.import-save-confirm-scroll {
+  margin-top: 0.25rem;
+  max-height: min(42vh, 360px);
+}
+
+.import-save-count-delta {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .import-save-success-extra {
   display: flex;
   flex-direction: column;

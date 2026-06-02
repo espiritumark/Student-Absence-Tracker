@@ -1,6 +1,6 @@
 import { formatClassLabel } from './classFormat'
 import { compareAbsenceRisk, getOverallAbsenceRisk } from './absenceRisk'
-import { isConsecutiveDays, parseDateKey } from './dates'
+import { addDaysToKey, isConsecutiveDays, parseDateKey } from './dates'
 import {
   filterAttendanceByModule,
   sessionDateFromKey,
@@ -44,6 +44,65 @@ export function getStudentAbsenceStats(classAttendance, studentId) {
     consecutive,
     absentDays: sorted,
   }
+}
+
+/** Consecutive absent days ending on `dayKey` (inclusive). */
+export function streakEndingOn(dayKey, absentDayKeys) {
+  const absentSet = absentDayKeys instanceof Set ? absentDayKeys : new Set(absentDayKeys)
+  if (!dayKey || !absentSet.has(dayKey)) return 0
+
+  let streak = 1
+  let cursor = dayKey
+  while (absentSet.has(addDaysToKey(cursor, -1))) {
+    streak += 1
+    cursor = addDaysToKey(cursor, -1)
+  }
+  return streak
+}
+
+/**
+ * Preview roster streak/total before and after saving one session.
+ * Present on the session date resets an active streak; absent can extend it.
+ */
+export function previewRosterImpact(
+  student,
+  classAttendance,
+  projectedAttendance,
+  sessionDateKey,
+  prevSessionStatus,
+  nextSessionStatus,
+) {
+  const beforeCounts = getEffectiveAbsenceCounts(student, classAttendance)
+  const afterCounts = getEffectiveAbsenceCounts(student, projectedAttendance)
+  const beforeAbsent = new Set(beforeCounts.recorded.absentDays)
+  const afterAbsent = new Set(getStudentAbsenceStats(projectedAttendance, student.id).absentDays)
+
+  let beforeStreak = 0
+  let afterStreak = 0
+
+  if (nextSessionStatus === 'present') {
+    // Match roster consecutive; present clears an active streak in the preview.
+    beforeStreak = beforeCounts.consecutive
+    afterStreak = 0
+  } else {
+    if (prevSessionStatus === 'absent') {
+      beforeStreak = streakEndingOn(sessionDateKey, beforeAbsent)
+    } else if (prevSessionStatus == null) {
+      beforeStreak = streakEndingOn(addDaysToKey(sessionDateKey, -1), beforeAbsent)
+    }
+
+    afterStreak = streakEndingOn(sessionDateKey, afterAbsent)
+    if (afterStreak === 0) {
+      const yesterday = addDaysToKey(sessionDateKey, -1)
+      const yesterdayStreak = streakEndingOn(yesterday, afterAbsent)
+      afterStreak = yesterdayStreak > 0 ? yesterdayStreak + 1 : 1
+    }
+  }
+
+  const beforeTotal = beforeCounts.total
+  const afterTotal = afterCounts.total
+
+  return { beforeStreak, afterStreak, beforeTotal, afterTotal }
 }
 
 export function getEffectiveAbsenceCounts(student, classAttendance) {

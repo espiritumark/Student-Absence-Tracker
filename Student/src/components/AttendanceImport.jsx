@@ -27,7 +27,7 @@ import { formatClassLabel } from '../utils/classFormat'
 import { dateKey, formatDateLabel } from '../utils/dates'
 import {
   buildImportPayload,
-  computeOverwriteSummary,
+  computeImportSaveSummary,
 } from '../utils/importReview'
 import {
   cancelOcrJob,
@@ -36,10 +36,10 @@ import {
   runOcrJob,
   subscribeOcr,
 } from '../utils/ocrSession'
-import { buildPortalJson, parseAttendanceJson } from '../utils/parseAttendanceJson'
+import { UI } from '../utils/uiCopy'
 import { fileToDataUrl, isCloudOcrConfigured, isRoboflowCheckboxConfigured } from '../utils/parseScreenshot'
-import ConfirmDialog from './ConfirmDialog'
-import ConfirmOverwriteModal from './ConfirmOverwriteModal'
+import { parseAttendanceJson } from '../utils/parseAttendanceJson'
+import ImportSaveConfirmModal from './ImportSaveConfirmModal'
 import BackButton from './BackButton'
 import SaveFieldOverlay from './SaveFieldOverlay'
 
@@ -102,7 +102,7 @@ function SaveSuccess({
   return (
     <Result
       status="success"
-      title="Attendance saved"
+      title={UI.attendanceSaved}
       subTitle={
         <>
           <strong>{formatDateLabel(meta.date)}</strong>
@@ -125,10 +125,10 @@ function SaveSuccess({
           <Space wrap className="import-save-success-actions">
             {savedCount.absent > 0 && (
               <Button type="primary" onClick={onGoToWarnings}>
-                View Dashboard
+                {UI.viewDashboard}
               </Button>
             )}
-            <Button onClick={onImportAnother}>Import another now</Button>
+            <Button onClick={onImportAnother}>{UI.importAnotherNow}</Button>
           </Space>
         </div>
       }
@@ -166,7 +166,6 @@ export default function AttendanceImport({
   const [saved, setSaved] = useState(false)
   const [savedCount, setSavedCount] = useState({ total: 0, absent: 0 })
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const [saveConfirmOpen, setSaveConfirmOpen] = useState(false)
   const [pendingImport, setPendingImport] = useState(null)
   const [confirmSummary, setConfirmSummary] = useState(null)
   const [confirmError, setConfirmError] = useState('')
@@ -468,7 +467,6 @@ export default function AttendanceImport({
     setParseMessage('')
     setError('')
     setConfirmOpen(false)
-    setSaveConfirmOpen(false)
     setPendingImport(null)
     setConfirmSummary(null)
     setConfirmError('')
@@ -487,29 +485,21 @@ export default function AttendanceImport({
       return
     }
 
-    const summary = computeOverwriteSummary(payload, classes, attendance)
-    if (summary.needsConfirm) {
-      setPendingImport(payload)
-      setConfirmSummary(summary)
-      setConfirmError('')
-      setConfirmOpen(true)
-      return
-    }
+    const summary = computeImportSaveSummary(payload, classes, attendance)
     setPendingImport(payload)
     setConfirmSummary(summary)
     setConfirmError('')
-    setSaveConfirmOpen(true)
+    setConfirmOpen(true)
   }
 
   async function handleConfirmSaveImport() {
     if (!pendingImport || saving) return
-    setSaveConfirmOpen(false)
     setSaving(true)
-    setError('')
+    setConfirmError('')
     try {
       await commitImport(pendingImport)
     } catch (err) {
-      setError(err.message || 'Failed to save attendance. Please try again.')
+      setConfirmError(err.message || 'Failed to save attendance. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -610,7 +600,7 @@ export default function AttendanceImport({
         <Alert
           type="success"
           showIcon
-          message={parseMessage}
+          title={parseMessage}
           style={{ flexShrink: 0, marginBottom: '0.5rem' }}
         />
       )}
@@ -671,7 +661,7 @@ export default function AttendanceImport({
             <Alert
               type="success"
               showIcon
-              message="Cloud OCR active — scans use OCR.space Engine 3 (table + checkbox text)."
+              title="Cloud OCR active — scans use OCR.space Engine 3 (table + checkbox text)."
               description={
                 isRoboflowCheckboxConfigured()
                   ? 'Full scan falls back to Roboflow AI when checkbox symbols are missing.'
@@ -683,7 +673,7 @@ export default function AttendanceImport({
             <Alert
               type="info"
               showIcon
-              message={
+              title={
                 <>
                   For faster scans, add a free <strong>OCR.space</strong> API key to your{' '}
                   <code>.env</code> as <code>VITE_OCR_SPACE_API_KEY</code>. Without it, scanning
@@ -788,10 +778,10 @@ export default function AttendanceImport({
       )}
 
       {error && showImportInput && (
-        <Alert type="error" showIcon message={error} style={{ marginTop: '0.5rem', flexShrink: 0 }} />
+        <Alert type="error" showIcon title={error} style={{ marginTop: '0.5rem', flexShrink: 0 }} />
       )}
       {parseMessage && !error && showImportInput && (
-        <Alert type="success" showIcon message={parseMessage} style={{ marginTop: '0.5rem', flexShrink: 0 }} />
+        <Alert type="success" showIcon title={parseMessage} style={{ marginTop: '0.5rem', flexShrink: 0 }} />
       )}
 
       {showReview && (
@@ -809,7 +799,7 @@ export default function AttendanceImport({
                   <Alert
                     type="info"
                     showIcon={false}
-                    message={
+                    title={
                       <>
                         Class: <strong>{classLabel || 'Review class details below'}</strong>
                       </>
@@ -896,7 +886,7 @@ export default function AttendanceImport({
                     Checked = present · Unchecked = absent
                   </Typography.Text>
                   {jsonExportMessage && (
-                    <Alert type="success" showIcon message={jsonExportMessage} />
+                    <Alert type="success" showIcon title={jsonExportMessage} />
                   )}
                 </div>
 
@@ -951,7 +941,7 @@ export default function AttendanceImport({
                 </Typography.Paragraph>
 
                 <Button type="primary" htmlType="submit" loading={saving} block>
-                  Save daily attendance
+                  {UI.saveDailyAttendance}
                 </Button>
               </fieldset>
             </form>
@@ -960,9 +950,10 @@ export default function AttendanceImport({
       )}
       </div>
 
-      <ConfirmOverwriteModal
+      <ImportSaveConfirmModal
         open={confirmOpen}
         summary={confirmSummary}
+        pendingImport={pendingImport}
         error={confirmError}
         busy={saving}
         onCancel={() => {
@@ -972,50 +963,8 @@ export default function AttendanceImport({
           setConfirmSummary(null)
           setConfirmError('')
         }}
-        onConfirm={async () => {
-          if (!pendingImport || saving) return
-          setSaving(true)
-          setConfirmError('')
-          try {
-            await commitImport(pendingImport)
-          } catch (err) {
-            setConfirmError(err.message || 'Failed to save attendance. Please try again.')
-          } finally {
-            setSaving(false)
-          }
-        }}
-      />
-
-      <ConfirmDialog
-        open={saveConfirmOpen}
-        title="Save daily attendance?"
-        confirmLabel="Save attendance"
-        cancelLabel="Keep editing"
-        busy={saving}
-        onCancel={() => {
-          if (saving) return
-          setSaveConfirmOpen(false)
-          setPendingImport(null)
-          setConfirmSummary(null)
-        }}
         onConfirm={handleConfirmSaveImport}
-      >
-        {confirmSummary && pendingImport && (
-          <Typography.Paragraph>
-            Save attendance for <strong>{confirmSummary.classLabel}</strong>
-            {confirmSummary.isNewClass ? ' (new class will be created)' : ''} on{' '}
-            <strong>{formatDateLabel(pendingImport.date)}</strong>
-            {confirmSummary.module ? (
-              <>
-                {' '}
-                · Module: <strong>{confirmSummary.module}</strong>
-              </>
-            ) : null}
-            ? <strong>{pendingImport.students.length}</strong> students,{' '}
-            <strong>{pendingImport.students.filter((s) => !s.present).length}</strong> marked absent.
-          </Typography.Paragraph>
-        )}
-      </ConfirmDialog>
+      />
     </section>
   )
 }

@@ -85,9 +85,9 @@ export default function AuthModal({ open, onClose, initialMode = 'signin' }) {
           />
         </Form.Item>
 
-        {error && <Alert type="error" showIcon message={error} style={{ marginBottom: '1rem' }} />}
+        {error && <Alert type="error" showIcon title={error} style={{ marginBottom: '1rem' }} />}
         {message && (
-          <Alert type="success" showIcon message={message} style={{ marginBottom: '1rem' }} />
+          <Alert type="success" showIcon title={message} style={{ marginBottom: '1rem' }} />
         )}
 
         <Button type="primary" htmlType="submit" block loading={busy}>

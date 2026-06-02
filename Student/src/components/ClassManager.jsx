@@ -287,7 +287,7 @@ export default function ClassManager({
           setAddClassOpen(false)
         }}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
         width={520}
       >
         <SaveFieldOverlay busy={addClassBusy} label="Adding class…">

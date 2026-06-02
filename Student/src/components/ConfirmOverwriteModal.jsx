@@ -98,7 +98,7 @@ export default function ConfirmOverwriteModal({
       </Row>
 
       {error && (
-        <Alert type="error" showIcon message={error} style={{ marginTop: '0.75rem' }} />
+        <Alert type="error" showIcon title={error} style={{ marginTop: '0.75rem' }} />
       )}
     </Modal>
   )
