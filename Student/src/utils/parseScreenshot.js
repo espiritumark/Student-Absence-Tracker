@@ -1,6 +1,11 @@
 import { isVisionLlmConfigured, parseAttendanceWithVisionLlm } from './visionLlm'
 
-export { isVisionLlmConfigured, checkVisionLlmConnection, isLocalVisionSetup } from './visionLlm'
+export {
+  isVisionLlmConfigured,
+  checkVisionLlmConnection,
+  isLocalVisionSetup,
+  prewarmVisionModel,
+} from './visionLlm'
 export { parseMetadataFromText, parseStudentsFromText } from './screenshotTextParse'
 
 /** @deprecated OCR removed — use isVisionLlmConfigured() */

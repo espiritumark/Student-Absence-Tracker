@@ -139,6 +139,20 @@ The **Screenshot** tab uses a vision language model to read class details, stude
 
 Restart the dev server or redeploy after changing env vars.
 
+### Faster screenshot scans
+
+Screenshot import runs a **vision model on your machine** (or cloud). That step is slower than pasting JSON from Copilot because the model must read the whole image and write every student row.
+
+| Approach | Speed |
+|----------|--------|
+| **JSON tab** + Copilot paste | Fastest (no vision step) |
+| **Cloud vision API** (DashScope) | Often faster than local CPU |
+| **Local Ollama + GPU** | Much faster than CPU-only |
+| **Smaller model** (`qwen2.5vl:3b`) | Faster, slightly less accurate |
+| **Keep Ollama running** + open Screenshot tab first | Avoids cold-start delay on first scan |
+
+Optional `.env` tuning (see `.env.example`): lower `VITE_VISION_MAX_IMAGE_WIDTH` (e.g. `1120`) for quicker scans on large screenshots.
+
 ---
 
 ## Troubleshooting

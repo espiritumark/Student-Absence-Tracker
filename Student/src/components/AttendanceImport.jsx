@@ -38,7 +38,13 @@ import {
   subscribeOcr,
 } from '../utils/ocrSession'
 import { UI } from '../utils/uiCopy'
-import { fileToDataUrl, isVisionLlmConfigured, checkVisionLlmConnection } from '../utils/parseScreenshot'
+import {
+  fileToDataUrl,
+  isVisionLlmConfigured,
+  checkVisionLlmConnection,
+  isLocalVisionSetup,
+  prewarmVisionModel,
+} from '../utils/parseScreenshot'
 import { buildPortalJson, parseAttendanceJson } from '../utils/parseAttendanceJson'
 import {
   enrichImportStudentsWithRoster,
@@ -539,6 +545,7 @@ export default function AttendanceImport({
     let cancelled = false
     checkVisionLlmConnection().then((result) => {
       if (!cancelled) setVisionConnection(result)
+      if (!cancelled && result?.ok) prewarmVisionModel()
     })
 
     return () => {
@@ -949,7 +956,9 @@ export default function AttendanceImport({
                 title="Vision AI ready — full screenshot scan (class, names, checkboxes)."
                 description={
                   visionConnection?.ok
-                    ? 'Paste your portal screenshot and click Scan screenshot. Attendance opens in the review table (same as JSON import).'
+                    ? isLocalVisionSetup()
+                      ? 'Paste your screenshot and scan. First scan may take a minute on CPU — keep this tab open so the model stays loaded. For fastest import, paste Copilot JSON on the JSON tab.'
+                      : 'Paste your portal screenshot and click Scan screenshot. Attendance opens in the review table (same as JSON import).'
                     : 'Checking connection to Ollama…'
                 }
               />

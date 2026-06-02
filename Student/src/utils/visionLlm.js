@@ -72,6 +72,42 @@ function ollamaOrigin(baseUrl) {
   return baseUrl.replace(/\/v1\/?$/, '')
 }
 
+function visionTuning() {
+  return {
+    maxWidth: Number(import.meta.env.VITE_VISION_MAX_IMAGE_WIDTH) || 1280,
+    maxHeight: Number(import.meta.env.VITE_VISION_MAX_IMAGE_HEIGHT) || 2200,
+    jpegQuality: Number(import.meta.env.VITE_VISION_JPEG_QUALITY) || 0.82,
+    maxTokens: Number(import.meta.env.VITE_VISION_MAX_TOKENS) || 4096,
+    keepAlive: import.meta.env.VITE_VISION_KEEP_ALIVE?.trim() || '15m',
+  }
+}
+
+/** Load Ollama model into memory while the Screenshot tab is open (skips cold-start on first scan). */
+export async function prewarmVisionModel() {
+  const config = getVisionConfig()
+  if (!config || !isLocalVisionEndpoint(config.baseUrl)) return
+
+  const { keepAlive } = visionTuning()
+  const origin = ollamaOrigin(config.baseUrl)
+
+  try {
+    await fetch(`${origin}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: config.model,
+        keep_alive: keepAlive,
+        stream: false,
+        messages: [{ role: 'user', content: 'ok' }],
+        options: { num_predict: 2 },
+      }),
+      signal: AbortSignal.timeout(120000),
+    })
+  } catch {
+    // Warm-up is best-effort; first scan still works if this fails
+  }
+}
+
 /** Check that the vision backend is reachable (Ollama locally; cloud assumed OK). */
 export async function checkVisionLlmConnection() {
   const config = getVisionConfig()
@@ -175,17 +211,17 @@ function loadImage(dataUrl) {
   })
 }
 
-async function compressDataUrl(dataUrl, maxWidth = 1800) {
+/** Resize and JPEG-encode to cut vision inference time (smaller image = faster). */
+async function compressDataUrl(dataUrl) {
+  const { maxWidth, maxHeight, jpegQuality } = visionTuning()
   const img = await loadImage(dataUrl)
-  if (img.width <= maxWidth) return dataUrl
-
-  const scale = maxWidth / img.width
+  const scale = Math.min(1, maxWidth / img.width, maxHeight / img.height)
   const canvas = document.createElement('canvas')
-  canvas.width = Math.round(img.width * scale)
-  canvas.height = Math.round(img.height * scale)
+  canvas.width = Math.max(1, Math.round(img.width * scale))
+  canvas.height = Math.max(1, Math.round(img.height * scale))
   const ctx = canvas.getContext('2d')
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-  return canvas.toDataURL('image/jpeg', 0.92)
+  return canvas.toDataURL('image/jpeg', jpegQuality)
 }
 
 function readMessageContent(content) {
@@ -230,26 +266,33 @@ export async function parseAttendanceWithVisionLlm(dataUrl, onProgress, opts = {
     headers['X-Title'] = 'Student Absence Tracker'
   }
 
+  const { maxTokens, keepAlive } = visionTuning()
+  const requestBody = {
+    model: config.model,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: imageUrl } },
+          { type: 'text', text: ATTENDANCE_VISION_PROMPT },
+        ],
+      },
+    ],
+    max_tokens: maxTokens,
+    temperature: 0.1,
+  }
+
+  if (isLocalVisionEndpoint(config.baseUrl)) {
+    requestBody.keep_alive = keepAlive
+  }
+
   let response
   try {
     response = await fetch(`${config.baseUrl}/chat/completions`, {
       method: 'POST',
       headers,
       signal: opts.signal,
-      body: JSON.stringify({
-        model: config.model,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'image_url', image_url: { url: imageUrl } },
-              { type: 'text', text: ATTENDANCE_VISION_PROMPT },
-            ],
-          },
-        ],
-        max_tokens: 8192,
-        temperature: 0.1,
-      }),
+      body: JSON.stringify(requestBody),
     })
   } catch (err) {
     throw visionFetchError(config, err)
