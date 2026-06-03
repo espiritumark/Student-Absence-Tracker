@@ -12,12 +12,12 @@ export default function ConfirmOverwriteModal({
 }) {
   if (!summary) return null
 
-  const title = summary.isNewClass ? 'Confirm import' : 'Confirm overwrite'
+  const title = summary.isNewClass ? 'Confirm Import' : 'Confirm Overwrite'
   const okText = busy
     ? 'Saving…'
     : summary.isNewClass
-      ? 'Save attendance'
-      : 'Overwrite attendance'
+      ? UI.saveAttendance
+      : UI.overwriteAttendance
 
   return (
     <Modal
@@ -59,7 +59,7 @@ export default function ConfirmOverwriteModal({
         {!summary.isNewClass && (
           <>
             <Col xs={24} sm={12}>
-              <Card size="small" title="Absent count">
+              <Card size="small" title="Absent Count">
                 <Typography.Text strong>
                   {summary.prevAbsent} → {summary.nextAbsent}
                 </Typography.Text>
@@ -84,7 +84,7 @@ export default function ConfirmOverwriteModal({
           </>
         )}
         <Col xs={24} sm={12}>
-          <Card size="small" title={`New ${UI.learningPartners.toLowerCase()}`}>
+          <Card size="small" title={`New ${UI.learningPartners}`}>
             <Typography.Text strong>{summary.newStudents ?? 0}</Typography.Text> will be added
             {summary.newStudentNames?.length > 0 && (
               <Typography.Paragraph type="secondary" style={{ marginBottom: 0, fontSize: '0.85rem' }}>

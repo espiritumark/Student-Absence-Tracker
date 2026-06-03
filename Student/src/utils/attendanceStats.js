@@ -60,64 +60,114 @@ export function streakEndingOn(dayKey, absentDayKeys) {
   return streak
 }
 
+/** Coerce DB/local manual counts to numbers (avoids "5" + 1 → "51"). */
+export function asManualCount(value) {
+  if (value == null || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
 /**
- * Preview roster streak/total before and after saving one session.
- * Present on the session date resets an active streak; absent can extend it.
+ * Adjust manual roster overrides when a session status is saved.
+ * Manual streak increments on a new absent mark and resets on present.
  */
+export function manualOverridePatchAfterSession(student, prevStatus, nextStatus) {
+  const manualStreak = asManualCount(student.manualConsecutiveAbsences)
+  const manualTotal = asManualCount(student.manualTotalAbsences)
+  if (manualStreak == null && manualTotal == null) return null
+
+  const wasPresent = prevStatus == null || prevStatus === 'present'
+  const patch = {}
+
+  if (manualStreak != null) {
+    if (nextStatus === 'present') {
+      if (manualStreak !== 0) patch.manualConsecutiveAbsences = 0
+    } else if (nextStatus === 'absent' && wasPresent) {
+      patch.manualConsecutiveAbsences = manualStreak + 1
+    }
+  }
+
+  if (manualTotal != null) {
+    if (nextStatus === 'absent' && wasPresent) {
+      patch.manualTotalAbsences = manualTotal + 1
+    }
+  }
+
+  return Object.keys(patch).length ? patch : null
+}
+
+/** All manual roster patches when session records change (import / manual save). */
+export function collectRosterPatchesForSession(students, priorRecords, nextRecords) {
+  const updates = []
+  for (const st of students || []) {
+    const prev = priorRecords[st.id]?.status ?? null
+    const next = nextRecords[st.id]?.status ?? null
+    if (next == null || prev === next) continue
+    const patch = manualOverridePatchAfterSession(st, prev, next)
+    if (patch) updates.push({ studentId: st.id, patch })
+  }
+  return updates
+}
+
+export function applyStudentPatches(students, updates) {
+  if (!updates.length) return students
+  const patchById = Object.fromEntries(updates.map((u) => [u.studentId, u.patch]))
+  return students.map((st) => (patchById[st.id] ? { ...st, ...patchById[st.id] } : st))
+}
+
+function projectedManualCounts(student, prevSessionStatus, nextSessionStatus) {
+  const patch = manualOverridePatchAfterSession(student, prevSessionStatus, nextSessionStatus)
+  const manualStreak = asManualCount(student.manualConsecutiveAbsences)
+  const manualTotal = asManualCount(student.manualTotalAbsences)
+  return {
+    streak: patch?.manualConsecutiveAbsences ?? manualStreak,
+    total: patch?.manualTotalAbsences ?? manualTotal,
+  }
+}
+
 export function previewRosterImpact(
   student,
   classAttendance,
   projectedAttendance,
-  sessionDateKey,
+  _sessionDateKey,
   prevSessionStatus,
   nextSessionStatus,
 ) {
   const beforeCounts = getEffectiveAbsenceCounts(student, classAttendance)
-  const afterCounts = getEffectiveAbsenceCounts(student, projectedAttendance)
-  const beforeAbsent = new Set(beforeCounts.recorded.absentDays)
-  const afterAbsent = new Set(getStudentAbsenceStats(projectedAttendance, student.id).absentDays)
+  const afterRecorded = getStudentAbsenceStats(projectedAttendance, student.id)
+  const manualAfter = projectedManualCounts(student, prevSessionStatus, nextSessionStatus)
 
   let beforeStreak = 0
   let afterStreak = 0
 
-  if (nextSessionStatus === 'present') {
-    // Match roster consecutive; present clears an active streak in the preview.
-    beforeStreak = beforeCounts.consecutive
-    afterStreak = 0
-  } else {
-    if (prevSessionStatus === 'absent') {
-      beforeStreak = streakEndingOn(sessionDateKey, beforeAbsent)
-    } else if (prevSessionStatus == null) {
-      beforeStreak = streakEndingOn(addDaysToKey(sessionDateKey, -1), beforeAbsent)
-    }
+  const hasManualStreak = asManualCount(student.manualConsecutiveAbsences) != null
+  const hasManualTotal = asManualCount(student.manualTotalAbsences) != null
 
-    afterStreak = streakEndingOn(sessionDateKey, afterAbsent)
-    if (afterStreak === 0) {
-      const yesterday = addDaysToKey(sessionDateKey, -1)
-      const yesterdayStreak = streakEndingOn(yesterday, afterAbsent)
-      afterStreak = yesterdayStreak > 0 ? yesterdayStreak + 1 : 1
-    }
+  if (nextSessionStatus === 'present') {
+    beforeStreak = beforeCounts.consecutive
+    afterStreak = hasManualStreak ? (manualAfter.streak ?? 0) : afterRecorded.consecutive
+  } else {
+    beforeStreak = beforeCounts.consecutive
+    afterStreak = hasManualStreak ? (manualAfter.streak ?? beforeStreak) : afterRecorded.consecutive
   }
 
   const beforeTotal = beforeCounts.total
-  const afterTotal = afterCounts.total
+  const afterTotal = hasManualTotal ? (manualAfter.total ?? beforeTotal) : afterRecorded.total
 
   return { beforeStreak, afterStreak, beforeTotal, afterTotal }
 }
 
 export function getEffectiveAbsenceCounts(student, classAttendance) {
   const recorded = getStudentAbsenceStats(classAttendance, student.id)
-  const hasManualTotal = student.manualTotalAbsences != null
-  const hasManualConsecutive = student.manualConsecutiveAbsences != null
+  const manualTotal = asManualCount(student.manualTotalAbsences)
+  const manualConsecutive = asManualCount(student.manualConsecutiveAbsences)
 
   return {
     recorded,
-    total: hasManualTotal ? student.manualTotalAbsences : recorded.total,
-    consecutive: hasManualConsecutive
-      ? student.manualConsecutiveAbsences
-      : recorded.consecutive,
-    usesManualTotal: hasManualTotal,
-    usesManualConsecutive: hasManualConsecutive,
+    total: manualTotal != null ? manualTotal : recorded.total,
+    consecutive: manualConsecutive != null ? manualConsecutive : recorded.consecutive,
+    usesManualTotal: manualTotal != null,
+    usesManualConsecutive: manualConsecutive != null,
   }
 }
 

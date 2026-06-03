@@ -148,18 +148,18 @@ export default function ReportingPanel({
             Submit the official form at{' '}
             <strong>{CONSECUTIVE_REPORT_DAYS}+ consecutive absence days</strong> (about two weeks)
             or <strong>{MONTH_REPORT_DAYS} days absent without prior notice</strong>. Click a red
-            name on the Dashboard to move a {UI.learningPartner.toLowerCase()} here.
+            name on the Dashboard to move a {UI.learningPartner} here.
           </>
         }
       />
 
       <div className="workspace-body">
       <div className="reporting-section">
-        <WorkspaceSectionTitle>To report ({pending.length})</WorkspaceSectionTitle>
+        <WorkspaceSectionTitle>To Report ({pending.length})</WorkspaceSectionTitle>
         {pending.length === 0 ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={`No ${UI.learningPartners.toLowerCase()} in the reporting queue. Open one from the Dashboard when ready.`}
+            description={`No ${UI.learningPartners} in the reporting queue. Open one from the Dashboard when ready.`}
           />
         ) : (
           <div className="table-scroll-region reporting-pending-scroll" ref={pendingTableRef}>
@@ -184,7 +184,7 @@ export default function ReportingPanel({
         {reported.length === 0 ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={`No reported ${UI.learningPartners.toLowerCase()} yet.`}
+            description={`No reported ${UI.learningPartners} yet.`}
           />
         ) : (
           <div className="table-scroll-region reporting-reported-scroll" ref={reportedTableRef}>

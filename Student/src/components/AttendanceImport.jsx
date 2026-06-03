@@ -27,8 +27,10 @@ import { useReportTabActivity } from '../hooks/useReportTabActivity'
 import { useScrollRegionHeight } from '../hooks/useScrollRegionHeight'
 import { formatClassLabel } from '../utils/classFormat'
 import { dateKey, formatDateLabel } from '../utils/dates'
+import { buildAttendanceLogFromSummary } from '../utils/activityLog'
 import {
   buildImportPayload,
+  buildImportRosterPreviews,
   computeImportSaveSummary,
 } from '../utils/importReview'
 import {
@@ -37,7 +39,7 @@ import {
   runOcrJob,
   subscribeOcr,
 } from '../utils/ocrSession'
-import { UI } from '../utils/uiCopy'
+import { UI, formatLpCount } from '../utils/uiCopy'
 import {
   fileToDataUrl,
   isVisionLlmConfigured,
@@ -98,7 +100,7 @@ function ScanSpinner({ progress, stageLabel, elapsedSeconds = 0, progressStalled
         )}
         {onCancel && (
           <Button size="small" style={{ marginTop: 8 }} onClick={onCancel}>
-            Cancel scan
+            Cancel Scan
           </Button>
         )}
       </div>
@@ -127,7 +129,7 @@ function SaveSuccess({
       extra={
         <div className="import-save-success-extra">
           <Typography.Paragraph style={{ marginBottom: 0 }}>
-            {savedCount.total} {UI.learningPartners.toLowerCase()} ·{' '}
+            {formatLpCount(savedCount.total)} ·{' '}
             <Typography.Text type={savedCount.absent > 0 ? 'danger' : undefined} strong>
               {savedCount.absent} absent
             </Typography.Text>
@@ -155,6 +157,7 @@ const SUCCESS_RESET_SECONDS = 5
 
 export default function AttendanceImport({
   importPortalSession,
+  recordAction,
   classes,
   attendance,
   isActive = true,
@@ -402,7 +405,7 @@ export default function AttendanceImport({
       const warnings = parsed.warnings ?? []
       const missingClass = warnings.includes('missing_class')
       const count = parsed.students.length
-      const studentWord = `${count} ${UI.learningPartner.toLowerCase()}${count === 1 ? '' : 's'}`
+      const studentWord = formatLpCount(count)
 
       setMeta(nextMeta)
       setStudents(
@@ -418,7 +421,7 @@ export default function AttendanceImport({
 
       let message = ''
       if (pendingSimilar > 0) {
-        message = `${source === 'screenshot' ? 'Scanned' : 'Parsed'} ${studentWord}. ${pendingSimilar} name${pendingSimilar === 1 ? '' : 's'} under 95% match need Review in the table.`
+        message = `${source === 'screenshot' ? 'Scanned' : 'Parsed'} ${studentWord}. ${pendingSimilar} name${pendingSimilar === 1 ? '' : 's'} under 95% match need review in the table.`
       } else if (missingClass && source === 'screenshot') {
         message = `Scanned ${studentWord}. Class header was not detected — fill Intake, Level, Group, and Programme below before saving.`
       } else if (source === 'screenshot') {
@@ -598,7 +601,7 @@ export default function AttendanceImport({
         }
         setError('No image on clipboard. Take a screenshot with Win+Shift+S, then try again.')
       } catch {
-        setError('Click the paste area below, then press Ctrl+V. Or use Choose image.')
+        setError(`Click the paste area below, then press Ctrl+V. Or use ${UI.chooseImage}.`)
       }
       return
     }
@@ -750,12 +753,12 @@ export default function AttendanceImport({
     e.preventDefault()
     if (saving) return
     if (!students.length) {
-      setError(`No ${UI.learningPartners.toLowerCase()} to save.`)
+      setError(`No ${UI.learningPartners} to save.`)
       return
     }
     if (hasUnresolvedSimilarNames(students)) {
       setError(
-        `Resolve similar ${UI.learningPartner.toLowerCase()} names in the table before saving.`,
+        `Resolve similar ${UI.learningPartner} names in the table before saving.`,
       )
       return
     }
@@ -777,10 +780,21 @@ export default function AttendanceImport({
     if (!pendingImport || saving) return
     setSaving(true)
     setConfirmError('')
+    const summaryForLog = confirmSummary
     try {
       await commitImport(pendingImport)
+      recordAction?.(
+        buildAttendanceLogFromSummary('import', pendingImport, summaryForLog, { success: true }),
+      )
     } catch (err) {
-      setConfirmError(err.message || 'Failed to save attendance. Please try again.')
+      const message = err.message || 'Failed to save attendance. Please try again.'
+      setConfirmError(message)
+      recordAction?.(
+        buildAttendanceLogFromSummary('import', pendingImport, summaryForLog, {
+          success: false,
+          error: message,
+        }),
+      )
     } finally {
       setSaving(false)
     }
@@ -830,7 +844,12 @@ export default function AttendanceImport({
         })
       : meta.qualification || ''
 
-  const [studentTableRef, studentTableHeight] = useScrollRegionHeight(220)
+  const [studentTableRef, studentTableHeight] = useScrollRegionHeight(280)
+
+  const rosterPreviews = useMemo(
+    () => buildImportRosterPreviews(meta, students, classes, attendance),
+    [meta, students, classes, attendance],
+  )
   const showReview = importView === 'review' && students.length > 0 && !processing
   const showImportInput = !showReview
   const backToInputLabel = importMode === 'json' ? 'Back to JSON' : 'Back to Screenshot'
@@ -886,12 +905,14 @@ export default function AttendanceImport({
       />
 
       {showReview && parseMessage && (
-        <Alert
-          type="success"
-          showIcon
-          className="import-alert-banner"
-          title={parseMessage}
-        />
+        <div className="import-review-banner-stack">
+          <Alert
+            type="success"
+            showIcon
+            className="import-alert-banner"
+            title={parseMessage}
+          />
+        </div>
       )}
 
       <div className="import-workspace">
@@ -926,7 +947,7 @@ export default function AttendanceImport({
           </div>
           <Space wrap className="json-import-actions">
             <Button type="primary" onClick={handleParseJson} disabled={!jsonText.trim()}>
-              Parse JSON
+              {UI.parseJson}
             </Button>
             <Upload
               accept=".json,application/json"
@@ -948,7 +969,7 @@ export default function AttendanceImport({
                 type="error"
                 showIcon
                 className="import-alert-banner"
-                title="Ollama is not reachable"
+                title="Ollama Is Not Reachable"
                 description={visionConnection.message}
               />
             ) : (
@@ -956,12 +977,12 @@ export default function AttendanceImport({
                 type="success"
                 showIcon
                 className="import-alert-banner"
-                title="Vision AI ready — full screenshot scan (class, names, checkboxes)."
+                title="Vision AI Ready — full screenshot scan (class, names, checkboxes)."
                 description={
                   visionConnection?.ok
                     ? isLocalVisionSetup()
                       ? 'Paste your screenshot and scan. First scan may take a minute on CPU — keep this tab open so the model stays loaded. For fastest import, paste Copilot JSON on the JSON tab.'
-                      : 'Paste your portal screenshot and click Scan screenshot. Attendance opens in the review table (same as JSON import).'
+                      : `Paste your portal screenshot and click ${UI.scanScreenshot}. Attendance opens in the review table (same as JSON import).`
                     : 'Checking connection to Ollama…'
                 }
               />
@@ -971,7 +992,7 @@ export default function AttendanceImport({
               type="warning"
               showIcon
               className="import-alert-banner"
-              title="Vision AI is not configured."
+              title="Vision AI Is Not Configured"
               description={
                 <>
                   Add <code>VITE_VISION_LLM_*</code> to your <code>.env</code> file. For free local
@@ -991,10 +1012,10 @@ export default function AttendanceImport({
                     type="info"
                     showIcon
                     className="import-alert-banner import-alert-with-action"
-                    title={`Screenshot scan review — ${students.length} student${students.length === 1 ? '' : 's'}`}
+                    title={`Screenshot Scan Review — ${formatLpCount(students.length)}`}
                     action={
                       <Button size="small" type="primary" onClick={() => setImportView('review')}>
-                        Continue review
+                        {UI.continueReview}
                       </Button>
                     }
                   />
@@ -1002,7 +1023,7 @@ export default function AttendanceImport({
 
               {lastScannedScreenshot && (
                 <div className="import-screenshot-toolbar">
-                  <Button onClick={() => setLastScanModalOpen(true)}>View last scanned screenshot</Button>
+                  <Button onClick={() => setLastScanModalOpen(true)}>View Last Scanned Screenshot</Button>
                   {!pendingScreenshot && (
                     <Typography.Text type="secondary" className="import-screenshot-hint">
                       Pasting a new image replaces this scan and clears review data.
@@ -1038,7 +1059,7 @@ export default function AttendanceImport({
                       className="drop-zone-preview"
                     />
                     <p className="drop-zone-preview-caption">
-                      Preview ready — click <strong>Scan screenshot</strong> when it looks correct.
+                      Preview ready — click <strong>{UI.scanScreenshot}</strong> when it looks correct.
                     </p>
                   </div>
                 ) : (
@@ -1059,11 +1080,11 @@ export default function AttendanceImport({
                     return false
                   }}
                 >
-                  <Button>Choose image</Button>
+                  <Button>{UI.chooseImage}</Button>
                 </Upload>
-                <Button onClick={pasteScreenshotFromClipboard}>Paste screenshot</Button>
+                <Button onClick={pasteScreenshotFromClipboard}>{UI.pasteScreenshot}</Button>
                 <Button type="primary" disabled={!pendingScreenshot || !visionReady} onClick={handleScanScreenshot}>
-                  Scan screenshot
+                  {UI.scanScreenshot}
                 </Button>
                 {pendingScreenshot && <Button type="link" onClick={clearPendingScreenshot}>Clear</Button>}
               </Space>
@@ -1102,7 +1123,7 @@ export default function AttendanceImport({
                       type="warning"
                       showIcon
                       className="import-alert-banner"
-                      title="Class header not detected from screenshot"
+                      title="Class Header Not Detected From Screenshot"
                       description="The scan could not read the INTAKE / LEVEL / GROUP line. Enter those fields below before saving."
                     />
                   )}
@@ -1193,7 +1214,7 @@ export default function AttendanceImport({
                     <Button onClick={() => setAllPresent(false)}>Uncheck All</Button>
                     {reviewSource === 'screenshot' && lastScannedScreenshot && (
                       <Button onClick={() => setLastScanModalOpen(true)}>
-                        View screenshot
+                        View Screenshot
                       </Button>
                     )}
                     <Button onClick={handleCopyJson}>Copy as JSON</Button>
@@ -1212,7 +1233,7 @@ export default function AttendanceImport({
                   )}
                 </div>
 
-                <div className="table-scroll-region portal-student-list-scroll" ref={studentTableRef}>
+                <div className="table-scroll-region portal-student-list-scroll import-review-table-region">
                   {similarPendingCount > 0 && (
                     <Alert
                       type="warning"
@@ -1222,6 +1243,7 @@ export default function AttendanceImport({
                     />
                   )}
 
+                  <div className="import-review-table-wrap" ref={studentTableRef}>
                   <Table
                     size="small"
                     pagination={{ pageSize: 30, showSizeChanger: false, hideOnSinglePage: true }}
@@ -1273,7 +1295,7 @@ export default function AttendanceImport({
                                 type="button"
                                 className="import-similar-name-trigger"
                                 onClick={() => openSimilarModal(row)}
-                                title="Review roster match"
+                                title="Review Roster Match"
                               >
                                 <ExclamationCircleFilled aria-hidden />
                                 <span className="import-similar-name-text">{row.name}</span>
@@ -1326,29 +1348,76 @@ export default function AttendanceImport({
                             <Tag color="success">Present</Tag>
                           ),
                       },
+                      {
+                        title: UI.streak,
+                        key: 'rosterStreak',
+                        width: 88,
+                        align: 'center',
+                        render: (_, row) => {
+                          const preview = rosterPreviews.get(
+                            `${row.index}-${row.importName || row.name}`,
+                          )
+                          if (preview?.rosterStreak == null) return '—'
+                          return (
+                            <Typography.Text
+                              className="import-save-count-delta"
+                              type={
+                                !row.present && preview.rosterStreakDelta ? 'danger' : undefined
+                              }
+                            >
+                              {preview.rosterStreak}
+                            </Typography.Text>
+                          )
+                        },
+                      },
+                      {
+                        title: UI.total,
+                        key: 'rosterTotal',
+                        width: 72,
+                        align: 'center',
+                        render: (_, row) => {
+                          const preview = rosterPreviews.get(
+                            `${row.index}-${row.importName || row.name}`,
+                          )
+                          if (preview?.rosterTotal == null) return '—'
+                          return (
+                            <Typography.Text
+                              className="import-save-count-delta"
+                              type={
+                                !row.present && preview.rosterTotalDelta ? 'danger' : undefined
+                              }
+                            >
+                              {preview.rosterTotal}
+                            </Typography.Text>
+                          )
+                        },
+                      },
                     ]}
                   />
+                  </div>
                 </div>
 
-                <Typography.Paragraph type="secondary" className="import-review-summary">
-                  {formatDateLabel(meta.date)} · {students.length} students ·{' '}
-                  <Typography.Text strong type="danger">
-                    {students.filter((s) => !s.present).length} absent
-                  </Typography.Text>
-                  {similarPendingCount > 0 ? (
-                    <> · {similarPendingCount} similar name{similarPendingCount === 1 ? '' : 's'} pending</>
-                  ) : null}
-                </Typography.Paragraph>
+                <div className="import-review-footer">
+                  <Typography.Paragraph type="secondary" className="import-review-summary">
+                    {formatDateLabel(meta.date)} · {formatLpCount(students.length)} ·{' '}
+                    <Typography.Text strong type="danger">
+                      {students.filter((s) => !s.present).length} absent
+                    </Typography.Text>
+                    {similarPendingCount > 0 ? (
+                      <> · {similarPendingCount} similar name{similarPendingCount === 1 ? '' : 's'} pending</>
+                    ) : null}
+                  </Typography.Paragraph>
 
-                <Button
-                  type="primary"
-                  htmlType="submit"
-                  loading={saving}
-                  disabled={similarPendingCount > 0}
-                  block
-                >
-                  {UI.saveDailyAttendance}
-                </Button>
+                  <Button
+                    type="primary"
+                    htmlType="submit"
+                    loading={saving}
+                    disabled={similarPendingCount > 0}
+                    block
+                  >
+                    {UI.saveDailyAttendance}
+                  </Button>
+                </div>
               </fieldset>
             </form>
           </SaveFieldOverlay>
@@ -1381,7 +1450,7 @@ export default function AttendanceImport({
       />
 
       <Modal
-        title="Last scanned screenshot"
+        title="Last Scanned Screenshot"
         open={lastScanModalOpen}
         onCancel={() => setLastScanModalOpen(false)}
         footer={
@@ -1400,7 +1469,7 @@ export default function AttendanceImport({
             className="last-scan-modal-img"
           />
         ) : (
-          <Empty description="No screenshot saved" />
+          <Empty description="No Screenshot Saved" />
         )}
       </Modal>
     </section>

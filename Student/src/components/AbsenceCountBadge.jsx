@@ -2,7 +2,7 @@ import { Flex, Space, Tag, Typography } from 'antd'
 import { getOverallAbsenceRisk, hasAbsenceNumbers, RISK_META } from '../utils/absenceRisk'
 import { UI } from '../utils/uiCopy'
 
-export function AbsenceCountBadge({ counts, showManual = true, size = 'md', placeholder = false }) {
+export function AbsenceCountBadge({ counts, showManual = false, size = 'md', placeholder = false }) {
   const hasNumbers = counts && hasAbsenceNumbers(counts)
 
   if (!hasNumbers) {
@@ -92,7 +92,7 @@ export function DashboardRiskSummary({ activeTiers, showReportRequired = false }
         <Tag
           variant="filled"
           className="dashboard-student-report-tag dashboard-student-report-tag-inactive"
-          title="Shown when a student must be reported on the official form"
+          title="Shown when a Learning Partner must be reported on the official form"
         >
           {UI.reportRequired}
         </Tag>

@@ -17,6 +17,9 @@ export const UI = {
   notInRoster: 'Not in Roster',
   presentStreakReset: 'Present · Streak Reset',
   absentStreakUp: 'Absent · Streak Up',
+  absentRosterUnchanged: 'Absent · Roster Unchanged',
+  absentFirstSession: 'Absent · First mark (this session)',
+  presentFirstSession: 'Present · First mark (this session)',
   reportRequired: 'Report Required',
   officialReporting: 'Official Reporting',
   officialReportingRequired: 'Official Reporting Required',
@@ -32,4 +35,33 @@ export const UI = {
   change: 'Change',
   streak: 'Streak',
   total: 'Total',
+  classesAndRosters: 'Classes & Rosters',
+  priorNotice: 'Prior Notice',
+  bulkEditAbsenceCounts: 'Bulk Edit Absence Counts',
+  clearAllOverrides: 'Clear All Overrides',
+  history: 'History',
+  clearHistory: 'Clear History',
+  status: 'Status',
+  actions: 'Actions',
+  learningPartnerName: 'Learning Partner Name',
+  signIn: 'Sign In',
+  signOut: 'Sign Out',
+  createAccount: 'Create Account',
+  generateFeedback: 'Generate Feedback',
+  traitsAndNotes: 'Traits & Notes',
+  generatedFeedback: 'Generated Feedback',
+  parseJson: 'Parse JSON',
+  scanScreenshot: 'Scan Screenshot',
+  pasteScreenshot: 'Paste Screenshot',
+  chooseImage: 'Choose Image',
+  continueReview: 'Continue Review',
+  discardChanges: 'Discard Changes',
+  markAllAbsent: 'Mark All Absent',
+  markAllPresent: 'Mark All Present',
+  openReporting: 'Open Reporting',
+}
+
+/** e.g. "3 Learning Partners" */
+export function formatLpCount(count) {
+  return `${count} ${count === 1 ? UI.learningPartner : UI.learningPartners}`
 }

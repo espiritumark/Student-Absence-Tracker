@@ -14,7 +14,7 @@ export const antdTheme = {
     colorBgContainer: '#ffffff',
     colorBorder: '#cbd5e1',
     colorText: '#0f172a',
-    colorTextSecondary: '#64748b',
+    colorTextSecondary: '#475569',
     colorTextTertiary: '#94a3b8',
     borderRadius: 8,
     borderRadiusLG: 10,
@@ -26,12 +26,14 @@ export const antdTheme = {
     Layout: {
       bodyBg: '#eef2f6',
       headerBg: '#ffffff',
-      footerBg: '#ffffff',
+      footerBg: '#eef2f6',
     },
     Tabs: {
-      cardBg: '#ffffff',
+      cardBg: '#d0e8ea',
       itemSelectedColor: '#0d9488',
       inkBarColor: '#0d9488',
+      itemColor: '#475569',
+      itemHoverColor: '#0f5c56',
     },
     Select: {
       controlHeight: 40,

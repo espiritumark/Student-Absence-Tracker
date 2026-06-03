@@ -7,10 +7,14 @@ import { UI } from '../utils/uiCopy'
 const CHANGE_TAG = {
   to_absent: { color: 'error', label: 'Present → Absent' },
   to_present: { color: 'success', label: UI.presentStreakReset },
-  new_absent: { color: 'error', label: UI.absentStreakUp },
-  new_record: { color: 'processing', label: 'New Record' },
-  new: { color: 'processing', label: 'New Student' },
+  new_absent: { color: 'error', label: UI.absentFirstSession },
+  new_record: { color: 'processing', label: UI.presentFirstSession },
+  new: { color: 'processing', label: 'New Learning Partner' },
+  unchanged: { color: 'default', label: 'Unchanged' },
 }
+
+const introRosterChanges =
+  'Learning Partners marked absent for this session, or whose roster streak/total changes, are listed below.'
 
 export default function ImportSaveConfirmModal({
   open,
@@ -95,8 +99,7 @@ export default function ImportSaveConfirmModal({
 
   const okText = busy ? 'Saving…' : summary.needsConfirm ? UI.overwriteAttendance : UI.saveAttendance
 
-  const intro =
-    'Only students whose roster streak or total changes are listed below.'
+  const intro = introRosterChanges
 
   const hasRosterUpdates = summary.studentRows.length > 0
 
@@ -166,8 +169,9 @@ export default function ImportSaveConfirmModal({
       </Row>
 
       <Typography.Text type="secondary" className="import-save-table-hint">
-        Streak and total show class roster counts (before → after). Present marks reset a streak;
-        absent marks can increase it.
+        Current is for this class, date, and module only — not the whole roster. Streak and total
+        match {UI.classesAndRosters} (before → after). If a module filter is active on{' '}
+        {UI.classesAndRosters}, counts only include that module’s sessions.
       </Typography.Text>
 
       <div className="table-scroll-region import-save-confirm-scroll" ref={tableRef}>
@@ -183,7 +187,7 @@ export default function ImportSaveConfirmModal({
         ) : (
           <Typography.Paragraph type="secondary" className="import-save-confirm-empty">
             No roster streak or total changes in this import. Session data will still be saved for
-            all {pendingImport.students.length} students.
+            all {pendingImport.students.length} Learning Partners.
           </Typography.Paragraph>
         )}
       </div>

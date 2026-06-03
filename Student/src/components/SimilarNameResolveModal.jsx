@@ -11,7 +11,7 @@ export default function SimilarNameResolveModal({
 }) {
   if (!row) {
     return (
-      <Modal open={open} onCancel={onClose} footer={null} destroyOnHidden title="Similar name" />
+      <Modal open={open} onCancel={onClose} footer={null} destroyOnHidden title="Similar Name" />
     )
   }
 
@@ -19,7 +19,7 @@ export default function SimilarNameResolveModal({
     <Modal
       open={open}
       onCancel={onClose}
-      title={`#${row.index} — similar roster match`}
+      title={`#${row.index} — Similar Roster Match`}
       footer={null}
       destroyOnHidden
       width={520}
@@ -30,7 +30,7 @@ export default function SimilarNameResolveModal({
       </Typography.Paragraph>
 
       <Typography.Paragraph type="secondary" className="similar-name-resolve-intro">
-        Match is under 95% similar. Link to the roster student or keep as a new entry.
+        Match is under 95% similar. Link to the roster Learning Partner or keep as a new entry.
       </Typography.Paragraph>
 
       <Radio.Group
@@ -45,7 +45,7 @@ export default function SimilarNameResolveModal({
       >
         {row.similarCandidates?.map((candidate) => (
           <Radio key={candidate.id} value={candidate.id} className="similar-name-resolve-radio">
-            Same student — use roster name: <strong>{candidate.name}</strong> (
+            Same Learning Partner — use roster name: <strong>{candidate.name}</strong> (
             {formatSimilarityPercent(candidate.score)} match)
           </Radio>
         ))}
@@ -59,7 +59,7 @@ export default function SimilarNameResolveModal({
           onClose()
         }}
       >
-        Different student — keep scanned name as new
+        Different Learning Partner — Keep Scanned Name as New
       </Button>
     </Modal>
   )

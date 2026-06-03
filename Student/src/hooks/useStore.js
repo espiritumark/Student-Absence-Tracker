@@ -13,9 +13,20 @@ import {
   fetchAppState,
 } from '../lib/database'
 import { isSupabaseConfigured } from '../lib/supabase'
+import {
+  appendActivityLog,
+  buildActivityEntry,
+  clearActivityLog,
+  loadActivityLog,
+} from '../utils/activityLog'
+import {
+  applyStudentPatches,
+  collectRosterPatchesForSession,
+  manualOverridePatchAfterSession,
+} from '../utils/attendanceStats'
 import { findMatchingClass, formatClassLabel } from '../utils/classFormat'
 import { dateKey } from '../utils/dates'
-import { makeSessionKey } from '../utils/sessionKeys'
+import { findSessionKey, makeSessionKey } from '../utils/sessionKeys'
 
 const STORAGE_KEY = 'student-absence-tracker-v2'
 
@@ -121,7 +132,35 @@ export function useStore() {
   const [initialLoading, setInitialLoading] = useState(useCloud)
   const [syncing, setSyncing] = useState(false)
   const [syncError, setSyncError] = useState('')
+  const [activityLog, setActivityLog] = useState(() => loadActivityLog())
   const hasInitialLoadedRef = useRef(false)
+
+  const recordActivity = useCallback((entry) => {
+    const next = appendActivityLog(entry)
+    setActivityLog(next)
+    return next
+  }, [])
+
+  const dismissActivityLog = useCallback(() => {
+    setActivityLog(clearActivityLog())
+  }, [])
+
+  const getClassLabel = useCallback(
+    (classId) => {
+      const cls = state.classes.find((c) => c.id === classId)
+      return cls ? formatClassLabel(cls) : 'Unknown class'
+    },
+    [state.classes],
+  )
+
+  const getStudentName = useCallback(
+    (classId, studentId) => {
+      const cls = state.classes.find((c) => c.id === classId)
+      const st = cls?.students?.find((s) => s.id === studentId)
+      return st?.name || 'Learning Partner'
+    },
+    [state.classes],
+  )
 
   const refreshFromCloud = useCallback(async ({ silent = false } = {}) => {
     if (!userId) return
@@ -166,21 +205,40 @@ export function useStore() {
 
   const addClass = useCallback(
     async (fields) => {
-      if (useCloud) {
-        try {
-          await dbAddClass(user.id, fields)
-          await refreshFromCloud({ silent: true })
-        } catch (e) {
-          setSyncError(e.message)
-          throw e
-        }
-        return null
-      }
       const meta =
         typeof fields === 'string'
           ? { name: fields.trim(), intake: null, level: null, group: null, qualification: fields.trim() }
           : fields
       if (!meta.qualification && !meta.name) return null
+      const classLabel = meta.name || formatClassLabel(meta)
+
+      if (useCloud) {
+        try {
+          await dbAddClass(user.id, fields)
+          await refreshFromCloud({ silent: true })
+          recordActivity(
+            buildActivityEntry({
+              category: 'class',
+              verb: 'added',
+              title: `Added Class — ${classLabel}`,
+            }),
+          )
+        } catch (e) {
+          recordActivity(
+            buildActivityEntry({
+              category: 'class',
+              verb: 'added',
+              title: `Add Class — ${classLabel}`,
+              success: false,
+              error: e.message,
+            }),
+          )
+          setSyncError(e.message)
+          throw e
+        }
+        return null
+      }
+
       const id = createId()
       const cls = {
         id,
@@ -188,22 +246,47 @@ export function useStore() {
         level: meta.level ?? null,
         qualification: meta.qualification || meta.name,
         group: meta.group ?? null,
-        name: meta.name || formatClassLabel(meta),
+        name: classLabel,
         students: [],
       }
       runLocal((s) => ({ ...s, classes: [...s.classes, cls] }))
+      recordActivity(
+        buildActivityEntry({
+          category: 'class',
+          verb: 'added',
+          title: `Added Class — ${classLabel}`,
+        }),
+      )
       return id
     },
-    [useCloud, user, refreshFromCloud, runLocal],
+    [useCloud, user, refreshFromCloud, runLocal, recordActivity],
   )
 
   const removeClass = useCallback(
     async (classId) => {
+      const classLabel = getClassLabel(classId)
+
       if (useCloud) {
         try {
           await dbRemoveClass(classId)
           await refreshFromCloud({ silent: true })
+          recordActivity(
+            buildActivityEntry({
+              category: 'class',
+              verb: 'removed',
+              title: `Removed Class — ${classLabel}`,
+            }),
+          )
         } catch (e) {
+          recordActivity(
+            buildActivityEntry({
+              category: 'class',
+              verb: 'removed',
+              title: `Remove Class — ${classLabel}`,
+              success: false,
+              error: e.message,
+            }),
+          )
           setSyncError(e.message)
           throw e
         }
@@ -216,23 +299,49 @@ export function useStore() {
           attendance: restAttendance,
         }
       })
+      recordActivity(
+        buildActivityEntry({
+          category: 'class',
+          verb: 'removed',
+          title: `Removed Class — ${classLabel}`,
+        }),
+      )
     },
-    [useCloud, refreshFromCloud, runLocal],
+    [useCloud, refreshFromCloud, runLocal, recordActivity, getClassLabel],
   )
 
   const addStudent = useCallback(
     async (classId, name) => {
+      const trimmed = normalizeName(name)
+      if (!trimmed) return
+      const classLabel = getClassLabel(classId)
+
       if (useCloud) {
         try {
           await dbAddStudent(user.id, classId, name)
           await refreshFromCloud({ silent: true })
+          recordActivity(
+            buildActivityEntry({
+              category: 'student',
+              verb: 'added',
+              title: `Added ${trimmed} — ${classLabel}`,
+            }),
+          )
         } catch (e) {
+          recordActivity(
+            buildActivityEntry({
+              category: 'student',
+              verb: 'added',
+              title: `Add ${trimmed} — ${classLabel}`,
+              success: false,
+              error: e.message,
+            }),
+          )
           setSyncError(e.message)
         }
         return
       }
-      const trimmed = normalizeName(name)
-      if (!trimmed) return
+
       runLocal((s) => ({
         ...s,
         classes: s.classes.map((c) =>
@@ -246,8 +355,15 @@ export function useStore() {
             : c,
         ),
       }))
+      recordActivity(
+        buildActivityEntry({
+          category: 'student',
+          verb: 'added',
+          title: `Added ${trimmed} — ${classLabel}`,
+        }),
+      )
     },
-    [useCloud, user, refreshFromCloud, runLocal],
+    [useCloud, user, refreshFromCloud, runLocal, recordActivity, getClassLabel],
   )
 
   const updateStudent = useCallback(
@@ -315,11 +431,30 @@ export function useStore() {
 
   const removeStudent = useCallback(
     async (classId, studentId) => {
+      const studentName = getStudentName(classId, studentId)
+      const classLabel = getClassLabel(classId)
+
       if (useCloud) {
         try {
           await dbRemoveStudent(studentId)
           await refreshFromCloud({ silent: true })
+          recordActivity(
+            buildActivityEntry({
+              category: 'student',
+              verb: 'removed',
+              title: `Removed ${studentName} — ${classLabel}`,
+            }),
+          )
         } catch (e) {
+          recordActivity(
+            buildActivityEntry({
+              category: 'student',
+              verb: 'removed',
+              title: `Remove ${studentName} — ${classLabel}`,
+              success: false,
+              error: e.message,
+            }),
+          )
           setSyncError(e.message)
         }
         return
@@ -348,8 +483,15 @@ export function useStore() {
           attendance: nextAttendance,
         }
       })
+      recordActivity(
+        buildActivityEntry({
+          category: 'student',
+          verb: 'removed',
+          title: `Removed ${studentName} — ${classLabel}`,
+        }),
+      )
     },
-    [useCloud, refreshFromCloud, runLocal],
+    [useCloud, refreshFromCloud, runLocal, recordActivity, getClassLabel, getStudentName],
   )
 
   const setAttendance = useCallback(
@@ -367,10 +509,31 @@ export function useStore() {
         const classAtt = s.attendance[classId] || {}
         const session = normalizeSession(classAtt[day])
         const current = session.records[studentId] || { status: 'present', priorNotice: false }
+        const prevStatus = current.status
         const next = { ...current, ...patch }
         if (next.status === 'present') next.priorNotice = false
+
+        let classes = s.classes
+        const cls = classes.find((c) => c.id === classId)
+        const student = cls?.students?.find((st) => st.id === studentId)
+        const manualPatch = student
+          ? manualOverridePatchAfterSession(student, prevStatus, next.status)
+          : null
+        if (manualPatch && cls) {
+          classes = classes.map((c) =>
+            c.id !== classId
+              ? c
+              : {
+                  ...c,
+                  students: c.students.map((st) =>
+                    st.id === studentId ? { ...st, ...manualPatch } : st,
+                  ),
+                },
+          )
+        }
+
         return {
-          ...s,
+          classes,
           attendance: {
             ...s.attendance,
             [classId]: {
@@ -468,16 +631,24 @@ export function useStore() {
         classes[clsIndex] = cls
 
         const day = date || dateKey()
-        const sessionKey = makeSessionKey(day, module)
         const classAtt = s.attendance[classId] || {}
+        const sessionKey = findSessionKey(classAtt, day, module)
         const session = normalizeSession(classAtt[sessionKey])
-        const records = { ...session.records }
+        const priorRecords = { ...session.records }
+        const records = { ...priorRecords }
 
         for (const row of students) {
           let id = row.rosterStudentId || nameToId.get(normalizeName(row.name))
           if (!id) continue
-          records[id] = { status: row.present ? 'present' : 'absent', priorNotice: false }
+          records[id] = {
+            status: row.present ? 'present' : 'absent',
+            priorNotice: false,
+          }
         }
+
+        const rosterPatches = collectRosterPatchesForSession(cls.students, priorRecords, records)
+        cls.students = applyStudentPatches(cls.students, rosterPatches)
+        classes[clsIndex] = cls
 
         return {
           classes,
@@ -501,18 +672,40 @@ export function useStore() {
 
   const importStudentsBulk = useCallback(
     async (classId, namesText) => {
+      const classLabel = getClassLabel(classId)
+
       if (useCloud) {
         try {
           const count = await dbImportStudentsBulk(user.id, classId, namesText)
           await refreshFromCloud({ silent: true })
+          if (count > 0) {
+            recordActivity(
+              buildActivityEntry({
+                category: 'student',
+                verb: 'imported',
+                title: `Bulk import — ${classLabel}`,
+                lines: [`${count} ${count === 1 ? 'Learning Partner' : 'Learning Partners'} added`],
+              }),
+            )
+          }
           return count
         } catch (e) {
+          recordActivity(
+            buildActivityEntry({
+              category: 'student',
+              verb: 'imported',
+              title: `Bulk import — ${classLabel}`,
+              success: false,
+              error: e.message,
+            }),
+          )
           setSyncError(e.message)
           throw e
         }
       }
       const names = namesText.split(/[\n,;]+/).map(normalizeName).filter(Boolean)
       if (!names.length) return 0
+      let addedCount = 0
       runLocal((s) => ({
         ...s,
         classes: s.classes.map((c) => {
@@ -521,12 +714,23 @@ export function useStore() {
           const added = names
             .filter((n) => !existing.has(n))
             .map((name) => ({ id: createId(), name }))
+          addedCount = added.length
           return { ...c, students: [...c.students, ...added] }
         }),
       }))
-      return names.length
+      if (addedCount > 0) {
+        recordActivity(
+          buildActivityEntry({
+            category: 'student',
+            verb: 'imported',
+            title: `Bulk import — ${classLabel}`,
+            lines: [`${addedCount} ${addedCount === 1 ? 'Learning Partner' : 'Learning Partners'} added`],
+          }),
+        )
+      }
+      return addedCount
     },
-    [useCloud, user, refreshFromCloud, runLocal],
+    [useCloud, user, refreshFromCloud, runLocal, recordActivity, getClassLabel],
   )
 
   const clearSyncError = useCallback(() => setSyncError(''), [])
@@ -540,6 +744,15 @@ export function useStore() {
     syncError,
     useCloud,
     clearSyncError,
+    activityLog,
+    recordActivity,
+    /** @deprecated use recordActivity */
+    recordAction: recordActivity,
+    dismissActivityLog,
+    /** @deprecated use dismissActivityLog */
+    dismissActionLog: dismissActivityLog,
+    /** @deprecated use activityLog */
+    actionLog: activityLog,
     addClass,
     removeClass,
     addStudent,

@@ -8,8 +8,10 @@ import Dashboard from './components/Dashboard'
 import LoadingScreen from './components/LoadingScreen'
 import FeedbackPanel from './components/FeedbackPanel'
 import ReportingPanel from './components/ReportingPanel'
+import ActivityHistoryPanel from './components/ActivityHistoryPanel'
 import TabLabel from './components/TabLabel'
 import { APP_NAME, APP_TAGLINE } from './constants/branding'
+import { UI } from './utils/uiCopy'
 import { useAuth } from './contexts/AuthContext'
 import { useReportedViolations } from './hooks/useReportedViolations'
 import { pruneReportingQueue, useReportingQueue } from './hooks/useReportingQueue'
@@ -99,6 +101,13 @@ function AppContent() {
     { id: 'reporting', label: 'Reporting' },
     { id: 'classes', label: 'Classes & Rosters' },
     { id: 'attendance', label: 'Mark Manually' },
+    {
+      id: 'history',
+      label:
+        store.activityLog.length > 0
+          ? `${UI.history} (${store.activityLog.length})`
+          : UI.history,
+    },
   ]
 
   function tabActivityFor(id) {
@@ -126,10 +135,11 @@ function AppContent() {
 
   return (
     <Layout className="app-layout">
-      <Header className="app-layout-header">
+      <div className="app-shell">
+        <Header className="app-layout-header">
         <div className="app-header-row">
           <div className="app-header-copy">
-            <Typography.Title level={3} style={{ margin: 0 }}>
+            <Typography.Title level={3} className="app-brand-title" style={{ margin: 0 }}>
               {APP_NAME}
             </Typography.Title>
             <Typography.Paragraph type="secondary" className="tagline" style={{ marginBottom: 0 }}>
@@ -146,7 +156,7 @@ function AppContent() {
             className="app-banner"
             title={
               <>
-                <strong>Sign in</strong> to save attendance to your cloud account across devices.
+                <strong>Sign In</strong> to save attendance to your cloud account across devices.
                 Without signing in, data stays in this browser only.
               </>
             }
@@ -165,14 +175,15 @@ function AppContent() {
         )}
 
         {store.useCloud && (
-          <Typography.Text type="success" className="cloud-sync-line">
+          <span className="cloud-sync-badge">
+            <span className="cloud-sync-badge-dot" aria-hidden />
             Cloud Sync Active
             {store.syncing ? ' · Syncing…' : ''}
-          </Typography.Text>
+          </span>
         )}
       </Header>
 
-      <Content className="app-layout-content">
+      <div className="app-shell-body">
         <Tabs
           className="app-tabs"
           activeKey={tab}
@@ -196,6 +207,7 @@ function AppContent() {
           <div className="tab-panel" hidden={tab !== 'import'} aria-hidden={tab !== 'import'}>
             <AttendanceImport
               importPortalSession={store.importPortalSession}
+              recordAction={store.recordAction}
               classes={store.classes}
               attendance={store.attendance}
               isActive={tab === 'import'}
@@ -239,6 +251,7 @@ function AppContent() {
               removeStudent={store.removeStudent}
               importStudentsBulk={store.importStudentsBulk}
               bulkUpdateStudents={store.bulkUpdateStudents}
+              recordActivity={store.recordActivity}
               initialFocus={classesFocus}
               onFocusApplied={() => setClassesFocus(null)}
               onTabActivityChange={handleTabActivityChange}
@@ -251,16 +264,24 @@ function AppContent() {
               setAttendance={store.setAttendance}
               setSessionMeta={store.setSessionMeta}
               syncing={store.syncing}
+              recordAction={store.recordAction}
               onTabActivityChange={handleTabActivityChange}
             />
           </div>
+          <div className="tab-panel" hidden={tab !== 'history'} aria-hidden={tab !== 'history'}>
+            <ActivityHistoryPanel
+              entries={store.activityLog}
+              onClear={store.dismissActivityLog}
+            />
+          </div>
         </main>
-      </Content>
+      </div>
+      </div>
 
       <Footer className="app-layout-footer">
-        <Typography.Text type="secondary">
+        <Typography.Text type="secondary" className="app-layout-footer-note">
           {store.useCloud
-            ? 'Signed in — changes save to your cloud account.'
+            ? 'Signed in — data syncs when you save on Record Attendance or Mark Manually.'
             : cloudEnabled
               ? 'Not signed in — data saves in this browser only.'
               : 'Data saves in this browser only.'}

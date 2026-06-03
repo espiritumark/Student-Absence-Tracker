@@ -22,28 +22,59 @@ import {
   normalizeModuleKey,
 } from '../utils/sessionKeys'
 import ConfirmDialog from './ConfirmDialog'
+import ImportSaveConfirmModal from './ImportSaveConfirmModal'
 import ModuleSearchSelect from './ModuleSearchSelect'
 import SaveFieldOverlay from './SaveFieldOverlay'
 import PanelChrome from './PanelChrome'
 import SearchableSelect from './SearchableSelect'
+import { buildAttendanceLogFromSummary } from '../utils/activityLog'
+import { buildImportPayload, computeImportSaveSummary } from '../utils/importReview'
 import { UI } from '../utils/uiCopy'
 
+const EMPTY_RECORDS = {}
+const EMPTY_CLASS_ATTENDANCE = {}
+
 function getSessionRecords(classAttendance, sessionKey) {
-  return classAttendance?.[sessionKey]?.records ?? {}
+  return classAttendance?.[sessionKey]?.records ?? EMPTY_RECORDS
 }
 
-function AttendanceSheet({
+function recordsSnapshot(dayRecords, students) {
+  const snap = {}
+  for (const st of students) {
+    const rec = dayRecords[st.id] || { status: 'present', priorNotice: false }
+    snap[st.id] = { status: rec.status, priorNotice: Boolean(rec.priorNotice) }
+  }
+  return snap
+}
+
+function recordsEqual(a, b, students) {
+  for (const st of students) {
+    const left = a[st.id] || { status: 'present', priorNotice: false }
+    const right = b[st.id] || { status: 'present', priorNotice: false }
+    if (left.status !== right.status || left.priorNotice !== right.priorNotice) return false
+  }
+  return true
+}
+
+export default function AttendanceSheet({
   classes,
   attendance,
   setAttendance,
   setSessionMeta,
   syncing = false,
+  recordAction,
   onTabActivityChange,
 }) {
   const [selectedClassId, setSelectedClassId] = useState(classes[0]?.id ?? '')
   const [selectedDate, setSelectedDate] = useState(dateKey())
   const [moduleInput, setModuleInput] = useState('')
   const [pending, setPending] = useState(false)
+  const [draftRecords, setDraftRecords] = useState({})
+  const [saveConfirmOpen, setSaveConfirmOpen] = useState(false)
+  const [confirmSummary, setConfirmSummary] = useState(null)
+  const [pendingPayload, setPendingPayload] = useState(null)
+  const [confirmError, setConfirmError] = useState('')
+  const [saveMessage, setSaveMessage] = useState('')
   const [markAllConfirmOpen, setMarkAllConfirmOpen] = useState(false)
   const [pendingMarkAllStatus, setPendingMarkAllStatus] = useState(null)
 
@@ -55,7 +86,13 @@ function AttendanceSheet({
   const classOptions = sortedClasses.map((c) => ({ value: c.id, label: formatClassLabel(c) }))
 
   const selectedClass = classes.find((c) => c.id === selectedClassId)
-  const classAttendance = selectedClassId ? attendance?.[selectedClassId] || {} : {}
+  const classAttendance = useMemo(
+    () =>
+      selectedClassId
+        ? attendance?.[selectedClassId] ?? EMPTY_CLASS_ATTENDANCE
+        : EMPTY_CLASS_ATTENDANCE,
+    [attendance, selectedClassId],
+  )
 
   useEffect(() => {
     if (classes.length === 0) {
@@ -81,7 +118,10 @@ function AttendanceSheet({
   }, [selectedClassId, selectedDate, classAttendance])
 
   const sessionKey = findSessionKey(classAttendance, selectedDate, moduleInput)
-  const dayRecords = getSessionRecords(classAttendance, sessionKey)
+  const dayRecords = useMemo(
+    () => getSessionRecords(classAttendance, sessionKey),
+    [classAttendance, sessionKey],
+  )
 
   const moduleOptions = useMemo(() => {
     const seen = new Map()
@@ -102,16 +142,34 @@ function AttendanceSheet({
     return [...seen.values()].sort((a, b) => a.label.localeCompare(b.label))
   }, [classAttendance, selectedDate, moduleInput])
 
-  const sortedStudents = selectedClass
-    ? [...selectedClass.students].sort((a, b) => a.name.localeCompare(b.name))
-    : []
+  const sortedStudents = useMemo(() => {
+    if (!selectedClass?.students?.length) return []
+    return [...selectedClass.students].sort((a, b) => a.name.localeCompare(b.name))
+  }, [selectedClass])
+
+  const savedRecords = useMemo(
+    () => recordsSnapshot(dayRecords, sortedStudents),
+    [dayRecords, sortedStudents],
+  )
+
+  const savedRecordsKey = useMemo(() => JSON.stringify(savedRecords), [savedRecords])
+
+  useEffect(() => {
+    setDraftRecords(recordsSnapshot(dayRecords, sortedStudents))
+    setSaveMessage('')
+  }, [selectedClassId, selectedDate, sessionKey, savedRecordsKey, dayRecords, sortedStudents])
+
+  const hasDraftChanges = useMemo(
+    () => sortedStudents.length > 0 && !recordsEqual(draftRecords, savedRecords, sortedStudents),
+    [draftRecords, savedRecords, sortedStudents],
+  )
 
   const [studentTableRef, studentTableHeight] = useScrollRegionHeight(280)
 
   const attendanceRows = useMemo(
     () =>
       sortedStudents.map((st, index) => {
-        const rec = dayRecords[st.id] || { status: 'present', priorNotice: false }
+        const rec = draftRecords[st.id] || { status: 'present', priorNotice: false }
         return {
           key: st.id,
           index: index + 1,
@@ -120,7 +178,7 @@ function AttendanceSheet({
           priorNotice: rec.priorNotice,
         }
       }),
-    [sortedStudents, dayRecords],
+    [sortedStudents, draftRecords],
   )
 
   async function runAction(action) {
@@ -133,14 +191,107 @@ function AttendanceSheet({
     }
   }
 
-  function setStatus(studentId, status) {
-    runAction(() => setAttendance(selectedClassId, sessionKey, studentId, { status }))
+  function setDraftStatus(studentId, status) {
+    setDraftRecords((prev) => {
+      const current = prev[studentId] || { status: 'present', priorNotice: false }
+      return {
+        ...prev,
+        [studentId]: {
+          status,
+          priorNotice: status === 'present' ? false : current.priorNotice,
+        },
+      }
+    })
+    setSaveMessage('')
   }
 
-  function setPriorNotice(studentId, priorNotice) {
-    runAction(() =>
-      setAttendance(selectedClassId, sessionKey, studentId, { priorNotice }),
-    )
+  function setDraftPriorNotice(studentId, priorNotice) {
+    setDraftRecords((prev) => ({
+      ...prev,
+      [studentId]: {
+        ...(prev[studentId] || { status: 'absent', priorNotice: false }),
+        priorNotice,
+      },
+    }))
+    setSaveMessage('')
+  }
+
+  function buildManualPayload() {
+    const meta = {
+      intake: selectedClass?.intake ?? '',
+      level: selectedClass?.level ?? '',
+      qualification: selectedClass?.qualification ?? '',
+      group: selectedClass?.group ?? '',
+      date: selectedDate,
+      module: moduleInput,
+      startTime: '',
+      duration: '',
+    }
+    const students = sortedStudents.map((st, index) => {
+      const rec = draftRecords[st.id] || { status: 'present', priorNotice: false }
+      return {
+        index: index + 1,
+        name: st.name,
+        present: rec.status !== 'absent',
+        rosterStudentId: st.id,
+        importName: st.name,
+      }
+    })
+    return buildImportPayload(meta, students)
+  }
+
+  function handleRequestSave() {
+    if (locked || !hasDraftChanges || !selectedClass) return
+    const payload = buildManualPayload()
+    const summary = computeImportSaveSummary(payload, classes, attendance)
+    setPendingPayload(payload)
+    setConfirmSummary(summary)
+    setConfirmError('')
+    setSaveConfirmOpen(true)
+  }
+
+  async function handleConfirmSave() {
+    if (!pendingPayload || locked) return
+    setPending(true)
+    setConfirmError('')
+    const summaryForLog = confirmSummary
+    try {
+      if (moduleInput.trim()) {
+        await setSessionMeta(selectedClassId, sessionKey, { module: moduleInput.trim() })
+      }
+      for (const st of sortedStudents) {
+        const draft = draftRecords[st.id] || { status: 'present', priorNotice: false }
+        const saved = savedRecords[st.id] || { status: 'present', priorNotice: false }
+        if (draft.status === saved.status && draft.priorNotice === saved.priorNotice) continue
+        await setAttendance(selectedClassId, sessionKey, st.id, {
+          status: draft.status,
+          priorNotice: draft.priorNotice,
+        })
+      }
+      setSaveConfirmOpen(false)
+      setPendingPayload(null)
+      setConfirmSummary(null)
+      setSaveMessage('Attendance saved.')
+      recordAction?.(
+        buildAttendanceLogFromSummary('manual', pendingPayload, summaryForLog, { success: true }),
+      )
+    } catch (err) {
+      const message = err?.message || 'Failed to save attendance. Please try again.'
+      setConfirmError(message)
+      recordAction?.(
+        buildAttendanceLogFromSummary('manual', pendingPayload, summaryForLog, {
+          success: false,
+          error: message,
+        }),
+      )
+    } finally {
+      setPending(false)
+    }
+  }
+
+  function handleDiscardDraft() {
+    setDraftRecords(savedRecords)
+    setSaveMessage('')
   }
 
   function requestMarkAll(status) {
@@ -154,14 +305,14 @@ function AttendanceSheet({
     setMarkAllConfirmOpen(false)
     const status = pendingMarkAllStatus
     setPendingMarkAllStatus(null)
-    runAction(async () => {
+    setDraftRecords((prev) => {
+      const next = { ...prev }
       for (const st of selectedClass.students) {
-        await setAttendance(selectedClassId, sessionKey, st.id, {
-          status,
-          priorNotice: false,
-        })
+        next[st.id] = { status, priorNotice: false }
       }
+      return next
     })
+    setSaveMessage('')
   }
 
   function handleModuleChange(value) {
@@ -170,26 +321,26 @@ function AttendanceSheet({
 
   function handleModuleCommit(value) {
     if (locked) return
-    const key = findSessionKey(classAttendance, selectedDate, value)
-    runAction(() => setSessionMeta(selectedClassId, key, { module: value }))
+    setModuleInput(value)
+    setSaveMessage('')
   }
 
   const overlayLabel = syncing ? 'Syncing attendance…' : 'Saving attendance…'
 
-  const attendanceTabActivity = syncing || pending ? 'processing' : null
+  const attendanceTabActivity = syncing || pending ? 'processing' : hasDraftChanges ? 'draft' : null
   useReportTabActivity('attendance', attendanceTabActivity, onTabActivityChange)
 
   return (
     <section className="panel portal-panel workspace-panel attendance-workspace">
       <PanelChrome
         title="Mark Manually"
-        description="Mark attendance by hand for any class and date. The same class can have separate sessions per module or subject on the same day."
+        description="Mark attendance by hand for any class and date. Changes stay on this page until you save — nothing is written to your account until you confirm."
       />
 
       {classes.length === 0 ? (
         <Empty
           className="workspace-empty"
-          description="Import a screenshot or add a class on Classes & rosters."
+          description={`Import a screenshot or add a class on ${UI.classesAndRosters}.`}
         />
       ) : (
         <SaveFieldOverlay busy={locked} label={overlayLabel} className="attendance-workspace-overlay">
@@ -253,13 +404,13 @@ function AttendanceSheet({
                     Check All
                   </Button>
                   <Button disabled={locked} onClick={() => requestMarkAll('absent')}>
-                    Uncheck all
+                    Uncheck All
                   </Button>
                 </Space>
 
                 {sortedStudents.length > 30 && (
                   <Typography.Text type="secondary" className="master-pane-hint">
-                    {sortedStudents.length} {UI.learningPartners.toLowerCase()} · scroll the list
+                    {sortedStudents.length} {UI.learningPartners} · scroll the list
                     below for more
                   </Typography.Text>
                 )}
@@ -269,7 +420,7 @@ function AttendanceSheet({
             {!selectedClass?.students.length ? (
               <Empty
                 className="attendance-sheet-empty"
-                description={`No ${UI.learningPartners.toLowerCase()} in this class.`}
+                description={`No ${UI.learningPartners} in this class.`}
               />
             ) : (
               <div className="table-scroll-region attendance-sheet-list-scroll" ref={studentTableRef}>
@@ -294,7 +445,7 @@ function AttendanceSheet({
                           checked={row.present}
                           disabled={locked}
                           onChange={() =>
-                            setStatus(row.student.id, row.present ? 'absent' : 'present')
+                            setDraftStatus(row.student.id, row.present ? 'absent' : 'present')
                           }
                         />
                       ),
@@ -314,7 +465,7 @@ function AttendanceSheet({
                             checked={row.priorNotice}
                             disabled={locked}
                             onChange={(e) =>
-                              setPriorNotice(row.student.id, e.target.checked)
+                              setDraftPriorNotice(row.student.id, e.target.checked)
                             }
                           />
                         ) : null,
@@ -323,14 +474,56 @@ function AttendanceSheet({
                 />
               </div>
             )}
+
+            {selectedClass?.students.length > 0 && (
+              <div className="attendance-sheet-save-bar">
+                {hasDraftChanges && (
+                  <Typography.Text type="warning" className="attendance-sheet-unsaved-hint">
+                    Unsaved changes — review and confirm before saving to your account.
+                  </Typography.Text>
+                )}
+                {saveMessage && !hasDraftChanges && (
+                  <Alert type="success" showIcon className="import-alert-banner" title={saveMessage} />
+                )}
+                <Space wrap className="attendance-sheet-save-actions">
+                  <Button
+                    type="primary"
+                    disabled={locked || !hasDraftChanges}
+                    loading={pending}
+                    onClick={handleRequestSave}
+                  >
+                    {UI.saveAttendance}
+                  </Button>
+                  <Button disabled={locked || !hasDraftChanges} onClick={handleDiscardDraft}>
+                    {UI.discardChanges}
+                  </Button>
+                </Space>
+              </div>
+            )}
           </div>
         </SaveFieldOverlay>
       )}
 
+      <ImportSaveConfirmModal
+        open={saveConfirmOpen}
+        summary={confirmSummary}
+        pendingImport={pendingPayload}
+        error={confirmError}
+        busy={pending}
+        onCancel={() => {
+          if (pending) return
+          setSaveConfirmOpen(false)
+          setPendingPayload(null)
+          setConfirmSummary(null)
+          setConfirmError('')
+        }}
+        onConfirm={handleConfirmSave}
+      />
+
       <ConfirmDialog
         open={markAllConfirmOpen}
-        title={pendingMarkAllStatus === 'absent' ? 'Mark all absent?' : 'Mark all present?'}
-        confirmLabel={pendingMarkAllStatus === 'absent' ? 'Mark all absent' : 'Mark all present'}
+        title={pendingMarkAllStatus === 'absent' ? 'Mark All Absent?' : 'Mark All Present?'}
+        confirmLabel={pendingMarkAllStatus === 'absent' ? UI.markAllAbsent : UI.markAllPresent}
         cancelLabel="Cancel"
         busy={locked}
         onCancel={() => {
@@ -342,7 +535,8 @@ function AttendanceSheet({
       >
         {selectedClass && pendingMarkAllStatus && (
           <Typography.Paragraph>
-            Mark all <strong>{selectedClass.students.length}</strong> students in{' '}
+            Mark all <strong>{selectedClass.students.length}</strong>{' '}
+            {selectedClass.students.length === 1 ? UI.learningPartner : UI.learningPartners} in{' '}
             <strong>{formatClassLabel(selectedClass)}</strong> as{' '}
             <strong>{pendingMarkAllStatus === 'absent' ? 'absent' : 'present'}</strong> for{' '}
             <strong>{formatDateLabel(selectedDate)}</strong>
@@ -359,5 +553,3 @@ function AttendanceSheet({
     </section>
   )
 }
-
-export default AttendanceSheet

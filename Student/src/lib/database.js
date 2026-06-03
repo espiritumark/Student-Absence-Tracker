@@ -1,3 +1,4 @@
+import { manualOverridePatchAfterSession } from '../utils/attendanceStats'
 import { findMatchingClass, formatClassLabel } from '../utils/classFormat'
 import { makeSessionKey, sessionDateFromKey, sessionModuleFromKey } from '../utils/sessionKeys'
 import { normalizeModuleKey } from '../utils/sessionKeys'
@@ -263,6 +264,20 @@ export async function dbSetAttendance(userId, classId, sessionKey, studentId, pa
     { onConflict: 'session_id,student_id' },
   )
   if (error) throw error
+
+  const { data: studentRow } = await supabase
+    .from('students')
+    .select('*')
+    .eq('id', studentId)
+    .maybeSingle()
+  if (studentRow) {
+    const manualPatch = manualOverridePatchAfterSession(
+      mapStudent(studentRow),
+      current?.status ?? null,
+      next.status,
+    )
+    if (manualPatch) await dbUpdateStudent(studentId, manualPatch)
+  }
 }
 
 export async function dbSetSessionMeta(userId, classId, sessionKey, meta) {
@@ -334,11 +349,36 @@ export async function dbImportPortalSession(userId, payload) {
     })
     .filter(Boolean)
 
+  const { data: existingRecords } = await supabase
+    .from('attendance_records')
+    .select('student_id, status')
+    .eq('session_id', session.id)
+
+  const prevStatusByStudent = new Map(
+    (existingRecords || []).map((r) => [r.student_id, r.status]),
+  )
+
   if (records.length) {
     const { error } = await supabase
       .from('attendance_records')
       .upsert(records, { onConflict: 'session_id,student_id' })
     if (error) throw error
+  }
+
+  const idToStudent = new Map((existingStudents || []).map((s) => [s.id, mapStudent(s)]))
+
+  for (const row of students) {
+    const studentId = row.rosterStudentId || nameToId.get(normalizeName(row.name))
+    if (!studentId) continue
+    const student = idToStudent.get(studentId)
+    if (!student) continue
+    const prevStatus = prevStatusByStudent.get(studentId) ?? null
+    const nextStatus = row.present ? 'present' : 'absent'
+    const manualPatch = manualOverridePatchAfterSession(student, prevStatus, nextStatus)
+    if (manualPatch) {
+      await dbUpdateStudent(studentId, manualPatch)
+      idToStudent.set(studentId, { ...student, ...manualPatch })
+    }
   }
 
   return classId

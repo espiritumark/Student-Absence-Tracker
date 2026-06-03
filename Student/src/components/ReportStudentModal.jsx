@@ -96,7 +96,7 @@ export default function ReportStudentModal({
               Official Microsoft Form
             </Typography.Text>
             <iframe
-              title="Absence violation report form"
+              title="Absence Violation Report Form"
               src={ABSENCE_VIOLATION_REPORT_EMBED_URL}
               className="report-form-iframe"
             />

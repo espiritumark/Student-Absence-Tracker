@@ -38,6 +38,7 @@ export default function ClassManager({
   removeStudent,
   importStudentsBulk,
   bulkUpdateStudents,
+  recordActivity,
   initialFocus = null,
   onFocusApplied,
   onTabActivityChange,
@@ -252,6 +253,7 @@ export default function ClassManager({
         initialClassId={bulkEditClassId || sortedClasses[0]?.id || ''}
         restrictToClassIds={bulkEditClassIds}
         bulkUpdateStudents={bulkUpdateStudents}
+        recordActivity={recordActivity}
         onActivityChange={({ busy, draftCount }) => {
           setBulkEditorBusy(busy)
           setBulkEditorDraftCount(draftCount)
@@ -271,7 +273,7 @@ export default function ClassManager({
     <section className="panel classes-panel workspace-panel">
       <PanelChrome
         className="classes-panel-header"
-        title="Classes & Rosters"
+        title={UI.classesAndRosters}
         description="Browse by module to see every intake and group in a subject, or switch to all classes for per-class bulk edits."
         actions={
           <Button type="default" icon={<PlusOutlined />} onClick={() => setAddClassOpen(true)}>
@@ -426,7 +428,8 @@ export default function ClassManager({
                           <Typography.Text strong>{row.name}</Typography.Text>
                           <div>
                             <Typography.Text type="secondary" style={{ fontSize: '0.78rem' }}>
-                              {row.count} {UI.learningPartner.toLowerCase()}
+                              {row.count}{' '}
+                              {row.count === 1 ? UI.learningPartner : UI.learningPartners}
                               {row.count === 1 ? '' : 's'}
                             </Typography.Text>
                           </div>
@@ -480,7 +483,7 @@ export default function ClassManager({
             ) : (
               <div className="detail-pane-empty">
                 <Empty
-                  description={`Select a class on the left to manage ${UI.learningPartners.toLowerCase()}, absence overrides, and bulk edits.`}
+                  description={`Select a class on the left to manage ${UI.learningPartners}, absence overrides, and bulk edits.`}
                 />
               </div>
             )}
@@ -492,7 +495,7 @@ export default function ClassManager({
         open={deleteOpen}
         title="Delete Class?"
         confirmLabel="Delete Class"
-        cancelLabel="Keep class"
+        cancelLabel="Keep Class"
         danger
         busy={deleteBusy}
         error={deleteError}
@@ -518,8 +521,8 @@ export default function ClassManager({
 
       <ConfirmDialog
         open={addConfirmOpen}
-        title="Add this class?"
-        confirmLabel="Add class"
+        title="Add This Class?"
+        confirmLabel="Add Class"
         cancelLabel="Cancel"
         busy={addClassBusy}
         onCancel={() => {
@@ -532,7 +535,7 @@ export default function ClassManager({
         {pendingClassFields && (
           <p className="modal-lead">
             Create class <strong>{formatClassLabel(pendingClassFields)}</strong>? You can add
-            {UI.learningPartners.toLowerCase()} after it is created.
+            {UI.learningPartners} after it is created.
           </p>
         )}
       </ConfirmDialog>

@@ -31,7 +31,7 @@ function sortStudentRows(rows, sortBy) {
 
 const SORT_OPTIONS = [
   { value: 'risk', label: 'Risk (highest first)' },
-  { value: 'name', label: `${UI.learningPartner} name` },
+  { value: 'name', label: UI.learningPartnerName },
   { value: 'class', label: 'Class' },
 ]
 
@@ -159,7 +159,7 @@ export default function Dashboard({
           return (
             <Popover
               title={UI.officialReportingRequired}
-              content={`This ${UI.learningPartner.toLowerCase()} must be reported on the official form. Click to open the Reporting tab.`}
+              content={`This ${UI.learningPartner} must be reported on the official form. Click to open the Reporting tab.`}
             >
               <Typography.Link
                 type="danger"
@@ -280,7 +280,7 @@ export default function Dashboard({
     <section className="panel dashboard-panel workspace-panel">
       <PanelChrome
         title="Dashboard"
-        description={`Warnings and ${UI.learningPartners.toLowerCase()} who need follow-up. Safe counts are hidden — manage rosters on Classes & rosters.`}
+        description={`Warnings and ${UI.learningPartners} who need follow-up. Safe counts are hidden — manage rosters on ${UI.classesAndRosters}.`}
         actions={
           <DashboardRiskSummary
             activeTiers={activeRiskTiers}
@@ -292,7 +292,7 @@ export default function Dashboard({
       {classes.length === 0 ? (
         <Empty
           className="workspace-empty"
-          description="Import attendance or add a class on Classes & rosters."
+          description={`Import attendance or add a class on ${UI.classesAndRosters}.`}
         />
       ) : (
         <div className="workspace-body dashboard-workspace dashboard-workspace-simple">
@@ -306,9 +306,9 @@ export default function Dashboard({
                   setSelectedClassId('')
                 }}
                 allowEmpty
-                emptyLabel="All modules"
+                emptyLabel="All Modules"
                 placeholder={
-                  moduleOptions.length ? 'Filter by module…' : `No at-risk ${UI.learningPartners.toLowerCase()} by module`
+                  moduleOptions.length ? 'Filter by module…' : `No at-risk ${UI.learningPartners} by module`
                 }
                 label="Module"
                 disabled={moduleOptions.length === 0}
@@ -318,9 +318,9 @@ export default function Dashboard({
                 value={selectedClassId}
                 onChange={setSelectedClassId}
                 allowEmpty
-                emptyLabel="All classes"
+                emptyLabel="All Classes"
                 placeholder={
-                  classOptions.length ? 'Filter by class…' : `No at-risk ${UI.learningPartners.toLowerCase()} in any class`
+                  classOptions.length ? 'Filter by class…' : `No at-risk ${UI.learningPartners} in any class`
                 }
                 label="Class"
                 disabled={classOptions.length === 0}
@@ -344,7 +344,8 @@ export default function Dashboard({
             </div>
 
             <Typography.Text type="secondary" className="master-pane-hint">
-              {filteredStudents.length} {UI.learningPartner.toLowerCase()}
+              {filteredStudents.length}{' '}
+              {filteredStudents.length === 1 ? UI.learningPartner : UI.learningPartners}
               {filteredStudents.length === 1 ? '' : 's'} · click a row to open · red names move to
               the Reporting tab
               {selectedModule ? ` · ${formatModuleLabel(selectedModule)}` : ''}
@@ -359,7 +360,7 @@ export default function Dashboard({
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
                   description={
                     atRiskRows.length === 0
-                      ? `No ${UI.learningPartners.toLowerCase()} need follow-up right now.`
+                      ? `No ${UI.learningPartners} need follow-up right now.`
                       : 'No matches for this search.'
                   }
                 />

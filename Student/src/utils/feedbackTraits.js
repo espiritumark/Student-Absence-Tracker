@@ -39,8 +39,8 @@ export const assignmentOptions = [
 ]
 
 export const attendanceEmphasisOptions = [
-  { value: ATTENDANCE_EMPHASIS.auto, label: 'Auto (from absence totals & streak)' },
-  { value: ATTENDANCE_EMPHASIS.consistent, label: 'Consistent attendance' },
+  { value: ATTENDANCE_EMPHASIS.auto, label: 'From Absence Totals & Streak' },
+  { value: ATTENDANCE_EMPHASIS.consistent, label: 'Consistent Attendance' },
   { value: ATTENDANCE_EMPHASIS.mild, label: 'Some absences — encourage consistency' },
   { value: ATTENDANCE_EMPHASIS.limited, label: 'Limited attendance / engagement records' },
   { value: ATTENDANCE_EMPHASIS.significant, label: 'Significant absences — strong concern' },

@@ -16,6 +16,7 @@ import { formatClassLabel } from '../utils/classFormat'
 import FormField from './FormField'
 import PanelChrome from './PanelChrome'
 import SearchableSelect from './SearchableSelect'
+import { UI } from '../utils/uiCopy'
 
 export default function FeedbackPanel({ classes = [], attendance = {} }) {
   const [classId, setClassId] = useState('')
@@ -86,9 +87,18 @@ export default function FeedbackPanel({ classes = [], attendance = {} }) {
   const suggestedLabel =
     attendanceEmphasisOptions.find((o) => o.value === suggestedEmphasis)?.label ?? suggestedEmphasis
 
+  const hasAttendanceStats = Boolean(selectedPartner)
+  const statPlaceholder = '--'
+  const displayTotal = hasAttendanceStats ? counts.total : statPlaceholder
+  const displayStreak = hasAttendanceStats ? counts.consecutive : statPlaceholder
+  const displaySuggestedTone =
+    hasAttendanceStats && attendanceEmphasis === ATTENDANCE_EMPHASIS.auto
+      ? suggestedLabel
+      : statPlaceholder
+
   function handleGenerate() {
     if (!selectedPartner) {
-      message.warning(`Select a ${LEARNING_PARTNER.singular.toLowerCase()} first.`)
+      message.warning(`Select a ${UI.learningPartner} first.`)
       return
     }
     const text = composeFeedback({
@@ -149,7 +159,8 @@ export default function FeedbackPanel({ classes = [], attendance = {} }) {
       />
 
       <div className="workspace-body">
-      <div className="feedback-panel-grid">
+        <div className="feedback-workspace-split">
+          <div className="feedback-details-pane">
         <Card size="small" title="Select" className="feedback-panel-card">
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
             <FormField label="Class">
@@ -168,7 +179,7 @@ export default function FeedbackPanel({ classes = [], attendance = {} }) {
               <SearchableSelect
                 placeholder={
                   classId
-                    ? `Choose ${LEARNING_PARTNER.singular.toLowerCase()}…`
+                    ? `Choose ${UI.learningPartner}…`
                     : 'Select a class first'
                 }
                 options={partnerOptions}
@@ -179,33 +190,31 @@ export default function FeedbackPanel({ classes = [], attendance = {} }) {
               />
             </FormField>
 
-            {selectedPartner && (
-              <div className="feedback-stats-row">
-                <Typography.Text type="secondary">From attendance records</Typography.Text>
-                <div className="feedback-stats-badges">
-                  <span className="feedback-stat">
-                    <strong>{counts.total}</strong> total absence
-                    {counts.total === 1 ? ' day' : ' days'}
-                    {counts.usesManualTotal ? ' (manual)' : ''}
-                  </span>
-                  <span className="feedback-stat">
-                    <strong>{counts.consecutive}</strong> day streak
-                    {counts.usesManualConsecutive ? ' (manual)' : ''}
-                  </span>
-                </div>
-                {attendanceEmphasis === ATTENDANCE_EMPHASIS.auto && (
-                  <Typography.Text type="secondary" className="feedback-auto-hint">
-                    Auto attendance tone: {suggestedLabel}
-                  </Typography.Text>
-                )}
+            <div className="feedback-stats-row">
+              <Typography.Text type="secondary">From attendance records</Typography.Text>
+              <div className="feedback-stats-badges">
+                <span className="feedback-stat">
+                  <strong className="feedback-stat-value">{displayTotal}</strong> total absence days
+                </span>
+                <span className="feedback-stat">
+                  <strong className="feedback-stat-value">{displayStreak}</strong> day streak
+                </span>
               </div>
-            )}
+              {attendanceEmphasis === ATTENDANCE_EMPHASIS.auto && (
+                <Typography.Text type="secondary" className="feedback-auto-hint">
+                  Suggested attendance tone:{' '}
+                  <span className="feedback-stat-value feedback-stat-value-tone">
+                    {displaySuggestedTone}
+                  </span>
+                </Typography.Text>
+              )}
+            </div>
           </Space>
         </Card>
 
-        <Card size="small" title="Traits & notes" className="feedback-panel-card">
+        <Card size="small" title={UI.traitsAndNotes} className="feedback-panel-card">
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            <FormField label="Attendance in feedback">
+            <FormField label="Attendance in Feedback">
               <Select
                 value={attendanceEmphasis}
                 onChange={setAttendanceEmphasis}
@@ -227,7 +236,7 @@ export default function FeedbackPanel({ classes = [], attendance = {} }) {
                 style={{ width: '100%' }}
               />
             </FormField>
-            <FormField label="Assignments & quality">
+            <FormField label="Assignments & Quality">
               <Select
                 value={assignmentQuality}
                 onChange={setAssignmentQuality}
@@ -235,7 +244,7 @@ export default function FeedbackPanel({ classes = [], attendance = {} }) {
                 style={{ width: '100%' }}
               />
             </FormField>
-            <FormField label="Extra notes (optional)">
+            <FormField label="Extra Notes (Optional)">
               <Input.TextArea
                 value={extraNotes}
                 onChange={(e) => setExtraNotes(e.target.value)}
@@ -247,7 +256,7 @@ export default function FeedbackPanel({ classes = [], attendance = {} }) {
             </FormField>
             <Space wrap>
               <Button type="primary" onClick={handleGenerate} disabled={!selectedPartner}>
-                Generate feedback
+                {UI.generateFeedback}
               </Button>
               {aiReady && (
                 <Button onClick={handleRefine} loading={refining} disabled={!output.trim()}>
@@ -262,29 +271,37 @@ export default function FeedbackPanel({ classes = [], attendance = {} }) {
               <Alert
                 type="info"
                 showIcon
-                title="AI refine optional"
+                title="AI Refine Optional"
                 description="Templates work offline. For Refine with AI, configure Ollama or VITE_VISION_LLM_API_KEY (see .env.example). Use VITE_FEEDBACK_LLM_MODEL for a text model such as llama3.2."
               />
             )}
           </Space>
         </Card>
+          </div>
 
-        <Card
-          size="small"
-          title="Generated feedback"
-          className="feedback-panel-card feedback-panel-output-card"
-        >
-          <Input.TextArea
-            className="feedback-output-area"
-            value={output}
-            onChange={(e) => setOutput(e.target.value)}
-            placeholder="Click Generate feedback, then edit here before copying."
-            rows={12}
-            maxLength={8000}
-            showCount
-          />
-        </Card>
-      </div>
+          <div className="feedback-output-pane">
+            <Card
+              size="small"
+              title={UI.generatedFeedback}
+              className="feedback-panel-card feedback-panel-output-card"
+            >
+              <div className="feedback-output-field">
+                <Input.TextArea
+                  className="feedback-output-area"
+                  value={output}
+                  onChange={(e) => setOutput(e.target.value)}
+                  placeholder={`Click ${UI.generateFeedback}, then edit here before copying.`}
+                  maxLength={8000}
+                />
+                <div className="feedback-output-footer">
+                  <span className="feedback-char-count" aria-live="polite">
+                    {output.length} / 8000
+                  </span>
+                </div>
+              </div>
+            </Card>
+          </div>
+        </div>
       </div>
     </section>
   )

@@ -23,7 +23,7 @@ import {
   formatModuleLabel,
   listModulesForClass,
 } from '../utils/sessionKeys'
-import { UI } from '../utils/uiCopy'
+import { UI, formatLpCount } from '../utils/uiCopy'
 
 function countBulkNames(text) {
   return text
@@ -72,7 +72,7 @@ export default function ClassStudentPanel({
   )
   const activeModuleLabel =
     moduleFilter === ''
-      ? 'All modules'
+      ? 'All Modules'
       : classModules.find((m) => m.value === moduleFilter)?.label ??
         formatModuleLabel(moduleFilter)
 
@@ -127,7 +127,7 @@ export default function ClassStudentPanel({
   function requestBulkImport() {
     if (panelBusy) return
     if (!bulkText.trim()) {
-      setBulkError(`Enter at least one ${UI.learningPartner.toLowerCase()} name.`)
+      setBulkError(`Enter at least one ${UI.learningPartnerName}.`)
       setBulkMessage('')
       return
     }
@@ -145,16 +145,16 @@ export default function ClassStudentPanel({
       if (count > 0) {
         setBulkText('')
         setBulkMessage(
-          `Added ${count} ${UI.learningPartner.toLowerCase()}${count === 1 ? '' : 's'} to ${formatClassLabel(cls)}.`,
+          `Added ${formatLpCount(count)} to ${formatClassLabel(cls)}.`,
         )
       } else {
         setBulkMessage(
-          `No new ${UI.learningPartners.toLowerCase()} to add — all names were already in this class.`,
+          `No new ${UI.learningPartners} to add — all names were already in this class.`,
         )
       }
     } catch (err) {
       setBulkError(
-        err.message || `Failed to import ${UI.learningPartners.toLowerCase()}. Try again.`,
+        err.message || `Failed to import ${UI.learningPartners}. Try again.`,
       )
     } finally {
       setBulkBusy(false)
@@ -205,7 +205,7 @@ export default function ClassStudentPanel({
         render: (_, row) => row.student.name,
       },
       {
-        title: 'Status',
+        title: UI.status,
         key: 'status',
         width: 92,
         render: (_, row) => (
@@ -219,7 +219,7 @@ export default function ClassStudentPanel({
         ),
       },
       {
-        title: 'Total',
+        title: UI.total,
         key: 'total',
         width: 64,
         align: 'center',
@@ -230,7 +230,7 @@ export default function ClassStudentPanel({
         ),
       },
       {
-        title: 'Streak',
+        title: UI.streak,
         key: 'streak',
         width: 72,
         align: 'center',
@@ -252,18 +252,7 @@ export default function ClassStudentPanel({
         },
       },
       {
-        title: 'Type',
-        key: 'type',
-        width: 80,
-        render: (_, row) =>
-          row.counts.usesManualTotal || row.counts.usesManualConsecutive ? (
-            <Tag color="processing" className="roster-student-type-tag">
-              Manual
-            </Tag>
-          ) : null,
-      },
-      {
-        title: 'Actions',
+        title: UI.actions,
         key: 'actions',
         width: 96,
         align: 'right',
@@ -284,11 +273,11 @@ export default function ClassStudentPanel({
   )
 
   const overlayLabel = bulkBusy
-    ? `Importing ${UI.learningPartners.toLowerCase()}…`
+    ? `Importing ${UI.learningPartners}…`
     : addStudentBusy
-      ? `Adding ${UI.learningPartner.toLowerCase()}…`
+      ? `Adding ${UI.learningPartner}…`
       : removingStudentId
-        ? `Removing ${UI.learningPartner.toLowerCase()}…`
+        ? `Removing ${UI.learningPartner}…`
         : syncing
           ? 'Syncing…'
           : 'Saving…'
@@ -302,7 +291,7 @@ export default function ClassStudentPanel({
             value={moduleFilter}
             onChange={onModuleFilter}
             allowEmpty={!lockModuleFilter}
-            emptyLabel="All modules"
+            emptyLabel="All Modules"
             placeholder={
               classModules.length ? 'Search module…' : 'No modules recorded yet'
             }
@@ -338,7 +327,7 @@ export default function ClassStudentPanel({
 
         <form className="inline-form antd-inline-form" onSubmit={handleAddStudent}>
           <Input
-            placeholder={`${UI.learningPartner} name`}
+            placeholder={UI.learningPartnerName}
             value={studentInput}
             disabled={panelBusy}
             onChange={(e) => setStudentInput(e.target.value)}
@@ -407,7 +396,7 @@ export default function ClassStudentPanel({
         {sortedStudents.length === 0 ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={`No ${UI.learningPartners.toLowerCase()} in this class.`}
+            description={`No ${UI.learningPartners} in this class.`}
           />
         ) : (
           <div className="table-scroll-region student-list-scroll" ref={studentTableRef}>
@@ -423,9 +412,9 @@ export default function ClassStudentPanel({
 
         <ConfirmDialog
           open={removeConfirmOpen}
-          title={`Remove ${UI.learningPartner.toLowerCase()}?`}
-          confirmLabel={`Remove ${UI.learningPartner.toLowerCase()}`}
-          cancelLabel={`Keep ${UI.learningPartner.toLowerCase()}`}
+          title={`Remove ${UI.learningPartner}?`}
+          confirmLabel={`Remove ${UI.learningPartner}`}
+          cancelLabel={`Keep ${UI.learningPartner}`}
           danger
           busy={Boolean(removingStudentId)}
           onCancel={() => {
@@ -446,7 +435,7 @@ export default function ClassStudentPanel({
 
         <ConfirmDialog
           open={addConfirmOpen}
-          title={`Add this ${UI.learningPartner.toLowerCase()}?`}
+          title={`Add this ${UI.learningPartner}?`}
           confirmLabel={`Add ${UI.learningPartner}`}
           cancelLabel="Cancel"
           busy={addStudentBusy}
@@ -464,8 +453,8 @@ export default function ClassStudentPanel({
 
         <ConfirmDialog
           open={bulkConfirmOpen}
-          title={`Import these ${UI.learningPartners.toLowerCase()}?`}
-          confirmLabel={`Import ${UI.learningPartners.toLowerCase()}`}
+          title={`Import these ${UI.learningPartners}?`}
+          confirmLabel={`Import ${UI.learningPartners}`}
           cancelLabel="Cancel"
           busy={bulkBusy}
           onCancel={() => {
@@ -476,7 +465,7 @@ export default function ClassStudentPanel({
         >
           <p className="modal-lead">
             Add up to <strong>{countBulkNames(bulkText)}</strong>{' '}
-            {UI.learningPartner.toLowerCase()} name
+            {UI.learningPartnerName}
             {countBulkNames(bulkText) === 1 ? '' : 's'} to{' '}
             <strong>{formatClassLabel(cls)}</strong>? Names already in the class will be skipped.
           </p>

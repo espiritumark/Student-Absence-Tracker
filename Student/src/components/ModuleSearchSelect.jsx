@@ -15,7 +15,7 @@ export default function ModuleSearchSelect({
   label,
   disabled = false,
   allowEmpty = false,
-  emptyLabel = 'All modules',
+  emptyLabel = 'All Modules',
 }) {
   const [search, setSearch] = useState('')
 

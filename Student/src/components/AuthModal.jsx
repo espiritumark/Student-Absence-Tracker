@@ -34,7 +34,7 @@ export default function AuthModal({ open, onClose, initialMode = 'signin' }) {
           'Account created! If email confirmation is enabled, check your inbox, then sign in.',
         )
         setMode('signin')
-        form.setFieldValue('password', '')
+        form.setFieldsValue({ password: '', confirmPassword: '' })
       }
     } catch (err) {
       setError(friendlyAuthError(err.message))
@@ -43,93 +43,148 @@ export default function AuthModal({ open, onClose, initialMode = 'signin' }) {
     }
   }
 
+  const isSignUp = mode === 'signup'
+
   return (
     <Modal
       open={open}
-      title={mode === 'signin' ? 'Sign in' : 'Create account'}
+      title={mode === 'signin' ? 'Sign In' : 'Create Account'}
       footer={null}
       onCancel={onClose}
       destroyOnHidden
       centered
       width={420}
+      className="auth-modal"
     >
-      <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-        {mode === 'signin'
-          ? 'Access your classes and attendance from any device.'
-          : 'Create an account to sync attendance to the cloud.'}
-      </Typography.Paragraph>
+      <div className="auth-modal-body">
+        <Typography.Paragraph type="secondary" className="auth-modal-intro">
+          {mode === 'signin'
+            ? 'Access your classes and attendance from any device.'
+            : 'Create an account to sync attendance to the cloud.'}
+        </Typography.Paragraph>
 
-      <Form form={form} layout="vertical" onFinish={handleSubmit} requiredMark={false}>
-        <Form.Item
-          name="email"
-          label="Email"
-          rules={[
-            { required: true, message: 'Enter your email' },
-            { type: 'email', message: 'Enter a valid email' },
-          ]}
+        <Form
+          form={form}
+          layout="vertical"
+          className="auth-modal-form"
+          onFinish={handleSubmit}
+          requiredMark={false}
+          validateTrigger={isSignUp ? ['onBlur', 'onSubmit'] : 'onSubmit'}
         >
-          <Input autoComplete="email" />
-        </Form.Item>
-
-        <Form.Item
-          name="password"
-          label="Password"
-          extra={mode === 'signup' ? 'At least 6 characters' : undefined}
-          rules={[
-            { required: true, message: 'Enter your password' },
-            { min: 6, message: 'At least 6 characters' },
-          ]}
-        >
-          <Input.Password
-            autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
-          />
-        </Form.Item>
-
-        {error && <Alert type="error" showIcon title={error} style={{ marginBottom: '1rem' }} />}
-        {message && (
-          <Alert type="success" showIcon title={message} style={{ marginBottom: '1rem' }} />
-        )}
-
-        <Button type="primary" htmlType="submit" block loading={busy}>
-          {mode === 'signin' ? 'Sign in' : 'Create account'}
-        </Button>
-      </Form>
-
-      <Typography.Paragraph style={{ marginBottom: 0, marginTop: '1rem', textAlign: 'center' }}>
-        {mode === 'signin' ? (
-          <>
-            Don&apos;t have an account?{' '}
-            <Button
-              type="link"
-              size="small"
-              onClick={() => {
-                setMode('signup')
-                setError('')
-                setMessage('')
-              }}
-              style={{ padding: 0 }}
+          <div className="auth-modal-fields">
+            <Form.Item
+              name="email"
+              label="Email"
+              rules={[
+                { required: true, message: 'Enter your email' },
+                { type: 'email', message: 'Enter a valid email' },
+              ]}
             >
-              Create one
+              <Input autoComplete="email" />
+            </Form.Item>
+
+            {isSignUp ? (
+              <div className="auth-modal-password-group">
+                <Form.Item
+                  name="password"
+                  label="Password"
+                  className="auth-modal-password-item"
+                  rules={[
+                    { required: true, message: 'Enter your password' },
+                    { min: 6, message: 'At least 6 characters' },
+                  ]}
+                >
+                  <Input.Password autoComplete="new-password" />
+                </Form.Item>
+                <Typography.Text type="secondary" className="auth-modal-field-hint">
+                  At least 6 characters
+                </Typography.Text>
+                <Form.Item
+                  name="confirmPassword"
+                  label="Verify Password"
+                  className="auth-modal-verify-item"
+                  dependencies={['password']}
+                  rules={[
+                    { required: true, message: 'Enter your password again' },
+                    ({ getFieldValue }) => ({
+                      validator(_, value) {
+                        if (!value || getFieldValue('password') === value) {
+                          return Promise.resolve()
+                        }
+                        return Promise.reject(new Error('Passwords do not match'))
+                      },
+                    }),
+                  ]}
+                >
+                  <Input.Password autoComplete="new-password" />
+                </Form.Item>
+              </div>
+            ) : (
+              <Form.Item
+                name="password"
+                label="Password"
+                rules={[
+                  { required: true, message: 'Enter your password' },
+                  { min: 6, message: 'At least 6 characters' },
+                ]}
+              >
+                <Input.Password autoComplete="current-password" />
+              </Form.Item>
+            )}
+          </div>
+
+          {(error || message) && (
+            <div className="auth-modal-alerts">
+              {error && <Alert type="error" showIcon title={error} />}
+              {message && <Alert type="success" showIcon title={message} />}
+            </div>
+          )}
+
+          <div className="auth-modal-actions">
+            <Button type="primary" htmlType="submit" block loading={busy}>
+              {mode === 'signin' ? 'Sign In' : 'Create Account'}
             </Button>
-          </>
-        ) : (
-          <>
-            Already have an account?{' '}
-            <Button
-              type="link"
-              size="small"
-              onClick={() => {
-                setMode('signin')
-                setError('')
-                setMessage('')
-              }}
-              style={{ padding: 0 }}
-            >
-              Sign in
-            </Button>
-          </>
-        )}
-      </Typography.Paragraph>
+          </div>
+        </Form>
+
+        <Typography.Paragraph type="secondary" className="auth-modal-footer">
+          {mode === 'signin' ? (
+            <>
+              Don&apos;t have an account?{' '}
+              <Button
+                type="link"
+                size="small"
+                className="auth-modal-switch-link"
+                onClick={() => {
+                  setMode('signup')
+                  setError('')
+                  setMessage('')
+                  form.setFieldsValue({ confirmPassword: '' })
+                }}
+              >
+                Create One
+              </Button>
+            </>
+          ) : (
+            <>
+              Already have an account?{' '}
+              <Button
+                type="link"
+                size="small"
+                className="auth-modal-switch-link"
+                onClick={() => {
+                  setMode('signin')
+                  setError('')
+                  setMessage('')
+                  form.setFieldsValue({ confirmPassword: '' })
+                }}
+              >
+                Sign In
+              </Button>
+            </>
+          )}
+        </Typography.Paragraph>
+      </div>
     </Modal>
   )
 }
