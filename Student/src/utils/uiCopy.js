@@ -59,6 +59,11 @@ export const UI = {
   markAllAbsent: 'Mark All Absent',
   markAllPresent: 'Mark All Present',
   openReporting: 'Open Reporting',
+  scanEngineThisDevice: 'This Device',
+  scanEngineCloud: 'Cloud API',
+  tableNameSearchPlaceholder: 'Filter names…',
+  tableNameSearchFuzzyHint: 'Includes close name matches (90%+ similarity)',
+  dashboardSearchPlaceholder: 'Name, class, or module…',
 }
 
 /** e.g. "3 Learning Partners" */

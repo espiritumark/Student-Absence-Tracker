@@ -6,7 +6,9 @@ import { RISK_META, getOverallAbsenceRisk } from '../utils/absenceRisk'
 import { getEffectiveAbsenceCounts } from '../utils/attendanceStats'
 import { buildActivityEntry } from '../utils/activityLog'
 import { formatClassLabel } from '../utils/classFormat'
+import { filterByNameSearch } from '../utils/tableNameSearch'
 import { UI, formatLpCount } from '../utils/uiCopy'
+import TableNameSearch from './TableNameSearch'
 import BackButton from './BackButton'
 import PanelChrome from './PanelChrome'
 import ConfirmDialog from './ConfirmDialog'
@@ -146,7 +148,13 @@ export default function AbsenceBulkEditor({
       )
 
   const changedCount = students.filter(({ changed }) => changed).length
+  const [nameSearch, setNameSearch] = useState('')
   const [tableRegionRef, tableHeight] = useScrollRegionHeight(320)
+
+  const filteredVisibleStudents = useMemo(
+    () => filterByNameSearch(visibleStudents, nameSearch, (row) => row.student.name),
+    [visibleStudents, nameSearch],
+  )
 
   useEffect(() => {
     onActivityChange?.({ busy, draftCount: changedCount })
@@ -164,6 +172,7 @@ export default function AbsenceBulkEditor({
     setDrafts({})
     setMessage('')
     setError('')
+    setNameSearch('')
   }, [classId])
 
   function updateDraft(studentId, patch) {
@@ -415,15 +424,30 @@ export default function AbsenceBulkEditor({
           {visibleStudents.length === 0 ? (
             <Empty description={`No ${UI.learningPartners} in this class yet.`} />
           ) : (
-            <div className="table-scroll-region bulk-table-scroll" ref={tableRegionRef}>
+            <div className="table-scroll-region table-scroll-region-with-search bulk-table-scroll">
+              <TableNameSearch
+                value={nameSearch}
+                onChange={setNameSearch}
+                matchCount={filteredVisibleStudents.length}
+                totalCount={visibleStudents.length}
+              />
+              <div className="bulk-table-scroll-inner" ref={tableRegionRef}>
+              {filteredVisibleStudents.length === 0 ? (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="No names match this search."
+                />
+              ) : (
               <Table
                 size="small"
                 columns={columns}
-                dataSource={visibleStudents}
+                dataSource={filteredVisibleStudents}
                 pagination={{ pageSize: 30, showSizeChanger: false, hideOnSinglePage: true }}
                 scroll={{ x: 980, y: tableHeight }}
                 rowClassName={(record) => (record.changed ? 'bulk-row-changed' : '')}
               />
+              )}
+              </div>
             </div>
           )}
 

@@ -6,11 +6,12 @@ import { RISK_META } from '../utils/absenceRisk'
 import { formatModuleLabel, listModulesAcrossClasses } from '../utils/sessionKeys'
 import { studentReportKey } from '../utils/reportingQueue'
 import { DashboardRiskSummary } from './AbsenceCountBadge'
-import { UI } from '../utils/uiCopy'
+import { UI, formatLpCount } from '../utils/uiCopy'
 import FormField from './FormField'
 import ModuleSearchSelect from './ModuleSearchSelect'
 import PanelChrome from './PanelChrome'
 import SearchableSelect from './SearchableSelect'
+import { matchesNameSearch } from '../utils/tableNameSearch'
 
 function sortStudentRows(rows, sortBy) {
   const copy = [...rows]
@@ -133,13 +134,14 @@ export default function Dashboard({
   )
 
   const filteredStudents = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase()
+    const q = searchQuery.trim()
     if (!q) return sortedStudents
+    const qLower = q.toLowerCase()
     return sortedStudents.filter(
       (row) =>
-        row.studentName.toLowerCase().includes(q) ||
-        row.className.toLowerCase().includes(q) ||
-        row.absentModules?.some((m) => m.toLowerCase().includes(q)),
+        matchesNameSearch(q, row.studentName) ||
+        row.className.toLowerCase().includes(qLower) ||
+        row.absentModules?.some((m) => m.toLowerCase().includes(qLower)),
     )
   }, [sortedStudents, searchQuery])
 
@@ -336,7 +338,7 @@ export default function Dashboard({
               <FormField label="Search" grow>
                 <Input
                   allowClear
-                  placeholder="Name, class, module…"
+                  placeholder={UI.dashboardSearchPlaceholder}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
@@ -344,10 +346,8 @@ export default function Dashboard({
             </div>
 
             <Typography.Text type="secondary" className="master-pane-hint">
-              {filteredStudents.length}{' '}
-              {filteredStudents.length === 1 ? UI.learningPartner : UI.learningPartners}
-              {filteredStudents.length === 1 ? '' : 's'} · click a row to open · red names move to
-              the Reporting tab
+              {formatLpCount(filteredStudents.length)} · Click a row to open · Red names move to the
+              Reporting tab
               {selectedModule ? ` · ${formatModuleLabel(selectedModule)}` : ''}
               {selectedClassId
                 ? ` · ${classOptions.find((option) => option.value === selectedClassId)?.label ?? ''}`

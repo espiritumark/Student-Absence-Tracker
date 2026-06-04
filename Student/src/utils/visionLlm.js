@@ -1,70 +1,101 @@
+import { ATTENDANCE_VISION_PROMPT } from '../../lib/attendanceVisionPrompt.js'
 import { parseAttendanceJson } from './parseAttendanceJson'
 
-const ATTENDANCE_VISION_PROMPT = `You extract attendance data from a student portal screenshot.
+/** Screenshot scan backends — local Ollama vs hosted cloud API. */
+export const VISION_SCAN_ENGINE = {
+  local: 'local',
+  cloud: 'cloud',
+}
 
-Return ONLY a single JSON object (no markdown fences, no explanation) matching this exact shape:
-{
-  "session_details": {
-    "class": "INTAKE 20 LEVEL 2 INTERNATIONAL CERTIFICATE IN INFORMATION TECHNOLOGY GROUP 2",
-    "date": "02/06/2026",
-    "module": "L2IT | USING IT TO SUPPORT INFORMATION AND COMMUNICATION IN ORGANISATIONS",
-    "start_time": "8:15 AM",
-    "duration": "2 Sessions"
-  },
-  "attendance": [
-    { "no": 1, "name": "STUDENT FULL NAME", "status": "Present" },
-    { "no": 2, "name": "ANOTHER STUDENT", "status": "Absent" }
-  ],
-  "summary": {
-    "total_students": 2,
-    "present": 1,
-    "absent": 1
+/**
+ * Cloud calls go through /api/vision-scan so API keys stay on Vercel (not in the browser).
+ * Defaults to proxy on production builds; set VITE_VISION_CLOUD_MODE=direct for local dev only.
+ */
+export function isCloudVisionProxyMode() {
+  const mode = import.meta.env.VITE_VISION_CLOUD_MODE?.trim()
+  if (mode === 'direct') return false
+  if (mode === 'proxy') return true
+  return import.meta.env.PROD
+}
+
+function env(key) {
+  return import.meta.env[key]?.trim() || ''
+}
+
+function isLocalVisionEndpoint(baseUrl) {
+  return /localhost|127\.0\.0\.1/.test(baseUrl || '')
+}
+
+function localEnv() {
+  return {
+    apiKey: env('VITE_VISION_LLM_API_KEY'),
+    baseUrl: env('VITE_VISION_LLM_BASE_URL') || 'http://localhost:11434/v1',
+    model: env('VITE_VISION_LLM_MODEL') || 'qwen2.5vl:7b',
   }
 }
 
-Rules:
-- Include every visible student row in list order
-- status must be exactly "Present" or "Absent" from checkbox state (checked/filled = Present, empty/unchecked = Absent)
-- Keep student names exactly as uppercase text shown on screen (including @, hyphens, etc.)
-- summary counts must match the attendance array
-- session_details.class is REQUIRED: copy the full class header from the top of the page (must include INTAKE, LEVEL, programme name, and GROUP). Never leave class empty if any part of that header is visible
-- session_details.date is REQUIRED when shown (DD/MM/YYYY)
-- Use empty string only for module, start_time, or duration when those fields are not visible on screen
-- Do not skip any student rows`
-
-function defaultBaseUrl() {
-  return import.meta.env.VITE_VISION_LLM_BASE_URL?.trim() || 'http://localhost:11434/v1'
+function cloudEnv() {
+  return {
+    apiKey: env('VITE_VISION_CLOUD_API_KEY'),
+    baseUrl: env('VITE_VISION_CLOUD_BASE_URL'),
+    model: env('VITE_VISION_CLOUD_MODEL'),
+  }
 }
 
-function isLocalVisionEndpoint(baseUrl = defaultBaseUrl()) {
-  return /localhost|127\.0\.0\.1/.test(baseUrl)
+function engineEnv(engine) {
+  return engine === VISION_SCAN_ENGINE.cloud ? cloudEnv() : localEnv()
 }
 
+/** Local Ollama path is configured (default dev setup). */
+export function isVisionEngineConfigured(engine = VISION_SCAN_ENGINE.local) {
+  if (engine === VISION_SCAN_ENGINE.cloud) {
+    if (isCloudVisionProxyMode()) return true
+    const { apiKey, baseUrl, model } = cloudEnv()
+    if (!apiKey || apiKey === 'ollama' || apiKey === 'your_vision_api_key_here') return false
+    if (!baseUrl || isLocalVisionEndpoint(baseUrl)) return false
+    if (!model) return false
+    return true
+  }
+
+  const { apiKey, baseUrl } = localEnv()
+  if (apiKey && apiKey !== 'your_vision_api_key_here' && apiKey !== 'ollama') {
+    return true
+  }
+  return isLocalVisionEndpoint(baseUrl)
+}
+
+/** @deprecated Prefer isVisionEngineConfigured('local') — kept for feedback / legacy checks. */
 export function isVisionLlmConfigured() {
-  const key = import.meta.env.VITE_VISION_LLM_API_KEY?.trim()
-  if (key && key !== 'your_vision_api_key_here') return true
-  return isLocalVisionEndpoint()
+  return isVisionEngineConfigured(VISION_SCAN_ENGINE.local)
 }
 
-function getVisionConfig() {
-  const baseUrl = defaultBaseUrl().replace(/\/$/, '')
-  const apiKey = import.meta.env.VITE_VISION_LLM_API_KEY?.trim()
-  const model =
-    import.meta.env.VITE_VISION_LLM_MODEL?.trim() || 'qwen2.5vl:7b'
+export function getVisionConfig(engine = VISION_SCAN_ENGINE.local) {
+  const { apiKey, baseUrl: rawBase, model: rawModel } = engineEnv(engine)
+  const baseUrl = (rawBase || '').replace(/\/$/, '')
 
+  if (engine === VISION_SCAN_ENGINE.cloud) {
+    if (!isVisionEngineConfigured(VISION_SCAN_ENGINE.cloud)) return null
+    if (isCloudVisionProxyMode()) {
+      return { apiKey: '', baseUrl: '/api/vision-scan', model: 'proxy', engine, proxy: true }
+    }
+    return { apiKey, baseUrl, model: rawModel, engine, proxy: false }
+  }
+
+  const model = rawModel || 'qwen2.5vl:7b'
   if (!apiKey && !isLocalVisionEndpoint(baseUrl)) {
     return null
   }
 
   return {
     apiKey: apiKey || 'ollama',
-    baseUrl,
+    baseUrl: baseUrl || 'http://localhost:11434/v1',
     model,
+    engine,
   }
 }
 
-export function isLocalVisionSetup() {
-  const config = getVisionConfig()
+export function isLocalVisionSetup(engine = VISION_SCAN_ENGINE.local) {
+  const config = getVisionConfig(engine)
   return Boolean(config && isLocalVisionEndpoint(config.baseUrl))
 }
 
@@ -83,8 +114,8 @@ function visionTuning() {
 }
 
 /** Load Ollama model into memory while the Screenshot tab is open (skips cold-start on first scan). */
-export async function prewarmVisionModel() {
-  const config = getVisionConfig()
+export async function prewarmVisionModel(engine = VISION_SCAN_ENGINE.local) {
+  const config = getVisionConfig(engine)
   if (!config || !isLocalVisionEndpoint(config.baseUrl)) return
 
   const { keepAlive } = visionTuning()
@@ -108,18 +139,48 @@ export async function prewarmVisionModel() {
   }
 }
 
-/** Check that the vision backend is reachable (Ollama locally; cloud assumed OK). */
-export async function checkVisionLlmConnection() {
-  const config = getVisionConfig()
+/** Check that the vision backend is reachable (Ollama locally; cloud assumed OK when configured). */
+export async function checkVisionLlmConnection(engine = VISION_SCAN_ENGINE.local) {
+  const config = getVisionConfig(engine)
   if (!config) {
+    if (engine === VISION_SCAN_ENGINE.cloud) {
+      return {
+        ok: false,
+        message: isCloudVisionProxyMode()
+          ? 'Cloud API is not configured on the server. Add VISION_CLOUD_* env vars in Vercel (see DEPLOY.md).'
+          : 'Cloud API is not configured yet. Set VITE_VISION_CLOUD_MODE=proxy for Vercel, or add VITE_VISION_CLOUD_* for direct dev testing (see .env.example).',
+      }
+    }
     return {
       ok: false,
       message: 'Vision AI is not configured. Add VITE_VISION_LLM_* to your .env file.',
     }
   }
 
+  if (config.proxy) {
+    try {
+      const res = await fetch('/api/vision-scan', { signal: AbortSignal.timeout(8000) })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ok) {
+        return {
+          ok: false,
+          message:
+            data.message ||
+            'Cloud vision API is not ready. Configure VISION_CLOUD_* on Vercel and redeploy.',
+        }
+      }
+      return { ok: true, engine, model: data.model }
+    } catch {
+      return {
+        ok: false,
+        message:
+          'Cloud vision API is not reachable. On localhost, run `vercel dev` to test proxy mode, or use This Device (Ollama).',
+      }
+    }
+  }
+
   if (!isLocalVisionEndpoint(config.baseUrl)) {
-    return { ok: true }
+    return { ok: true, engine }
   }
 
   const origin = ollamaOrigin(config.baseUrl)
@@ -149,7 +210,7 @@ export async function checkVisionLlmConnection() {
       }
     }
 
-    return { ok: true }
+    return { ok: true, engine }
   } catch {
     return {
       ok: false,
@@ -243,10 +304,13 @@ function readMessageContent(content) {
  * Returns the same shape as parseAttendanceJson.
  */
 export async function parseAttendanceWithVisionLlm(dataUrl, onProgress, opts = {}) {
-  const config = getVisionConfig()
+  const engine = opts.engine || VISION_SCAN_ENGINE.local
+  const config = getVisionConfig(engine)
   if (!config) {
     throw new Error(
-      'Vision AI is not configured. Add VITE_VISION_LLM_API_KEY or point VITE_VISION_LLM_BASE_URL at local Ollama (see .env.example).',
+      engine === VISION_SCAN_ENGINE.cloud
+        ? 'Cloud vision API is not configured. Add VITE_VISION_CLOUD_* to .env (see .env.example).'
+        : 'Vision AI is not configured. Add VITE_VISION_LLM_API_KEY or point VITE_VISION_LLM_BASE_URL at local Ollama (see .env.example).',
     )
   }
 
@@ -256,64 +320,91 @@ export async function parseAttendanceWithVisionLlm(dataUrl, onProgress, opts = {
 
   reportProgress(onProgress, 'vision analysis', 0.1)
 
-  const headers = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${config.apiKey}`,
-  }
-
-  if (config.baseUrl.includes('openrouter.ai')) {
-    headers['HTTP-Referer'] = window.location.origin
-    headers['X-Title'] = 'Learning Partner Hub'
-  }
-
   const { maxTokens, keepAlive } = visionTuning()
-  const requestBody = {
-    model: config.model,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'image_url', image_url: { url: imageUrl } },
-          { type: 'text', text: ATTENDANCE_VISION_PROMPT },
-        ],
-      },
-    ],
-    max_tokens: maxTokens,
-    temperature: 0.1,
-  }
+  let text
 
-  if (isLocalVisionEndpoint(config.baseUrl)) {
-    requestBody.keep_alive = keepAlive
-  }
-
-  let response
-  try {
-    response = await fetch(`${config.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers,
-      signal: opts.signal,
-      body: JSON.stringify(requestBody),
-    })
-  } catch (err) {
-    throw visionFetchError(config, err)
-  }
-
-  reportProgress(onProgress, 'vision analysis', 0.85)
-
-  if (!response.ok) {
-    const errText = await response.text().catch(() => '')
-    let msg = `Vision AI request failed (${response.status}). Check your API key and model.`
+  if (config.proxy) {
+    let response
     try {
-      const errJson = JSON.parse(errText)
-      msg = errJson.error?.message || errJson.message || msg
-    } catch {
-      if (errText) msg = `${msg} ${errText.slice(0, 200)}`
+      response = await fetch('/api/vision-scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: opts.signal,
+        body: JSON.stringify({ imageUrl, maxTokens }),
+      })
+    } catch (err) {
+      throw new Error(
+        err?.message ||
+          'Cloud vision request failed. Deploy to Vercel with VISION_CLOUD_* set, or use This Device locally.',
+      )
     }
-    throw new Error(msg)
-  }
 
-  const data = await response.json()
-  const text = readMessageContent(data.choices?.[0]?.message?.content)
+    reportProgress(onProgress, 'vision analysis', 0.85)
+
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.message || `Cloud vision failed (${response.status}).`)
+    }
+    text = payload.text
+  } else {
+    const headers = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.apiKey}`,
+    }
+
+    if (config.baseUrl.includes('openrouter.ai')) {
+      headers['HTTP-Referer'] = window.location.origin
+      headers['X-Title'] = 'Learning Partner Hub'
+    }
+
+    const requestBody = {
+      model: config.model,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: imageUrl } },
+            { type: 'text', text: ATTENDANCE_VISION_PROMPT },
+          ],
+        },
+      ],
+      max_tokens: maxTokens,
+      temperature: 0.1,
+    }
+
+    if (isLocalVisionEndpoint(config.baseUrl)) {
+      requestBody.keep_alive = keepAlive
+    }
+
+    let response
+    try {
+      response = await fetch(`${config.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers,
+        signal: opts.signal,
+        body: JSON.stringify(requestBody),
+      })
+    } catch (err) {
+      throw visionFetchError(config, err)
+    }
+
+    reportProgress(onProgress, 'vision analysis', 0.85)
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '')
+      let msg = `Vision AI request failed (${response.status}). Check your API key and model.`
+      try {
+        const errJson = JSON.parse(errText)
+        msg = errJson.error?.message || errJson.message || msg
+      } catch {
+        if (errText) msg = `${msg} ${errText.slice(0, 200)}`
+      }
+      throw new Error(msg)
+    }
+
+    const data = await response.json()
+    text = readMessageContent(data.choices?.[0]?.message?.content)
+  }
 
   if (!text) {
     throw new Error('Vision AI returned no text. Try a clearer screenshot.')
@@ -336,7 +427,7 @@ export async function parseAttendanceWithVisionLlm(dataUrl, onProgress, opts = {
     ...parsed,
     previewUrl: dataUrl,
     portalJson: extractJsonFromLlmText(text),
-    ocrEngine: `vision:${config.model}`,
+    ocrEngine: `vision:${engine}:${config.proxy ? 'proxy' : config.model}`,
     usedFallback: false,
     visionLlm: true,
   }

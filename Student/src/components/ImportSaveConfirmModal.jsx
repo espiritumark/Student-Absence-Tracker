@@ -1,8 +1,10 @@
 import { Alert, Card, Col, Modal, Row, Table, Tag, Typography } from 'antd'
-import { useMemo } from 'react'
+import { useMemo, useState, useEffect } from 'react'
+import { filterByNameSearch } from '../utils/tableNameSearch'
+import TableNameSearch from './TableNameSearch'
 import { useScrollRegionHeight } from '../hooks/useScrollRegionHeight'
 import { formatDateLabel } from '../utils/dates'
-import { UI } from '../utils/uiCopy'
+import { UI, formatLpCount } from '../utils/uiCopy'
 
 const CHANGE_TAG = {
   to_absent: { color: 'error', label: 'Present → Absent' },
@@ -26,6 +28,11 @@ export default function ImportSaveConfirmModal({
   busy = false,
 }) {
   const [tableRef, tableHeight] = useScrollRegionHeight(280)
+  const [nameSearch, setNameSearch] = useState('')
+
+  useEffect(() => {
+    if (!open) setNameSearch('')
+  }, [open])
 
   const columns = useMemo(
     () => [
@@ -88,6 +95,11 @@ export default function ImportSaveConfirmModal({
     ],
     [],
   )
+
+  const filteredStudentRows = useMemo(() => {
+    if (!summary?.studentRows) return []
+    return filterByNameSearch(summary.studentRows, nameSearch, (row) => row.name)
+  }, [summary, nameSearch])
 
   if (!summary || !pendingImport) return null
 
@@ -174,22 +186,38 @@ export default function ImportSaveConfirmModal({
         {UI.classesAndRosters}, counts only include that module’s sessions.
       </Typography.Text>
 
-      <div className="table-scroll-region import-save-confirm-scroll" ref={tableRef}>
+      <div className="table-scroll-region table-scroll-region-with-search import-save-confirm-scroll">
+        {hasRosterUpdates && summary.studentRows.length > 0 && (
+          <TableNameSearch
+            value={nameSearch}
+            onChange={setNameSearch}
+            matchCount={filteredStudentRows.length}
+            totalCount={summary.studentRows.length}
+          />
+        )}
+        <div className="import-save-confirm-scroll-inner" ref={tableRef}>
         {hasRosterUpdates ? (
+          filteredStudentRows.length === 0 ? (
+            <Typography.Paragraph type="secondary" className="import-save-confirm-empty">
+              No names match this search.
+            </Typography.Paragraph>
+          ) : (
           <Table
             size="small"
             rowKey="key"
             columns={columns}
-            dataSource={summary.studentRows}
+            dataSource={filteredStudentRows}
             pagination={false}
             scroll={{ y: tableHeight }}
           />
+          )
         ) : (
           <Typography.Paragraph type="secondary" className="import-save-confirm-empty">
             No roster streak or total changes in this import. Session data will still be saved for
-            all {pendingImport.students.length} Learning Partners.
+            all {formatLpCount(pendingImport.students.length)}.
           </Typography.Paragraph>
         )}
+        </div>
       </div>
 
       {error && <Alert type="error" showIcon className="import-alert-banner" title={error} />}

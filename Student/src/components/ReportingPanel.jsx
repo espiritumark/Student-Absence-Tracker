@@ -3,7 +3,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { useScrollRegionHeight } from '../hooks/useScrollRegionHeight'
 import { CONSECUTIVE_REPORT_DAYS, MONTH_REPORT_DAYS } from '../utils/alerts'
 import { formatDateLabel } from '../utils/dates'
+import { filterByNameSearch } from '../utils/tableNameSearch'
 import { UI } from '../utils/uiCopy'
+import TableNameSearch from './TableNameSearch'
 import PanelChrome from './PanelChrome'
 import ReportStudentModal from './ReportStudentModal'
 import WorkspaceSectionTitle from './WorkspaceSectionTitle'
@@ -18,8 +20,20 @@ export default function ReportingPanel({
 }) {
   const [selectedCandidate, setSelectedCandidate] = useState(null)
   const [marking, setMarking] = useState(false)
+  const [pendingNameSearch, setPendingNameSearch] = useState('')
+  const [reportedNameSearch, setReportedNameSearch] = useState('')
 
   const pending = reportingPending
+
+  const filteredPending = useMemo(
+    () => filterByNameSearch(pending, pendingNameSearch, (row) => row.studentName),
+    [pending, pendingNameSearch],
+  )
+
+  const filteredReported = useMemo(
+    () => filterByNameSearch(reported, reportedNameSearch, (row) => row.studentName),
+    [reported, reportedNameSearch],
+  )
 
   const [pendingTableRef, pendingTableHeight] = useScrollRegionHeight(220)
   const [reportedTableRef, reportedTableHeight] = useScrollRegionHeight(160)
@@ -162,12 +176,25 @@ export default function ReportingPanel({
             description={`No ${UI.learningPartners} in the reporting queue. Open one from the Dashboard when ready.`}
           />
         ) : (
-          <div className="table-scroll-region reporting-pending-scroll" ref={pendingTableRef}>
+          <div className="table-scroll-region table-scroll-region-with-search reporting-pending-scroll">
+            <TableNameSearch
+              value={pendingNameSearch}
+              onChange={setPendingNameSearch}
+              matchCount={filteredPending.length}
+              totalCount={pending.length}
+            />
+            <div className="reporting-pending-scroll-inner" ref={pendingTableRef}>
+            {filteredPending.length === 0 ? (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="No names match this search."
+              />
+            ) : (
             <Table
               size="small"
               rowKey="key"
               columns={pendingColumns}
-              dataSource={pending}
+              dataSource={filteredPending}
               pagination={{ pageSize: 20, showSizeChanger: false, hideOnSinglePage: true }}
               scroll={{ y: pendingTableHeight }}
               onRow={(row) => ({
@@ -175,6 +202,8 @@ export default function ReportingPanel({
                 style: { cursor: 'pointer' },
               })}
             />
+            )}
+            </div>
           </div>
         )}
       </div>
@@ -187,12 +216,25 @@ export default function ReportingPanel({
             description={`No reported ${UI.learningPartners} yet.`}
           />
         ) : (
-          <div className="table-scroll-region reporting-reported-scroll" ref={reportedTableRef}>
+          <div className="table-scroll-region table-scroll-region-with-search reporting-reported-scroll">
+            <TableNameSearch
+              value={reportedNameSearch}
+              onChange={setReportedNameSearch}
+              matchCount={filteredReported.length}
+              totalCount={reported.length}
+            />
+            <div className="reporting-reported-scroll-inner" ref={reportedTableRef}>
+            {filteredReported.length === 0 ? (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="No names match this search."
+              />
+            ) : (
             <Table
               size="small"
               rowKey="key"
               columns={reportedColumns}
-              dataSource={reported}
+              dataSource={filteredReported}
               pagination={{ pageSize: 15, showSizeChanger: false, hideOnSinglePage: true }}
               scroll={{ y: reportedTableHeight }}
               onRow={(row) => ({
@@ -200,6 +242,8 @@ export default function ReportingPanel({
                 style: { cursor: 'pointer' },
               })}
             />
+            )}
+            </div>
           </div>
         )}
       </div>

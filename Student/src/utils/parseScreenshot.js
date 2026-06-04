@@ -1,6 +1,13 @@
-import { isVisionLlmConfigured, parseAttendanceWithVisionLlm } from './visionLlm'
+import {
+  VISION_SCAN_ENGINE,
+  isVisionEngineConfigured,
+  isVisionLlmConfigured,
+  parseAttendanceWithVisionLlm,
+} from './visionLlm'
 
 export {
+  VISION_SCAN_ENGINE,
+  isVisionEngineConfigured,
   isVisionLlmConfigured,
   checkVisionLlmConnection,
   isLocalVisionSetup,
@@ -28,15 +35,18 @@ export function fileToDataUrl(file) {
 }
 
 /** Screenshot import — vision LLM only (class, students, present/absent). */
-export async function parseAttendanceScreenshot(fileOrDataUrl, onProgress, opts) {
-  if (!isVisionLlmConfigured()) {
+export async function parseAttendanceScreenshot(fileOrDataUrl, onProgress, opts = {}) {
+  const engine = opts.engine || VISION_SCAN_ENGINE.local
+  if (!isVisionEngineConfigured(engine)) {
     throw new Error(
-      'Vision AI is not configured. Add VITE_VISION_LLM_* to your .env file. For free local scanning, run Ollama with a vision model (see .env.example).',
+      engine === VISION_SCAN_ENGINE.cloud
+        ? 'Cloud vision API is not configured. Add VITE_VISION_CLOUD_* to .env (see .env.example).'
+        : 'Vision AI is not configured. Add VITE_VISION_LLM_* to your .env file. For free local scanning, run Ollama with a vision model (see .env.example).',
     )
   }
 
   const dataUrl =
     typeof fileOrDataUrl === 'string' ? fileOrDataUrl : await fileToDataUrl(fileOrDataUrl)
 
-  return parseAttendanceWithVisionLlm(dataUrl, onProgress, opts)
+  return parseAttendanceWithVisionLlm(dataUrl, onProgress, { ...opts, engine })
 }

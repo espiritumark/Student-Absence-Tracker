@@ -25,7 +25,7 @@ import ModuleSearchSelect from './ModuleSearchSelect'
 import FormField from './FormField'
 import PanelChrome from './PanelChrome'
 import WorkspaceSectionTitle from './WorkspaceSectionTitle'
-import { UI } from '../utils/uiCopy'
+import { UI, formatLpCount } from '../utils/uiCopy'
 import SaveFieldOverlay from './SaveFieldOverlay'
 
 export default function ClassManager({
@@ -428,9 +428,7 @@ export default function ClassManager({
                           <Typography.Text strong>{row.name}</Typography.Text>
                           <div>
                             <Typography.Text type="secondary" style={{ fontSize: '0.78rem' }}>
-                              {row.count}{' '}
-                              {row.count === 1 ? UI.learningPartner : UI.learningPartners}
-                              {row.count === 1 ? '' : 's'}
+                              {formatLpCount(row.count)}
                             </Typography.Text>
                           </div>
                         </div>

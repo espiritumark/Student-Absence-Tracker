@@ -84,6 +84,9 @@ If you had local browser data before signing in, use **Upload local data** to mi
    |------|--------|
    | `VITE_SUPABASE_URL` | your Supabase project URL |
    | `VITE_SUPABASE_ANON_KEY` | your Supabase anon key |
+   | `VISION_CLOUD_API_KEY` | your [OpenRouter API key](https://openrouter.ai/settings/keys) (free — enables **Cloud API** screenshot scan) |
+
+   OpenRouter defaults (no need to set unless you override): Nemotron VL free at `https://openrouter.ai/api/v1`.
 
 6. Click **Deploy**.
 
@@ -122,12 +125,12 @@ Each user only sees their own classes and attendance (Row Level Security).
 
 ## Screenshot import (vision AI)
 
-The **Screenshot** tab uses a vision language model to read class details, student names, and present/absent checkboxes into the same JSON format as manual import.
+The **Screenshot** tab uses a vision language model to read class details, Learning Partner names, and present/absent checkboxes into the same JSON format as manual import.
 
-**Free local option (Ollama):**
+### This Device (free, local — best accuracy on your PC)
 
 1. Install [Ollama](https://ollama.com) and run `ollama pull qwen2.5vl:7b`
-2. Add to `.env` (and Vercel env vars if deploying):
+2. Add to `.env` (local dev only — not for Vercel users):
 
    ```
    VITE_VISION_LLM_API_KEY=ollama
@@ -135,21 +138,52 @@ The **Screenshot** tab uses a vision language model to read class details, stude
    VITE_VISION_LLM_MODEL=qwen2.5vl:7b
    ```
 
-**Cloud option (DashScope Qwen VL):** set `VITE_VISION_LLM_API_KEY`, `VITE_VISION_LLM_BASE_URL`, and `VITE_VISION_LLM_MODEL` — see `.env.example`.
+Ollama only runs on **your computer**. Visitors on your Vercel URL cannot use it unless they also run Ollama locally.
 
-Restart the dev server or redeploy after changing env vars.
+### Cloud API (for Vercel — no localhost)
+
+The deployed app uses a **Vercel serverless proxy** (`/api/vision-scan`) so API keys never ship to the browser.
+
+**Recommended (configured in this repo): [OpenRouter](https://openrouter.ai) + [Nemotron Nano 12B 2 VL (free)](https://openrouter.ai/nvidia/nemotron-nano-12b-v2-vl:free)** — $0, built for document/OCR-style screenshots.
+
+**In Vercel → Settings → Environment Variables** (only the key is required):
+
+| Name | Value |
+|------|--------|
+| `VISION_CLOUD_API_KEY` | from [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) |
+
+Optional overrides (defaults are already OpenRouter + Nemotron VL free):
+
+| Name | Default |
+|------|---------|
+| `VISION_CLOUD_PROVIDER` | `openrouter` |
+| `VISION_CLOUD_BASE_URL` | `https://openrouter.ai/api/v1` |
+| `VISION_CLOUD_MODEL` | `nvidia/nemotron-nano-12b-v2-vl:free` |
+
+Production builds automatically use the secure `/api/vision-scan` proxy (your key never ships to the browser). Redeploy after saving env vars.
+
+**Setup (2 minutes):**
+
+1. Sign up at [OpenRouter](https://openrouter.ai) (free).
+2. Create an API key at [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys).
+3. Paste it as `VISION_CLOUD_API_KEY` in Vercel → redeploy.
+4. In the app: **Record Attendance → Screenshot → Cloud API**.
+
+**Local testing of Cloud API:** run `npx vercel dev` in `LearningPartnerHub` with `VISION_CLOUD_API_KEY` set, or use **This Device** with Ollama for everyday dev.
+
+#### Other providers (optional)
+
+You can override `VISION_CLOUD_BASE_URL` and `VISION_CLOUD_MODEL` for Groq, Gemini, or DashScope — see `.env.example`. PewDiePie’s [Odysseus](https://github.com/pewdiepie-archdaemon/odysseus) is **not** a hosted API (local desktop only).
 
 ### Faster screenshot scans
-
-Screenshot import runs a **vision model on your machine** (or cloud). That step is slower than pasting JSON from Copilot because the model must read the whole image and write every student row.
 
 | Approach | Speed |
 |----------|--------|
 | **JSON tab** + Copilot paste | Fastest (no vision step) |
-| **Cloud vision API** (DashScope) | Often faster than local CPU |
+| **Cloud API** (Groq / OpenRouter) | Often faster than local CPU |
 | **Local Ollama + GPU** | Much faster than CPU-only |
 | **Smaller model** (`qwen2.5vl:3b`) | Faster, slightly less accurate |
-| **Keep Ollama running** + open Screenshot tab first | Avoids cold-start delay on first scan |
+| **Keep Ollama running** + open Screenshot tab first | Avoids cold-start on first scan |
 
 Optional `.env` tuning (see `.env.example`): lower `VITE_VISION_MAX_IMAGE_WIDTH` (e.g. `1120`) for quicker scans on large screenshots.
 
@@ -164,6 +198,8 @@ Optional `.env` tuning (see `.env.example`): lower `VITE_VISION_MAX_IMAGE_WIDTH`
 | Sign up doesn't work | Check Supabase Auth settings; disable email confirmation for testing |
 | RLS / permission errors | Re-run `supabase/schema.sql` |
 | Blank page after deploy | Check Vercel build logs; ensure root directory is `LearningPartnerHub` |
+| Cloud API unavailable on Vercel | Add `VISION_CLOUD_API_KEY` from OpenRouter, then redeploy |
+| Cloud scan fails locally | Use **This Device** with Ollama, or run `npx vercel dev` to test the proxy |
 
 ---
 

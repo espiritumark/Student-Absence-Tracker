@@ -23,7 +23,9 @@ import {
   formatModuleLabel,
   listModulesForClass,
 } from '../utils/sessionKeys'
+import { filterByNameSearch } from '../utils/tableNameSearch'
 import { UI, formatLpCount } from '../utils/uiCopy'
+import TableNameSearch from './TableNameSearch'
 
 function countBulkNames(text) {
   return text
@@ -58,6 +60,7 @@ export default function ClassStudentPanel({
   const [studentToRemove, setStudentToRemove] = useState(null)
   const [addConfirmOpen, setAddConfirmOpen] = useState(false)
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false)
+  const [nameSearch, setNameSearch] = useState('')
 
   useAutoDismiss(Boolean(bulkMessage) && !bulkText.trim(), () => setBulkMessage(''))
 
@@ -98,6 +101,15 @@ export default function ClassStudentPanel({
       }),
     [sortedStudents, filteredAttendance],
   )
+
+  const filteredStudentTableData = useMemo(
+    () => filterByNameSearch(studentTableData, nameSearch, (row) => row.student.name),
+    [studentTableData, nameSearch],
+  )
+
+  useEffect(() => {
+    setNameSearch('')
+  }, [cls.id])
 
   useEffect(() => {
     onActivityChange?.({
@@ -300,8 +312,9 @@ export default function ClassStudentPanel({
           />
           {lockModuleFilter && moduleFilter !== '' && (
             <p className="class-detail-scope muted small">
-              Browsing <strong>{activeModuleLabel}</strong> — switch to All classes to change
-              module per class.
+              Browsing <strong>{activeModuleLabel}</strong> — Total and streak are for this module
+              only. Switch to <strong>By Class</strong> and <strong>All Modules</strong> for
+              class-wide counts.
             </p>
           )}
           {!lockModuleFilter && classModules.length > 0 && moduleFilter !== '' && (
@@ -399,14 +412,29 @@ export default function ClassStudentPanel({
             description={`No ${UI.learningPartners} in this class.`}
           />
         ) : (
-          <div className="table-scroll-region student-list-scroll" ref={studentTableRef}>
-            <Table
-              size="small"
-              pagination={{ pageSize: 25, showSizeChanger: false, hideOnSinglePage: true }}
-              scroll={{ y: studentTableHeight }}
-              dataSource={studentTableData}
-              columns={studentColumns}
+          <div className="table-scroll-region table-scroll-region-with-search student-list-scroll">
+            <TableNameSearch
+              value={nameSearch}
+              onChange={setNameSearch}
+              matchCount={filteredStudentTableData.length}
+              totalCount={studentTableData.length}
             />
+            <div className="table-scroll-region student-list-scroll-inner" ref={studentTableRef}>
+              {filteredStudentTableData.length === 0 ? (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="No names match this search."
+                />
+              ) : (
+                <Table
+                  size="small"
+                  pagination={{ pageSize: 25, showSizeChanger: false, hideOnSinglePage: true }}
+                  scroll={{ y: studentTableHeight }}
+                  dataSource={filteredStudentTableData}
+                  columns={studentColumns}
+                />
+              )}
+            </div>
           </div>
         )}
 

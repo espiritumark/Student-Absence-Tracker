@@ -14,6 +14,7 @@ import {
   Table,
   Tag,
   Modal,
+  Segmented,
   Tabs,
   Typography,
   Upload,
@@ -39,13 +40,17 @@ import {
   runOcrJob,
   subscribeOcr,
 } from '../utils/ocrSession'
+import { RECOMMENDED_CLOUD_VISION } from '../../lib/cloudVisionDefaults.js'
+import { filterByNameSearch } from '../utils/tableNameSearch'
 import { UI, formatLpCount } from '../utils/uiCopy'
+import TableNameSearch from './TableNameSearch'
 import {
   fileToDataUrl,
-  isVisionLlmConfigured,
+  isVisionEngineConfigured,
   checkVisionLlmConnection,
   isLocalVisionSetup,
   prewarmVisionModel,
+  VISION_SCAN_ENGINE,
 } from '../utils/parseScreenshot'
 import { buildPortalJson, parseAttendanceJson } from '../utils/parseAttendanceJson'
 import {
@@ -154,6 +159,19 @@ function SaveSuccess({
 }
 
 const SUCCESS_RESET_SECONDS = 5
+const SCREENSHOT_ENGINE_STORAGE_KEY = 'lp-hub-screenshot-engine'
+
+function loadStoredScreenshotEngine() {
+  try {
+    const stored = localStorage.getItem(SCREENSHOT_ENGINE_STORAGE_KEY)
+    if (stored === VISION_SCAN_ENGINE.cloud && isVisionEngineConfigured(VISION_SCAN_ENGINE.cloud)) {
+      return VISION_SCAN_ENGINE.cloud
+    }
+  } catch {
+    // ignore
+  }
+  return VISION_SCAN_ENGINE.local
+}
 
 export default function AttendanceImport({
   importPortalSession,
@@ -176,6 +194,7 @@ export default function AttendanceImport({
   const ocrStartedAtRef = useRef(null)
   const ocrProgressAtRef = useRef(0)
   const [reviewSource, setReviewSource] = useState(null)
+  const [screenshotEngine, setScreenshotEngine] = useState(loadStoredScreenshotEngine)
   const [visionConnection, setVisionConnection] = useState(null)
   const [error, setError] = useState('')
   const [meta, setMeta] = useState(emptyMeta)
@@ -196,6 +215,7 @@ export default function AttendanceImport({
   const [lastScannedScreenshot, setLastScannedScreenshot] = useState(null)
   const [lastScanModalOpen, setLastScanModalOpen] = useState(false)
   const [similarModalKey, setSimilarModalKey] = useState(null)
+  const [reviewNameSearch, setReviewNameSearch] = useState('')
   const savedRef = useRef(false)
   const screenshotSessionRef = useRef(null)
 
@@ -541,21 +561,32 @@ export default function AttendanceImport({
   }, [importMode])
 
   useEffect(() => {
-    if (importMode !== 'screenshot' || !isVisionLlmConfigured()) {
+    if (importMode !== 'screenshot' || !isVisionEngineConfigured(screenshotEngine)) {
       setVisionConnection(null)
       return undefined
     }
 
     let cancelled = false
-    checkVisionLlmConnection().then((result) => {
+    checkVisionLlmConnection(screenshotEngine).then((result) => {
       if (!cancelled) setVisionConnection(result)
-      if (!cancelled && result?.ok) prewarmVisionModel()
+      if (!cancelled && result?.ok && screenshotEngine === VISION_SCAN_ENGINE.local) {
+        prewarmVisionModel(screenshotEngine)
+      }
     })
 
     return () => {
       cancelled = true
     }
-  }, [importMode])
+  }, [importMode, screenshotEngine])
+
+  function handleScreenshotEngineChange(value) {
+    setScreenshotEngine(value)
+    try {
+      localStorage.setItem(SCREENSHOT_ENGINE_STORAGE_KEY, value)
+    } catch {
+      // ignore
+    }
+  }
 
   const stageScreenshot = useCallback(async (file) => {
     if (!file?.type.startsWith('image/')) {
@@ -662,12 +693,16 @@ export default function AttendanceImport({
     setParseMessage('')
     setSaved(false)
     try {
-      const result = await runOcrJob(source, ({ progress, label }) => {
-        setOcrProgress(progress)
-        setOcrStageLabel(label)
-        ocrProgressAtRef.current = Date.now()
-        setOcrProgressStalled(false)
-      })
+      const result = await runOcrJob(
+        source,
+        ({ progress, label }) => {
+          setOcrProgress(progress)
+          setOcrStageLabel(label)
+          ocrProgressAtRef.current = Date.now()
+          setOcrProgressStalled(false)
+        },
+        { engine: screenshotEngine },
+      )
       finishScreenshotScan(result)
       consumeOcrResult()
     } catch (e) {
@@ -846,6 +881,25 @@ export default function AttendanceImport({
 
   const [studentTableRef, studentTableHeight] = useScrollRegionHeight(280)
 
+  const reviewTableRows = useMemo(
+    () =>
+      students.map((row) => ({
+        key: `${row.index}-${row.importName || row.name}`,
+        ...row,
+      })),
+    [students],
+  )
+
+  const filteredReviewRows = useMemo(
+    () =>
+      filterByNameSearch(reviewTableRows, reviewNameSearch, (row) => row.name || row.importName),
+    [reviewTableRows, reviewNameSearch],
+  )
+
+  useEffect(() => {
+    if (!students.length) setReviewNameSearch('')
+  }, [students.length])
+
   const rosterPreviews = useMemo(
     () => buildImportRosterPreviews(meta, students, classes, attendance),
     [meta, students, classes, attendance],
@@ -854,7 +908,9 @@ export default function AttendanceImport({
   const showImportInput = !showReview
   const backToInputLabel = importMode === 'json' ? 'Back to JSON' : 'Back to Screenshot'
 
-  const visionReady = isVisionLlmConfigured() && visionConnection?.ok !== false
+  const cloudScanConfigured = isVisionEngineConfigured(VISION_SCAN_ENGINE.cloud)
+  const visionReady =
+    isVisionEngineConfigured(screenshotEngine) && visionConnection?.ok !== false
 
   const similarPendingCount = countSimilarPending(students)
 
@@ -963,13 +1019,46 @@ export default function AttendanceImport({
         </div>
       ) : (
         <div className="import-screenshot-panel">
-          {isVisionLlmConfigured() ? (
+          <div className="import-scan-engine-row">
+            <Typography.Text className="import-scan-engine-label">Scan using</Typography.Text>
+            <Segmented
+              className="import-scan-engine"
+              value={screenshotEngine}
+              onChange={handleScreenshotEngineChange}
+              options={[
+                { label: UI.scanEngineThisDevice, value: VISION_SCAN_ENGINE.local },
+                {
+                  label: (
+                    <span className="import-scan-engine-cloud-label">
+                      {UI.scanEngineCloud}
+                      {!cloudScanConfigured && (
+                        <Tag className="import-scan-engine-tag">Setup</Tag>
+                      )}
+                    </span>
+                  ),
+                  value: VISION_SCAN_ENGINE.cloud,
+                  disabled: !cloudScanConfigured,
+                },
+              ]}
+            />
+          </div>
+          <Typography.Paragraph type="secondary" className="import-scan-engine-hint">
+            {screenshotEngine === VISION_SCAN_ENGINE.local
+              ? 'Runs Ollama on this computer — free and private. Best for daily use while developing.'
+              : `${RECOMMENDED_CLOUD_VISION.label} via OpenRouter — free on Vercel. Add VISION_CLOUD_API_KEY from openrouter.ai/settings/keys (see DEPLOY.md).`}
+          </Typography.Paragraph>
+
+          {isVisionEngineConfigured(screenshotEngine) ? (
             visionConnection?.ok === false ? (
               <Alert
                 type="error"
                 showIcon
                 className="import-alert-banner"
-                title="Ollama Is Not Reachable"
+                title={
+                  screenshotEngine === VISION_SCAN_ENGINE.local
+                    ? 'Ollama Is Not Reachable'
+                    : 'Cloud API Unavailable'
+                }
                 description={visionConnection.message}
               />
             ) : (
@@ -980,10 +1069,12 @@ export default function AttendanceImport({
                 title="Vision AI Ready — full screenshot scan (class, names, checkboxes)."
                 description={
                   visionConnection?.ok
-                    ? isLocalVisionSetup()
+                    ? isLocalVisionSetup(screenshotEngine)
                       ? 'Paste your screenshot and scan. First scan may take a minute on CPU — keep this tab open so the model stays loaded. For fastest import, paste Copilot JSON on the JSON tab.'
                       : `Paste your portal screenshot and click ${UI.scanScreenshot}. Attendance opens in the review table (same as JSON import).`
-                    : 'Checking connection to Ollama…'
+                    : screenshotEngine === VISION_SCAN_ENGINE.local
+                      ? 'Checking connection to Ollama…'
+                      : 'Checking cloud API…'
                 }
               />
             )
@@ -1233,7 +1324,13 @@ export default function AttendanceImport({
                   )}
                 </div>
 
-                <div className="table-scroll-region portal-student-list-scroll import-review-table-region">
+                <div className="table-scroll-region portal-student-list-scroll import-review-table-region table-scroll-region-with-search">
+                  <TableNameSearch
+                    value={reviewNameSearch}
+                    onChange={setReviewNameSearch}
+                    matchCount={filteredReviewRows.length}
+                    totalCount={reviewTableRows.length}
+                  />
                   {similarPendingCount > 0 && (
                     <Alert
                       type="warning"
@@ -1244,6 +1341,12 @@ export default function AttendanceImport({
                   )}
 
                   <div className="import-review-table-wrap" ref={studentTableRef}>
+                  {filteredReviewRows.length === 0 ? (
+                    <Empty
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      description="No names match this search."
+                    />
+                  ) : (
                   <Table
                     size="small"
                     pagination={{ pageSize: 30, showSizeChanger: false, hideOnSinglePage: true }}
@@ -1251,10 +1354,7 @@ export default function AttendanceImport({
                     rowClassName={(row) =>
                       needsSimilarReviewWarning(row) ? 'import-row-similar-pending' : ''
                     }
-                    dataSource={students.map((row) => ({
-                      key: `${row.index}-${row.importName || row.name}`,
-                      ...row,
-                    }))}
+                    dataSource={filteredReviewRows}
                     columns={[
                       {
                         title: '#',
@@ -1394,6 +1494,7 @@ export default function AttendanceImport({
                       },
                     ]}
                   />
+                  )}
                   </div>
                 </div>
 

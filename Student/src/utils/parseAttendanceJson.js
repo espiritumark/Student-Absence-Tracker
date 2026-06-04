@@ -201,7 +201,7 @@ export function parseAttendanceJson(raw, options = {}) {
     .sort((a, b) => a.index - b.index)
 
   if (!students.length) {
-    throw new Error('No valid student names found in attendance array.')
+    throw new Error('No valid Learning Partner names found in attendance array.')
   }
 
   const hasClass = Boolean(classMeta) || Boolean(classText.trim())

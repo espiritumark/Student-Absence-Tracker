@@ -29,7 +29,9 @@ import PanelChrome from './PanelChrome'
 import SearchableSelect from './SearchableSelect'
 import { buildAttendanceLogFromSummary } from '../utils/activityLog'
 import { buildImportPayload, computeImportSaveSummary } from '../utils/importReview'
+import { filterByNameSearch } from '../utils/tableNameSearch'
 import { UI } from '../utils/uiCopy'
+import TableNameSearch from './TableNameSearch'
 
 const EMPTY_RECORDS = {}
 const EMPTY_CLASS_ATTENDANCE = {}
@@ -77,6 +79,7 @@ export default function AttendanceSheet({
   const [saveMessage, setSaveMessage] = useState('')
   const [markAllConfirmOpen, setMarkAllConfirmOpen] = useState(false)
   const [pendingMarkAllStatus, setPendingMarkAllStatus] = useState(null)
+  const [nameSearch, setNameSearch] = useState('')
 
   const locked = syncing || pending
 
@@ -180,6 +183,15 @@ export default function AttendanceSheet({
       }),
     [sortedStudents, draftRecords],
   )
+
+  const filteredAttendanceRows = useMemo(
+    () => filterByNameSearch(attendanceRows, nameSearch, (row) => row.student.name),
+    [attendanceRows, nameSearch],
+  )
+
+  useEffect(() => {
+    setNameSearch('')
+  }, [selectedClassId])
 
   async function runAction(action) {
     if (locked) return
@@ -423,12 +435,25 @@ export default function AttendanceSheet({
                 description={`No ${UI.learningPartners} in this class.`}
               />
             ) : (
-              <div className="table-scroll-region attendance-sheet-list-scroll" ref={studentTableRef}>
+              <div className="table-scroll-region table-scroll-region-with-search attendance-sheet-list-scroll">
+                <TableNameSearch
+                  value={nameSearch}
+                  onChange={setNameSearch}
+                  matchCount={filteredAttendanceRows.length}
+                  totalCount={attendanceRows.length}
+                />
+                <div className="attendance-sheet-list-scroll-inner" ref={studentTableRef}>
+                  {filteredAttendanceRows.length === 0 ? (
+                    <Empty
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      description="No names match this search."
+                    />
+                  ) : (
                 <Table
                   size="small"
                   pagination={{ pageSize: 30, showSizeChanger: false, hideOnSinglePage: true }}
                   scroll={{ y: studentTableHeight }}
-                  dataSource={attendanceRows}
+                  dataSource={filteredAttendanceRows}
                   rowClassName={(row) => (!row.present ? 'attendance-row-absent' : '')}
                   columns={[
                     {
@@ -472,6 +497,8 @@ export default function AttendanceSheet({
                     },
                   ]}
                 />
+                  )}
+                </div>
               </div>
             )}
 

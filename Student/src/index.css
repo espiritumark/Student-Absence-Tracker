@@ -1188,12 +1188,66 @@ body {
   max-height: none;
   overflow: hidden;
   margin-bottom: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.bulk-table-scroll-inner {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .table-scroll-region {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+
+.table-name-search-bar {
+  flex-shrink: 0;
+  margin-bottom: 0.35rem;
+}
+
+.table-name-search-input.ant-input-affix-wrapper {
+  border-radius: var(--radius);
+  background: var(--surface-muted, rgba(0, 0, 0, 0.03));
+  border: 1px solid transparent;
+  padding-inline: 0.55rem 0.4rem;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.table-name-search-input.ant-input-affix-wrapper:hover {
+  background: var(--bg);
+  border-color: var(--border);
+}
+
+.table-name-search-input.ant-input-affix-wrapper-focused,
+.table-name-search-input.ant-input-affix-wrapper:focus-within {
+  background: var(--bg);
+  border-color: var(--accent, var(--border));
+  box-shadow: none;
+}
+
+.table-name-search-input input.ant-input {
+  font-size: 0.8125rem;
+}
+
+.table-name-search-count {
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted, rgba(0, 0, 0, 0.45));
+  user-select: none;
+  padding-left: 0.35rem;
+}
+
+.table-scroll-region-with-search {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .import-workspace {
@@ -1225,6 +1279,47 @@ body {
 .import-tabs {
   flex-shrink: 0;
   margin-bottom: 0 !important;
+}
+
+.import-scan-engine-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.import-scan-engine-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.import-scan-engine {
+  border-radius: var(--radius) !important;
+}
+
+.import-scan-engine .ant-segmented-item {
+  border-radius: calc(var(--radius) - 2px) !important;
+}
+
+.import-scan-engine-cloud-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.import-scan-engine-tag {
+  margin: 0 !important;
+  font-size: 0.68rem;
+  line-height: 1.2;
+  padding-inline: 0.35rem;
+}
+
+.import-scan-engine-hint {
+  margin: 0 0 0.65rem !important;
+  font-size: 0.82rem;
+  line-height: 1.4;
 }
 
 .import-alert-class-summary.ant-alert-info {
@@ -2478,6 +2573,15 @@ kbd {
   min-height: clamp(10rem, 36vh, calc(100vh - 22rem));
   max-height: none;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.import-save-confirm-scroll-inner {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .import-save-count-delta {
@@ -2959,7 +3063,14 @@ kbd {
 }
 
 .class-student-panel .student-list-scroll,
-.class-student-panel .table-scroll-region.student-list-scroll {
+.class-student-panel .student-list-scroll-inner {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.class-student-panel .table-scroll-region.student-list-scroll,
+.class-student-panel .table-scroll-region.student-list-scroll-inner {
   flex: 1;
   min-height: 0;
   max-height: none;
@@ -3574,6 +3685,16 @@ details[open] .collapsible-summary::before {
   border-radius: var(--radius);
   background: var(--bg);
   margin-top: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 0.5rem 0;
+}
+
+
+.attendance-sheet-list-scroll-inner {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .attendance-sheet-empty {
@@ -4221,6 +4342,16 @@ details[open] .collapsible-summary::before {
 .reporting-reported-scroll {
   flex: 1;
   min-height: 8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.reporting-pending-scroll-inner,
+.reporting-reported-scroll-inner {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .report-student-modal-body {

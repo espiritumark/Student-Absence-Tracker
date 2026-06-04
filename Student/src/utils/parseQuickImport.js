@@ -36,7 +36,7 @@ function parsePlainNameList(text) {
 export function parseQuickPaste(text) {
   const trimmed = text.trim()
   if (!trimmed) {
-    throw new Error('Paste student names or copied portal text first.')
+    throw new Error('Paste Learning Partner names or copied portal text first.')
   }
 
   const portalMeta = parseMetadataFromText(trimmed)
@@ -46,7 +46,7 @@ export function parseQuickPaste(text) {
     portalStudents.length >= plainStudents.length ? portalStudents : plainStudents
 
   if (students.length === 0) {
-    throw new Error('No student names found. Use one name per line.')
+    throw new Error('No Learning Partner names found. Use one name per line.')
   }
 
   const classMeta = portalMeta.classMeta ?? {
