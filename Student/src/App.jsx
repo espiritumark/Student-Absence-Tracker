@@ -1,8 +1,9 @@
-import { Alert, Layout, Tabs, Typography } from 'antd'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Layout, Tabs, Typography } from 'antd'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AttendanceImport from './components/AttendanceImport'
 import AttendanceSheet from './components/AttendanceSheet'
 import AuthPanel from './components/AuthPanel'
+import NotificationMinibar from './components/NotificationMinibar'
 import ClassManager from './components/ClassManager'
 import Dashboard from './components/Dashboard'
 import LoadingScreen from './components/LoadingScreen'
@@ -18,6 +19,8 @@ import { pruneReportingQueue, useReportingQueue } from './hooks/useReportingQueu
 import { useStore } from './hooks/useStore'
 import { isOcrRunning } from './utils/ocrSession'
 import { buildReportCandidates, splitReportingWorkflow } from './utils/reportingQueue'
+import { useAppNotifier } from './hooks/useAppNotifier'
+import { NOTIFIER_KEYS } from './utils/appNotifications'
 
 const { Header, Content, Footer } = Layout
 
@@ -26,6 +29,7 @@ function AppContent() {
   const [classesFocus, setClassesFocus] = useState(null)
   const [reportingFocusKey, setReportingFocusKey] = useState(null)
   const [tabActivity, setTabActivity] = useState({})
+  const importNavigationGuardRef = useRef(null)
 
   const handleTabActivityChange = useCallback((tabId, activity) => {
     setTabActivity((prev) => {
@@ -52,7 +56,9 @@ function AppContent() {
     switchTab('classes')
   }
 
-  const { user, loading: authLoading, cloudEnabled } = useAuth()
+  const { user, loading: authLoading, cloudEnabled, transition: authTransition } = useAuth()
+  const notify = useAppNotifier()
+  const signInHintShownRef = useRef(false)
   const store = useStore()
   const reportsUserKey = user?.id || 'local'
   const { reportedViolations, markStudentReported, clearStudentReported } =
@@ -117,6 +123,50 @@ function AppContent() {
   const blockUiForLoading =
     (cloudEnabled && authLoading) || (store.initialLoading && !isOcrRunning())
 
+  const lockAppTabs = tab === 'import' && tabActivity.import === 'processing'
+
+  useEffect(() => {
+    if (!authTransition) {
+      notify.destroy(NOTIFIER_KEYS.authTransition)
+      return
+    }
+    notify.progress({
+      key: NOTIFIER_KEYS.authTransition,
+      title: authTransition.type === 'signin' ? 'Signing in' : 'Signing out',
+      description: authTransition.label || authTransition.email,
+    })
+  }, [authTransition, notify])
+
+  useEffect(() => {
+    if (!store.syncError) {
+      notify.destroy(NOTIFIER_KEYS.cloudSyncError)
+      return
+    }
+    notify.error({
+      key: NOTIFIER_KEYS.cloudSyncError,
+      title: 'Cloud sync error',
+      description: store.syncError,
+      duration: 0,
+      onClose: () => store.clearSyncError(),
+    })
+  }, [store.syncError, notify, store])
+
+  useEffect(() => {
+    if (!store.useCloud || !store.syncing) {
+      notify.destroy(NOTIFIER_KEYS.cloudSync)
+      return undefined
+    }
+
+    notify.progress({
+      key: NOTIFIER_KEYS.cloudSync,
+      title: 'Cloud sync active',
+      description: 'Syncing attendance with your cloud account…',
+      minimizable: false,
+    })
+
+    return () => notify.destroy(NOTIFIER_KEYS.cloudSync)
+  }, [store.useCloud, store.syncing, notify])
+
   if (blockUiForLoading) {
     return (
       <Layout className="app-layout">
@@ -131,11 +181,10 @@ function AppContent() {
     )
   }
 
-  const showSignInBanner = cloudEnabled && !user
-
   return (
     <Layout className="app-layout">
-      <div className="app-shell">
+      <NotificationMinibar />
+      <div className={`app-shell${lockAppTabs ? ' app-shell-import-busy' : ''}`}>
         <Header className="app-layout-header">
         <div className="app-header-row">
           <div className="app-header-copy">
@@ -149,45 +198,15 @@ function AppContent() {
           <AuthPanel />
         </div>
 
-        {showSignInBanner && (
-          <Alert
-            type="info"
-            showIcon
-            className="app-banner"
-            title={
-              <>
-                <strong>Sign In</strong> to save attendance to your cloud account across devices.
-                Without signing in, data stays in this browser only.
-              </>
-            }
-          />
-        )}
-
-        {store.syncError && (
-          <Alert
-            type="error"
-            showIcon
-            closable
-            className="app-banner"
-            title={store.syncError}
-            onClose={store.clearSyncError}
-          />
-        )}
-
-        {store.useCloud && (
-          <span className="cloud-sync-badge">
-            <span className="cloud-sync-badge-dot" aria-hidden />
-            Cloud Sync Active
-            {store.syncing ? ' · Syncing…' : ''}
-          </span>
-        )}
       </Header>
 
       <div className="app-shell-body">
         <Tabs
           className="app-tabs"
           activeKey={tab}
-          onChange={switchTab}
+          onChange={(key) => {
+            switchTab(key)
+          }}
           items={TABS.map((t) => ({
             key: t.id,
             label: (
@@ -213,6 +232,7 @@ function AppContent() {
               isActive={tab === 'import'}
               onGoToWarnings={() => switchTab('dashboard')}
               onTabActivityChange={handleTabActivityChange}
+              navigationGuardRef={importNavigationGuardRef}
             />
           </div>
           <div className="tab-panel" hidden={tab !== 'dashboard'} aria-hidden={tab !== 'dashboard'}>
@@ -247,6 +267,7 @@ function AppContent() {
               syncing={store.syncing}
               addClass={store.addClass}
               removeClass={store.removeClass}
+              deleteModuleSessions={store.deleteModuleSessions}
               addStudent={store.addStudent}
               removeStudent={store.removeStudent}
               importStudentsBulk={store.importStudentsBulk}
@@ -263,6 +284,7 @@ function AppContent() {
               attendance={store.attendance}
               setAttendance={store.setAttendance}
               setSessionMeta={store.setSessionMeta}
+              deleteSession={store.deleteSession}
               syncing={store.syncing}
               recordAction={store.recordAction}
               onTabActivityChange={handleTabActivityChange}

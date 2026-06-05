@@ -174,7 +174,7 @@ export async function checkVisionLlmConnection(engine = VISION_SCAN_ENGINE.local
       return {
         ok: false,
         message:
-          'Cloud vision API is not reachable. On localhost, run `vercel dev` to test proxy mode, or use This Device (Ollama).',
+          'Cloud vision API is not reachable. On localhost, run `vercel dev` to test proxy mode, or use Local (Ollama).',
       }
     }
   }
@@ -335,7 +335,7 @@ export async function parseAttendanceWithVisionLlm(dataUrl, onProgress, opts = {
     } catch (err) {
       throw new Error(
         err?.message ||
-          'Cloud vision request failed. Deploy to Vercel with VISION_CLOUD_* set, or use This Device locally.',
+          'Cloud vision request failed. Deploy to Vercel with VISION_CLOUD_* set, or use Local instead.',
       )
     }
 

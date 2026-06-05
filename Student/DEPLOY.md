@@ -140,6 +140,10 @@ The **Screenshot** tab uses a vision language model to read class details, Learn
 
 Ollama only runs on **your computer**. Visitors on your Vercel URL cannot use it unless they also run Ollama locally.
 
+### Bulk Screenshots (beta tab)
+
+A separate **Bulk Screenshots** tab under Record Attendance lets you queue many class screenshots, scan them **one at a time** (same local Ollama path), **review each**, and **save each** before the next. It does not use the single-image OCR session, so the normal **Screenshot** tab is unchanged.
+
 ### Cloud API (for Vercel — no localhost)
 
 The deployed app uses a **Vercel serverless proxy** (`/api/vision-scan`) so API keys never ship to the browser.

@@ -21,6 +21,47 @@ export function normalizeQualification(text) {
     .trim()
 }
 
+export function stripPartTimeMarker(text) {
+  return String(text || '')
+    .replace(/\(PT\)/gi, '')
+    .replace(/\bPT\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** Compare programme names ignoring (PT) suffix / marker differences. */
+export function qualificationBaseEqual(a, b) {
+  return (
+    normalizeQualification(stripPartTimeMarker(a)) ===
+    normalizeQualification(stripPartTimeMarker(b))
+  )
+}
+
+/** Keep (PT) when the full class header included it but the parsed programme field did not. */
+export function syncPartTimeFromClassLabel(meta, classText) {
+  const label = String(classText || '')
+  if (!/\(PT\)/i.test(label) || isPartTimeQualification(meta?.qualification)) {
+    return meta
+  }
+  const qual = String(meta?.qualification || '').trim()
+  if (!qual) return meta
+  return { ...meta, qualification: `${qual} (PT)` }
+}
+
+/** Module codes like L5CPT can cause vision to invent (PT) on the programme name. */
+export function isLikelyFalsePartTimeFromModule(meta) {
+  const mod = String(meta?.module || '').toUpperCase()
+  return /\bL?\d*CPT\b/.test(mod) || mod.includes('CPT')
+}
+
+/** Part-time cohorts are separate classes — (PT), PT, or "part time" in the programme name. */
+export function isPartTimeQualification(text) {
+  const raw = String(text || '').toUpperCase()
+  if (/\(PT\)|\bPT\b|PART[\s-]*TIME/.test(raw)) return true
+  const norm = normalizeQualification(text)
+  return /\bPT\b/.test(norm) || norm.includes('PART TIME')
+}
+
 export function classIdentity(cls) {
   if (!cls) {
     return { intake: null, level: null, group: null, qualification: '' }
@@ -35,18 +76,22 @@ export function classIdentity(cls) {
 
 export function classMatchKey(cls) {
   const id = classIdentity(cls)
-  return [id.intake ?? '', id.level ?? '', id.qualification, id.group ?? ''].join('|')
+  const rawQual = cls?.qualification || cls?.name || ''
+  const pt = isPartTimeQualification(rawQual) ? 'PT' : 'FT'
+  return [id.intake ?? '', id.level ?? '', id.qualification, id.group ?? '', pt].join('|')
 }
 
 export function qualificationsSimilar(a, b) {
-  const left = normalizeQualification(a)
-  const right = normalizeQualification(b)
+  if (isPartTimeQualification(a) !== isPartTimeQualification(b)) return false
+
+  const left = normalizeQualification(stripPartTimeMarker(a))
+  const right = normalizeQualification(stripPartTimeMarker(b))
   if (!left || !right) return true
   if (left === right) return true
   if (left.includes(right) || right.includes(left)) return true
 
-  const tokensA = left.split(' ').filter((t) => t.length > 1)
-  const tokensB = new Set(right.split(' ').filter((t) => t.length > 1))
+  const tokensA = left.split(' ').filter((t) => t.length > 1 && t !== 'PT')
+  const tokensB = new Set(right.split(' ').filter((t) => t.length > 1 && t !== 'PT'))
   if (!tokensA.length || !tokensB.size) return false
 
   let overlap = 0
@@ -60,6 +105,7 @@ export function findMatchingClass(classes, classMeta) {
   if (!classes?.length || !classMeta) return null
 
   const incoming = classIdentity(classMeta)
+  const incomingQualRaw = classMeta.qualification || classMeta.name || ''
   const exact = classes.find((c) => classMatchKey(c) === classMatchKey(classMeta))
   if (exact) return exact
 
@@ -72,12 +118,26 @@ export function findMatchingClass(classes, classMeta) {
         id.group === incoming.group
       )
     })
-    if (cohort.length === 1) return cohort[0]
-    if (cohort.length > 1) {
-      const fuzzy = cohort.find((c) =>
+
+    const incomingPt = isPartTimeQualification(incomingQualRaw)
+    const ptAligned = cohort.filter(
+      (c) => isPartTimeQualification(c.qualification || c.name || '') === incomingPt,
+    )
+
+    if (ptAligned.length === 1) return ptAligned[0]
+    if (ptAligned.length > 1) {
+      const fuzzy = ptAligned.find((c) =>
         qualificationsSimilar(classIdentity(c).qualification, incoming.qualification),
       )
-      return fuzzy ?? cohort[0]
+      return fuzzy ?? ptAligned[0]
+    }
+
+    // FT vs PT are different classes — never cross-match when the programme type differs.
+    if (cohort.length === 1) {
+      const only = cohort[0]
+      const onlyPt = isPartTimeQualification(only.qualification || only.name || '')
+      if (incomingPt === onlyPt) return only
+      return null
     }
   }
 
@@ -93,6 +153,23 @@ export function findMatchingClass(classes, classMeta) {
   }
 
   return null
+}
+
+/** Session label for imports — honours form programme when FT/PT or (PT) suffix differs. */
+export function resolveImportClassLabel(classMeta, matchedClass) {
+  const fromForm = formatClassLabel(classMeta)
+  if (!matchedClass) return fromForm
+
+  const formQual = classMeta?.qualification || classMeta?.name || ''
+  const rosterQual = matchedClass.qualification || matchedClass.name || ''
+  const formPt = isPartTimeQualification(formQual)
+  const rosterPt = isPartTimeQualification(rosterQual)
+
+  if (formPt !== rosterPt) return fromForm
+  if (formPt) return fromForm
+  if (!qualificationBaseEqual(formQual, rosterQual)) return fromForm
+
+  return formatClassLabel(matchedClass)
 }
 
 export function parseClassHeader(text) {

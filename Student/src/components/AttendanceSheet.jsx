@@ -1,6 +1,5 @@
 import dayjs from 'dayjs'
 import {
-  Alert,
   Button,
   Checkbox,
   DatePicker,
@@ -9,7 +8,9 @@ import {
   Space,
   Typography,
 } from 'antd'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useAppNotifier } from '../hooks/useAppNotifier'
+import { NOTIFIER_KEYS } from '../utils/appNotifications'
 import { formatClassLabel } from '../utils/classFormat'
 import { dateKey, formatDateLabel } from '../utils/dates'
 import { useReportTabActivity } from '../hooks/useReportTabActivity'
@@ -63,6 +64,7 @@ export default function AttendanceSheet({
   attendance,
   setAttendance,
   setSessionMeta,
+  deleteSession,
   syncing = false,
   recordAction,
   onTabActivityChange,
@@ -76,10 +78,13 @@ export default function AttendanceSheet({
   const [confirmSummary, setConfirmSummary] = useState(null)
   const [pendingPayload, setPendingPayload] = useState(null)
   const [confirmError, setConfirmError] = useState('')
-  const [saveMessage, setSaveMessage] = useState('')
   const [markAllConfirmOpen, setMarkAllConfirmOpen] = useState(false)
   const [pendingMarkAllStatus, setPendingMarkAllStatus] = useState(null)
   const [nameSearch, setNameSearch] = useState('')
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
+  const draftNotifyRef = useRef(false)
+  const notify = useAppNotifier()
 
   const locked = syncing || pending
 
@@ -159,13 +164,18 @@ export default function AttendanceSheet({
 
   useEffect(() => {
     setDraftRecords(recordsSnapshot(dayRecords, sortedStudents))
-    setSaveMessage('')
   }, [selectedClassId, selectedDate, sessionKey, savedRecordsKey, dayRecords, sortedStudents])
 
   const hasDraftChanges = useMemo(
     () => sortedStudents.length > 0 && !recordsEqual(draftRecords, savedRecords, sortedStudents),
     [draftRecords, savedRecords, sortedStudents],
   )
+
+  const savedSessionExists = useMemo(() => {
+    if (!sessionKey || !classAttendance[sessionKey]) return false
+    const records = classAttendance[sessionKey].records || {}
+    return Object.keys(records).length > 0
+  }, [classAttendance, sessionKey])
 
   const [studentTableRef, studentTableHeight] = useScrollRegionHeight(280)
 
@@ -214,7 +224,6 @@ export default function AttendanceSheet({
         },
       }
     })
-    setSaveMessage('')
   }
 
   function setDraftPriorNotice(studentId, priorNotice) {
@@ -225,7 +234,6 @@ export default function AttendanceSheet({
         priorNotice,
       },
     }))
-    setSaveMessage('')
   }
 
   function buildManualPayload() {
@@ -283,7 +291,10 @@ export default function AttendanceSheet({
       setSaveConfirmOpen(false)
       setPendingPayload(null)
       setConfirmSummary(null)
-      setSaveMessage('Attendance saved.')
+      notify.success({
+        key: NOTIFIER_KEYS.attendanceSave,
+        title: 'Attendance saved.',
+      })
       recordAction?.(
         buildAttendanceLogFromSummary('manual', pendingPayload, summaryForLog, { success: true }),
       )
@@ -303,7 +314,32 @@ export default function AttendanceSheet({
 
   function handleDiscardDraft() {
     setDraftRecords(savedRecords)
-    setSaveMessage('')
+  }
+
+  function requestDeleteSession() {
+    if (locked || !savedSessionExists || !selectedClassId || !sessionKey) return
+    setDeleteError('')
+    setDeleteConfirmOpen(true)
+  }
+
+  async function handleConfirmDeleteSession() {
+    if (locked || !savedSessionExists || !selectedClassId || !sessionKey) return
+    setPending(true)
+    setDeleteError('')
+    try {
+      await deleteSession(selectedClassId, sessionKey)
+      setDeleteConfirmOpen(false)
+      setDraftRecords(recordsSnapshot({}, sortedStudents))
+      notify.success({
+        key: NOTIFIER_KEYS.attendanceSave,
+        title: 'Session deleted.',
+        description: 'Attendance marks for this class, date, and module were removed.',
+      })
+    } catch (err) {
+      setDeleteError(err?.message || 'Failed to delete this session.')
+    } finally {
+      setPending(false)
+    }
   }
 
   function requestMarkAll(status) {
@@ -324,7 +360,6 @@ export default function AttendanceSheet({
       }
       return next
     })
-    setSaveMessage('')
   }
 
   function handleModuleChange(value) {
@@ -334,13 +369,42 @@ export default function AttendanceSheet({
   function handleModuleCommit(value) {
     if (locked) return
     setModuleInput(value)
-    setSaveMessage('')
   }
 
   const overlayLabel = syncing ? 'Syncing attendance…' : 'Saving attendance…'
 
   const attendanceTabActivity = syncing || pending ? 'processing' : hasDraftChanges ? 'draft' : null
   useReportTabActivity('attendance', attendanceTabActivity, onTabActivityChange)
+
+  useEffect(() => {
+    if (pending && !syncing) {
+      notify.progress({
+        key: NOTIFIER_KEYS.attendanceSaving,
+        title: 'Saving attendance',
+        description: 'Applying changes to your roster…',
+        minimizable: false,
+      })
+      return () => notify.destroy(NOTIFIER_KEYS.attendanceSaving)
+    }
+    notify.destroy(NOTIFIER_KEYS.attendanceSaving)
+    return undefined
+  }, [syncing, pending, notify])
+
+  useEffect(() => {
+    if (!hasDraftChanges) {
+      draftNotifyRef.current = false
+      notify.destroy(NOTIFIER_KEYS.attendanceDraft)
+      return
+    }
+    if (draftNotifyRef.current) return
+    draftNotifyRef.current = true
+    notify.draft({
+      key: NOTIFIER_KEYS.attendanceDraft,
+      title: 'Unsaved attendance changes',
+      description: 'Review and save before leaving this page.',
+      duration: 0,
+    })
+  }, [hasDraftChanges, notify])
 
   return (
     <section className="panel portal-panel workspace-panel attendance-workspace">
@@ -393,22 +457,15 @@ export default function AttendanceSheet({
                 </div>
 
                 {selectedClass && (
-                  <Alert
-                    type="info"
-                    showIcon={false}
-                    title={
+                  <Typography.Text type="secondary" className="import-class-summary">
+                    Class: <Typography.Text strong>{formatClassLabel(selectedClass)}</Typography.Text>
+                    {moduleInput.trim() && (
                       <>
-                        Class: <strong>{formatClassLabel(selectedClass)}</strong>
-                        {moduleInput.trim() && (
-                          <>
-                            {' '}
-                            · Module: <strong>{moduleInput.trim()}</strong>
-                          </>
-                        )}
+                        {' '}
+                        · Module: <Typography.Text strong>{moduleInput.trim()}</Typography.Text>
                       </>
-                    }
-                    style={{ marginBottom: '0.65rem' }}
-                  />
+                    )}
+                  </Typography.Text>
                 )}
 
                 <Space wrap style={{ marginBottom: '0.65rem' }}>
@@ -437,6 +494,7 @@ export default function AttendanceSheet({
             ) : (
               <div className="table-scroll-region table-scroll-region-with-search attendance-sheet-list-scroll">
                 <TableNameSearch
+                  className="import-review-name-search"
                   value={nameSearch}
                   onChange={setNameSearch}
                   matchCount={filteredAttendanceRows.length}
@@ -504,14 +562,6 @@ export default function AttendanceSheet({
 
             {selectedClass?.students.length > 0 && (
               <div className="attendance-sheet-save-bar">
-                {hasDraftChanges && (
-                  <Typography.Text type="warning" className="attendance-sheet-unsaved-hint">
-                    Unsaved changes — review and confirm before saving to your account.
-                  </Typography.Text>
-                )}
-                {saveMessage && !hasDraftChanges && (
-                  <Alert type="success" showIcon className="import-alert-banner" title={saveMessage} />
-                )}
                 <Space wrap className="attendance-sheet-save-actions">
                   <Button
                     type="primary"
@@ -524,6 +574,11 @@ export default function AttendanceSheet({
                   <Button disabled={locked || !hasDraftChanges} onClick={handleDiscardDraft}>
                     {UI.discardChanges}
                   </Button>
+                  {savedSessionExists && (
+                    <Button danger disabled={locked} onClick={requestDeleteSession}>
+                      {UI.deleteSession}
+                    </Button>
+                  )}
                 </Space>
               </div>
             )}
@@ -546,6 +601,38 @@ export default function AttendanceSheet({
         }}
         onConfirm={handleConfirmSave}
       />
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        title={UI.confirmDeleteSession}
+        confirmLabel={UI.deleteSession}
+        cancelLabel={UI.keepEditing}
+        danger
+        busy={pending}
+        error={deleteError}
+        onCancel={() => {
+          if (pending) return
+          setDeleteConfirmOpen(false)
+          setDeleteError('')
+        }}
+        onConfirm={handleConfirmDeleteSession}
+      >
+        {selectedClass && (
+          <Typography.Paragraph>
+            Remove all saved attendance for{' '}
+            <strong>{formatClassLabel(selectedClass)}</strong> on{' '}
+            <strong>{formatDateLabel(selectedDate)}</strong>
+            {moduleInput.trim() ? (
+              <>
+                {' '}
+                · Module: <strong>{moduleInput.trim()}</strong>
+              </>
+            ) : null}
+            ? This cannot be undone. Roster streak and absence totals are not adjusted
+            automatically — use Bulk Edit Absence Counts if needed.
+          </Typography.Paragraph>
+        )}
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={markAllConfirmOpen}

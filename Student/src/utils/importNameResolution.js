@@ -66,6 +66,26 @@ export function matchImportRowToRoster(row, rosterStudents) {
   }
 }
 
+/** Keep manual similar-name resolutions when class meta or roster re-enrichment runs. */
+export function mergeImportEnrichmentWithResolved(prevRows, enrichedRows) {
+  return enrichedRows
+    .map((fresh) => {
+      const prev = prevRows.find(
+        (p) =>
+          p.index === fresh.index &&
+          (p.importName || p.name) === (fresh.importName || fresh.name),
+      )
+      if (prev?.matchStatus === 'exact' || prev?.matchStatus === 'new') {
+        return prev
+      }
+      if (prev?.matchStatus === 'linked_roster') {
+        return polishImportRow(prev)
+      }
+      return fresh
+    })
+    .map(polishImportRow)
+}
+
 export function enrichImportStudentsWithRoster(students, classes, classMeta) {
   const cls = findMatchingClass(classes, {
     intake: Number(classMeta?.intake) || null,

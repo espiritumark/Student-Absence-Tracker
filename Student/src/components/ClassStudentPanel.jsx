@@ -10,7 +10,7 @@ import {
   Typography,
 } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
-import { useAutoDismiss } from '../hooks/useAutoDismiss'
+import { useAppNotifier } from '../hooks/useAppNotifier'
 import { useScrollRegionHeight } from '../hooks/useScrollRegionHeight'
 import ConfirmDialog from './ConfirmDialog'
 import ModuleSearchSelect from './ModuleSearchSelect'
@@ -22,6 +22,7 @@ import {
   filterAttendanceByModule,
   formatModuleLabel,
   listModulesForClass,
+  listSessionKeysForModule,
 } from '../utils/sessionKeys'
 import { filterByNameSearch } from '../utils/tableNameSearch'
 import { UI, formatLpCount } from '../utils/uiCopy'
@@ -43,6 +44,7 @@ export default function ClassStudentPanel({
   syncing = false,
   onBulkEdit,
   onDeleteRequest,
+  deleteModuleSessions,
   addStudent,
   removeStudent,
   importStudentsBulk,
@@ -52,6 +54,7 @@ export default function ClassStudentPanel({
   const [bulkText, setBulkText] = useState('')
   const [bulkMessage, setBulkMessage] = useState('')
   const [bulkError, setBulkError] = useState('')
+  const notify = useAppNotifier()
   const [addStudentBusy, setAddStudentBusy] = useState(false)
   const [bulkBusy, setBulkBusy] = useState(false)
   const [removingStudentId, setRemovingStudentId] = useState('')
@@ -60,11 +63,19 @@ export default function ClassStudentPanel({
   const [studentToRemove, setStudentToRemove] = useState(null)
   const [addConfirmOpen, setAddConfirmOpen] = useState(false)
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false)
+  const [removeModuleConfirmOpen, setRemoveModuleConfirmOpen] = useState(false)
+  const [removeModuleBusy, setRemoveModuleBusy] = useState(false)
+  const [removeModuleError, setRemoveModuleError] = useState('')
   const [nameSearch, setNameSearch] = useState('')
 
-  useAutoDismiss(Boolean(bulkMessage) && !bulkText.trim(), () => setBulkMessage(''))
-
   const classAttendance = attendance || {}
+  const moduleSessionCount = useMemo(
+    () =>
+      lockModuleFilter && moduleFilter
+        ? listSessionKeysForModule(classAttendance, moduleFilter).length
+        : 0,
+    [classAttendance, lockModuleFilter, moduleFilter],
+  )
   const classModules = useMemo(() => listModulesForClass(classAttendance), [classAttendance])
   const filteredAttendance = useMemo(
     () =>
@@ -86,7 +97,30 @@ export default function ClassStudentPanel({
 
   const [studentTableRef, studentTableHeight] = useScrollRegionHeight(200)
 
-  const panelBusy = syncing || addStudentBusy || bulkBusy || Boolean(removingStudentId)
+  const panelBusy =
+    syncing || addStudentBusy || bulkBusy || removeModuleBusy || Boolean(removingStudentId)
+
+  async function handleConfirmRemoveFromModule() {
+    if (!deleteModuleSessions || !moduleFilter || removeModuleBusy) return
+    setRemoveModuleBusy(true)
+    setRemoveModuleError('')
+    try {
+      const removed = await deleteModuleSessions(cls.id, moduleFilter)
+      setRemoveModuleConfirmOpen(false)
+      notify.success({
+        key: `remove-module-${cls.id}-${moduleFilter}`,
+        title:
+          removed === 1
+            ? `Removed 1 session from ${activeModuleLabel}`
+            : `Removed ${removed} sessions from ${activeModuleLabel}`,
+        description: `${formatClassLabel(cls)} is unchanged in By Class and other modules.`,
+      })
+    } catch (e) {
+      setRemoveModuleError(e.message || 'Could not remove module sessions.')
+    } finally {
+      setRemoveModuleBusy(false)
+    }
+  }
 
   const studentTableData = useMemo(
     () =>
@@ -139,7 +173,9 @@ export default function ClassStudentPanel({
   function requestBulkImport() {
     if (panelBusy) return
     if (!bulkText.trim()) {
-      setBulkError(`Enter at least one ${UI.learningPartnerName}.`)
+      const title = `Enter at least one ${UI.learningPartnerName}.`
+      setBulkError(title)
+      notify.error({ key: 'roster-bulk-error', title, duration: 8 })
       setBulkMessage('')
       return
     }
@@ -156,18 +192,18 @@ export default function ClassStudentPanel({
       const count = await importStudentsBulk(cls.id, bulkText)
       if (count > 0) {
         setBulkText('')
-        setBulkMessage(
-          `Added ${formatLpCount(count)} to ${formatClassLabel(cls)}.`,
-        )
+        const title = `Added ${formatLpCount(count)} to ${formatClassLabel(cls)}.`
+        setBulkMessage(title)
+        notify.success({ key: 'roster-bulk-success', title })
       } else {
-        setBulkMessage(
-          `No new ${UI.learningPartners} to add — all names were already in this class.`,
-        )
+        const title = `No new ${UI.learningPartners} to add — all names were already in this class.`
+        setBulkMessage(title)
+        notify.info({ key: 'roster-bulk-success', title })
       }
     } catch (err) {
-      setBulkError(
-        err.message || `Failed to import ${UI.learningPartners}. Try again.`,
-      )
+      const title = err.message || `Failed to import ${UI.learningPartners}. Try again.`
+      setBulkError(title)
+      notify.error({ key: 'roster-bulk-error', title, duration: 8 })
     } finally {
       setBulkBusy(false)
     }
@@ -328,6 +364,19 @@ export default function ClassStudentPanel({
           <Button disabled={panelBusy} onClick={onBulkEdit}>
             Bulk Edit This Class
           </Button>
+          {lockModuleFilter && moduleFilter && deleteModuleSessions ? (
+            <Button
+              type="link"
+              className="link-destructive-muted"
+              disabled={panelBusy || moduleSessionCount === 0}
+              onClick={() => {
+                setRemoveModuleError('')
+                setRemoveModuleConfirmOpen(true)
+              }}
+            >
+              {UI.removeFromModule}
+            </Button>
+          ) : null}
           <Button
             type="link"
             className="link-destructive-muted"
@@ -380,8 +429,6 @@ export default function ClassStudentPanel({
                   >
                     Import
                   </Button>
-                  {bulkMessage && <Alert type="success" showIcon title={bulkMessage} style={{ marginTop: '0.5rem' }} />}
-                  {bulkError && <Alert type="error" showIcon title={bulkError} style={{ marginTop: '0.5rem' }} />}
                 </>
               ),
             },
@@ -389,7 +436,7 @@ export default function ClassStudentPanel({
         />
 
         {removedStudents.length > 0 && (
-          <Space direction="vertical" style={{ width: '100%', marginBottom: '0.5rem' }}>
+          <Space orientation="vertical" style={{ width: '100%', marginBottom: '0.5rem' }}>
             {removedStudents.map((r) => (
               <Alert
                 key={r.student.id}
@@ -476,6 +523,32 @@ export default function ClassStudentPanel({
           <p className="modal-lead">
             Add <strong>{studentInput.trim()}</strong> to{' '}
             <strong>{formatClassLabel(cls)}</strong>?
+          </p>
+        </ConfirmDialog>
+
+        <ConfirmDialog
+          open={removeModuleConfirmOpen}
+          title={UI.confirmRemoveFromModule}
+          confirmLabel={UI.removeFromModule}
+          cancelLabel="Keep Sessions"
+          danger
+          busy={removeModuleBusy}
+          error={removeModuleError}
+          onCancel={() => {
+            if (removeModuleBusy) return
+            setRemoveModuleConfirmOpen(false)
+            setRemoveModuleError('')
+          }}
+          onConfirm={handleConfirmRemoveFromModule}
+        >
+          <p className="modal-lead">
+            Remove all <strong>{moduleSessionCount}</strong> saved attendance session
+            {moduleSessionCount === 1 ? '' : 's'} for <strong>{activeModuleLabel}</strong> from{' '}
+            <strong>{formatClassLabel(cls)}</strong>?
+          </p>
+          <p className="modal-lead">
+            The class and its roster stay intact. Other modules for this class are not affected.
+            This only removes the class from the <strong>By Module</strong> list for this subject.
           </p>
         </ConfirmDialog>
 

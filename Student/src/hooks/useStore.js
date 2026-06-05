@@ -3,6 +3,8 @@ import { useAuth } from '../contexts/AuthContext'
 import {
   dbAddClass,
   dbAddStudent,
+  dbDeleteSession,
+  dbDeleteModuleSessions,
   dbImportPortalSession,
   dbImportStudentsBulk,
   dbRemoveClass,
@@ -19,6 +21,7 @@ import {
   clearActivityLog,
   loadActivityLog,
 } from '../utils/activityLog'
+import { listSessionKeysForModule } from '../utils/sessionKeys'
 import {
   applyStudentPatches,
   collectRosterPatchesForSession,
@@ -547,6 +550,71 @@ export function useStore() {
     [useCloud, user, refreshFromCloud, runLocal],
   )
 
+  const deleteSession = useCallback(
+    async (classId, sessionKey) => {
+      if (useCloud) {
+        try {
+          await dbDeleteSession(user.id, classId, sessionKey)
+          await refreshFromCloud({ silent: true })
+        } catch (e) {
+          setSyncError(e.message)
+          throw e
+        }
+        return
+      }
+      runLocal((s) => {
+        const classAtt = s.attendance[classId]
+        if (!classAtt?.[sessionKey]) return s
+        const { [sessionKey]: _removed, ...restSessions } = classAtt
+        return {
+          ...s,
+          attendance: {
+            ...s.attendance,
+            [classId]: restSessions,
+          },
+        }
+      })
+    },
+    [useCloud, user, refreshFromCloud, runLocal],
+  )
+
+  const deleteModuleSessions = useCallback(
+    async (classId, moduleFilter) => {
+      if (useCloud) {
+        try {
+          await dbDeleteModuleSessions(user.id, classId, moduleFilter)
+          await refreshFromCloud({ silent: true })
+        } catch (e) {
+          setSyncError(e.message)
+          throw e
+        }
+        return 0
+      }
+
+      let removed = 0
+      runLocal((s) => {
+        const classAtt = s.attendance[classId]
+        if (!classAtt) return s
+        const keys = listSessionKeysForModule(classAtt, moduleFilter)
+        if (!keys.length) return s
+        removed = keys.length
+        const nextSessions = { ...classAtt }
+        for (const key of keys) {
+          delete nextSessions[key]
+        }
+        return {
+          ...s,
+          attendance: {
+            ...s.attendance,
+            [classId]: nextSessions,
+          },
+        }
+      })
+      return removed
+    },
+    [useCloud, user, refreshFromCloud, runLocal],
+  )
+
   const setSessionMeta = useCallback(
     async (classId, day, meta) => {
       if (useCloud) {
@@ -761,6 +829,8 @@ export function useStore() {
     removeStudent,
     setAttendance,
     setSessionMeta,
+    deleteSession,
+    deleteModuleSessions,
     importPortalSession,
     importStudentsBulk,
   }

@@ -90,6 +90,11 @@ export function filterAttendanceByModule(classAttendance, moduleFilter) {
   return filtered
 }
 
+/** Session keys for one module within a class (for scoped delete). */
+export function listSessionKeysForModule(classAttendance, moduleFilter) {
+  return Object.keys(filterAttendanceByModule(classAttendance, moduleFilter))
+}
+
 /** All modules recorded across classes, with which class IDs use each one. */
 export function listModulesAcrossClasses(classes, attendance) {
   const moduleMap = new Map()

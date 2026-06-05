@@ -397,6 +397,63 @@ export async function dbImportStudentsBulk(userId, classId, namesText) {
   return count
 }
 
+export async function dbDeleteSession(userId, classId, sessionKey) {
+  const { date, module } = sessionMetaFromKey(sessionKey)
+  const { data: session, error } = await supabase
+    .from('attendance_sessions')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('class_id', classId)
+    .eq('session_date', date)
+    .eq('module', module || '')
+    .maybeSingle()
+
+  if (error) throw error
+  if (!session) return false
+
+  const { error: recordsError } = await supabase
+    .from('attendance_records')
+    .delete()
+    .eq('session_id', session.id)
+  if (recordsError) throw recordsError
+
+  const { error: sessionError } = await supabase
+    .from('attendance_sessions')
+    .delete()
+    .eq('id', session.id)
+  if (sessionError) throw sessionError
+
+  return true
+}
+
+export async function dbDeleteModuleSessions(userId, classId, moduleFilter) {
+  const target = normalizeModuleKey(moduleFilter)
+  const { data: sessions, error } = await supabase
+    .from('attendance_sessions')
+    .select('id, module')
+    .eq('user_id', userId)
+    .eq('class_id', classId)
+
+  if (error) throw error
+  const matching = (sessions || []).filter((row) => normalizeModuleKey(row.module) === target)
+  if (!matching.length) return 0
+
+  const sessionIds = matching.map((row) => row.id)
+  const { error: recordsError } = await supabase
+    .from('attendance_records')
+    .delete()
+    .in('session_id', sessionIds)
+  if (recordsError) throw recordsError
+
+  const { error: sessionError } = await supabase
+    .from('attendance_sessions')
+    .delete()
+    .in('id', sessionIds)
+  if (sessionError) throw sessionError
+
+  return sessionIds.length
+}
+
 export async function dbMigrateLocalState(userId, localState) {
   for (const cls of localState.classes || []) {
     const created = await dbAddClass(userId, cls)

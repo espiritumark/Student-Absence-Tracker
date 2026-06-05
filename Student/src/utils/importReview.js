@@ -1,4 +1,4 @@
-import { findMatchingClass, formatClassLabel } from './classFormat'
+import { findMatchingClass, formatClassLabel, resolveImportClassLabel } from './classFormat'
 import { previewRosterImpact } from './attendanceStats'
 import { UI } from './uiCopy'
 import { findSessionKey, makeSessionKey, normalizeModuleKey } from './sessionKeys'
@@ -76,7 +76,7 @@ function prepareImportSummaryContext(
     existingRecords && Object.keys(existingRecords).length > 0,
   )
 
-  const classLabel = cls ? formatClassLabel(cls) : formatClassLabel(classMeta)
+  const classLabel = resolveImportClassLabel(classMeta, cls)
   const moduleLabel = normalizeModuleKey(module) || 'General session'
   const nameToId = new Map((cls?.students ?? []).map((st) => [normalizeName(st.name), st.id]))
   const nameToStudent = new Map((cls?.students ?? []).map((st) => [normalizeName(st.name), st]))

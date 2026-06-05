@@ -1,10 +1,10 @@
-import { Alert, Button, Form, Input, Modal, Typography } from 'antd'
+import { Alert, Button, Form, Input, Modal, Progress, Typography } from 'antd'
 import { useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { friendlyAuthError } from '../utils/authErrors'
 
 export default function AuthModal({ open, onClose, initialMode = 'signin' }) {
-  const { signIn, signUp } = useAuth()
+  const { signIn, signUp, transition } = useAuth()
   const [mode, setMode] = useState(initialMode)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -57,6 +57,17 @@ export default function AuthModal({ open, onClose, initialMode = 'signin' }) {
       className="auth-modal"
     >
       <div className="auth-modal-body">
+        {busy && mode === 'signin' && (
+          <div className="auth-modal-progress" aria-hidden={!transition}>
+            <Progress
+              percent={transition?.progress ?? 30}
+              status="active"
+              strokeColor="var(--primary)"
+              showInfo={false}
+            />
+          </div>
+        )}
+
         <Typography.Paragraph type="secondary" className="auth-modal-intro">
           {mode === 'signin'
             ? 'Access your classes and attendance from any device.'

@@ -1,11 +1,14 @@
 import { DownOutlined, LogoutOutlined } from '@ant-design/icons'
 import { Badge, Button, Dropdown, Space, Typography } from 'antd'
 import { useState } from 'react'
+import { useAppNotifier } from '../hooks/useAppNotifier'
 import { useAuth } from '../contexts/AuthContext'
+import { friendlyAuthError } from '../utils/authErrors'
 import { UI } from '../utils/uiCopy'
 import AuthModal from './AuthModal'
 
 export default function AuthPanel() {
+  const notify = useAppNotifier()
   const { user, cloudEnabled, signOut } = useAuth()
   const [modalOpen, setModalOpen] = useState(false)
   const [modalMode, setModalMode] = useState('signin')
@@ -44,8 +47,16 @@ export default function AuthPanel() {
           danger: true,
         },
       ],
-      onClick: ({ key }) => {
-        if (key === 'signout') signOut()
+      onClick: async ({ key }) => {
+        if (key !== 'signout') return
+        try {
+          await signOut()
+        } catch (err) {
+          notify.error({
+            title: 'Could not sign out',
+            description: friendlyAuthError(err.message),
+          })
+        }
       },
     }
 

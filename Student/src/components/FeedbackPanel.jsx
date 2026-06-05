@@ -1,5 +1,6 @@
-import { Alert, Button, Card, Checkbox, Input, Select, Space, Typography, message } from 'antd'
+import { Alert, Button, Card, Checkbox, Input, Select, Space, Typography } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
+import { useAppNotifier } from '../hooks/useAppNotifier'
 import { LEARNING_PARTNER } from '../constants/branding'
 import { getEffectiveAbsenceCounts } from '../utils/attendanceStats'
 import { composeFeedback, suggestAttendanceEmphasis } from '../utils/feedbackCompose'
@@ -19,6 +20,7 @@ import SearchableSelect from './SearchableSelect'
 import { UI } from '../utils/uiCopy'
 
 export default function FeedbackPanel({ classes = [], attendance = {} }) {
+  const notify = useAppNotifier()
   const [classId, setClassId] = useState('')
   const [partnerId, setPartnerId] = useState('')
   const [attendanceEmphasis, setAttendanceEmphasis] = useState(ATTENDANCE_EMPHASIS.auto)
@@ -98,7 +100,7 @@ export default function FeedbackPanel({ classes = [], attendance = {} }) {
 
   function handleGenerate() {
     if (!selectedPartner) {
-      message.warning(`Select a ${UI.learningPartner} first.`)
+      notify.warning({ title: `Select a ${UI.learningPartner} first.` })
       return
     }
     const text = composeFeedback({
@@ -114,7 +116,7 @@ export default function FeedbackPanel({ classes = [], attendance = {} }) {
 
   async function handleRefine() {
     if (!output.trim()) {
-      message.warning('Generate a draft first, or paste text to refine.')
+      notify.warning({ title: 'Generate a draft first, or paste text to refine.' })
       return
     }
     if (!selectedPartner || !selectedClass) return
@@ -128,9 +130,9 @@ export default function FeedbackPanel({ classes = [], attendance = {} }) {
         extraNotes,
       })
       setOutput(refined)
-      message.success('Feedback refined.')
+      notify.success({ title: 'Feedback refined.' })
     } catch (err) {
-      message.error(err.message || 'Could not refine feedback.')
+      notify.error({ title: err.message || 'Could not refine feedback.' })
     } finally {
       setRefining(false)
     }
@@ -138,14 +140,14 @@ export default function FeedbackPanel({ classes = [], attendance = {} }) {
 
   async function handleCopy() {
     if (!output.trim()) {
-      message.warning('Nothing to copy yet.')
+      notify.warning({ title: 'Nothing to copy yet.' })
       return
     }
     try {
       await navigator.clipboard.writeText(output)
-      message.success('Copied to clipboard.')
+      notify.success({ title: 'Copied to clipboard.' })
     } catch {
-      message.error('Could not copy — select the text and copy manually.')
+      notify.error({ title: 'Could not copy — select the text and copy manually.' })
     }
   }
 
@@ -162,7 +164,7 @@ export default function FeedbackPanel({ classes = [], attendance = {} }) {
         <div className="feedback-workspace-split">
           <div className="feedback-details-pane">
         <Card size="small" title="Select" className="feedback-panel-card">
-          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
             <FormField label="Class">
               <SearchableSelect
                 placeholder="Choose class…"
@@ -213,7 +215,7 @@ export default function FeedbackPanel({ classes = [], attendance = {} }) {
         </Card>
 
         <Card size="small" title={UI.traitsAndNotes} className="feedback-panel-card">
-          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
             <FormField label="Attendance in Feedback">
               <Select
                 value={attendanceEmphasis}

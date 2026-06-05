@@ -1,6 +1,7 @@
-import { Alert, Button, Checkbox, Empty, InputNumber, Space, Table, Tag, Typography } from 'antd'
+import { Button, Checkbox, Empty, InputNumber, Space, Table, Tag, Typography } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
-import { useAutoDismiss } from '../hooks/useAutoDismiss'
+import { useAppNotifier } from '../hooks/useAppNotifier'
+import { NOTIFIER_KEYS } from '../utils/appNotifications'
 import { useScrollRegionHeight } from '../hooks/useScrollRegionHeight'
 import { RISK_META, getOverallAbsenceRisk } from '../utils/absenceRisk'
 import { getEffectiveAbsenceCounts } from '../utils/attendanceStats'
@@ -99,6 +100,7 @@ export default function AbsenceBulkEditor({
   const [message, setMessage] = useState('')
   const [confirmClear, setConfirmClear] = useState(false)
   const [confirmSaveOpen, setConfirmSaveOpen] = useState(false)
+  const notify = useAppNotifier()
 
   const selectedClass = sortedClasses.find((c) => c.id === classId)
   const classAttendance = selectedClass ? attendance?.[selectedClass.id] || {} : {}
@@ -160,7 +162,26 @@ export default function AbsenceBulkEditor({
     onActivityChange?.({ busy, draftCount: changedCount })
   }, [busy, changedCount, onActivityChange])
 
-  useAutoDismiss(Boolean(message) && changedCount === 0, () => setMessage(''))
+  useEffect(() => {
+    if (!error) return
+    notify.error({
+      key: 'absence-bulk-error',
+      title: error,
+      duration: 8,
+    })
+  }, [error, notify])
+
+  useEffect(() => {
+    if (!busy) {
+      notify.destroy('absence-bulk-saving')
+      return
+    }
+    notify.progress({
+      key: 'absence-bulk-saving',
+      title: 'Saving absence changes',
+      description: 'Updating roster overrides…',
+    })
+  }, [busy, notify])
 
   useEffect(() => {
     if (!classId && sortedClasses[0]?.id) {
@@ -213,10 +234,15 @@ export default function AbsenceBulkEditor({
         }),
       )
       setDrafts({})
+      notify.success({
+        key: NOTIFIER_KEYS.absenceBulk,
+        title: `Saved absence changes for ${formatLpCount(updates.length)}.`,
+      })
       onClose?.()
     } catch (err) {
       const message = err.message || 'Failed to save changes.'
       setError(message)
+      notify.error({ key: 'absence-bulk-error', title: message, duration: 8 })
       recordActivity?.(
         buildActivityEntry({
           category: 'roster',
@@ -253,7 +279,10 @@ export default function AbsenceBulkEditor({
           },
         }))
       if (updates.length === 0) {
-        setMessage('No saved overrides to clear in this class.')
+        notify.info({
+          key: NOTIFIER_KEYS.absenceBulk,
+          title: 'No saved overrides to clear in this class.',
+        })
       } else {
         await bulkUpdateStudents(classId, updates)
         recordActivity?.(
@@ -267,12 +296,16 @@ export default function AbsenceBulkEditor({
           }),
         )
         setDrafts({})
-        setMessage(`Cleared overrides for ${updates.length} ${UI.learningPartners}.`)
+        notify.success({
+          key: NOTIFIER_KEYS.absenceBulk,
+          title: `Cleared overrides for ${updates.length} ${UI.learningPartners}.`,
+        })
       }
       setConfirmClear(false)
     } catch (err) {
       const message = err.message || 'Failed to clear overrides.'
       setError(message)
+      notify.error({ key: 'absence-bulk-error', title: message, duration: 8 })
       recordActivity?.(
         buildActivityEntry({
           category: 'roster',
@@ -397,8 +430,6 @@ export default function AbsenceBulkEditor({
         description={`Adjust total and streak for each ${UI.learningPartner} in the selected class. Values match ${UI.classesAndRosters} until you change them; confirm before saving.`}
       />
 
-      {message && <Alert type="success" showIcon title={message} className="import-alert-banner" />}
-
       <SaveFieldOverlay busy={busy} label="Saving changes…">
         <div className="workspace-body">
           <div className="bulk-absence-toolbar filter-toolbar">
@@ -418,8 +449,6 @@ export default function AbsenceBulkEditor({
               Only {UI.learningPartners} With Absence Counts
             </Checkbox>
           </div>
-
-          {error && <Alert type="error" showIcon title={error} className="import-alert-banner" />}
 
           {visibleStudents.length === 0 ? (
             <Empty description={`No ${UI.learningPartners} in this class yet.`} />

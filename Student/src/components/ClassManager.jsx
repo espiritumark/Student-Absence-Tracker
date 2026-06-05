@@ -34,6 +34,7 @@ export default function ClassManager({
   syncing = false,
   addClass,
   removeClass,
+  deleteModuleSessions,
   addStudent,
   removeStudent,
   importStudentsBulk,
@@ -471,6 +472,7 @@ export default function ClassManager({
                       setDeleteError('')
                       setDeleteOpen(true)
                     }}
+                    deleteModuleSessions={deleteModuleSessions}
                     addStudent={addStudent}
                     removeStudent={removeStudent}
                     importStudentsBulk={importStudentsBulk}

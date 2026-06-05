@@ -176,7 +176,14 @@ export function parseAttendanceJson(raw, options = {}) {
   const dateRaw = session.date ?? session.session_date ?? ''
   let date = parsePortalDate(String(dateRaw)) || parsePortalDate(classText)
 
-  const module = session.module ?? ''
+  const module = String(
+    session.module ??
+      session.Module ??
+      session.subject ??
+      session.module_name ??
+      session.moduleName ??
+      '',
+  ).trim()
   const startTime = session.start_time ?? session.startTime ?? ''
   const duration = session.duration ?? ''
 
@@ -215,10 +222,14 @@ export function parseAttendanceJson(raw, options = {}) {
 
   if (!date) {
     if (!lenient) {
-      throw new Error('session_details.date is required (e.g. 02/06/2026 as DD/MM/YYYY).')
+      throw new Error('session_details.date is required (e.g. 06/04/2026 as MM/DD/YYYY).')
     }
     date = dateKey()
     warnings.push('missing_date')
+  }
+
+  if (!module && lenient) {
+    warnings.push('missing_module')
   }
 
   return {

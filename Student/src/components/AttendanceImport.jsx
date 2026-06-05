@@ -1,32 +1,27 @@
 import {
-  Alert,
   Button,
   Checkbox,
-  DatePicker,
   Empty,
   Input,
   InputNumber,
-  Progress,
-  Result,
   Row,
   Col,
   Space,
   Table,
   Tag,
   Modal,
-  Segmented,
   Tabs,
   Typography,
   Upload,
 } from 'antd'
 import { ExclamationCircleFilled } from '@ant-design/icons'
-import dayjs from 'dayjs'
-import { useCallback, useEffect, useRef, useState, useMemo } from 'react'
+import { createElement, useCallback, useEffect, useRef, useState, useMemo } from 'react'
+import { useAppNotifier } from '../hooks/useAppNotifier'
+import { NOTIFIER_KEYS } from '../utils/appNotifications'
 import { formatSimilarityPercent } from '../utils/nameMatching'
-import { useAutoDismiss } from '../hooks/useAutoDismiss'
 import { useReportTabActivity } from '../hooks/useReportTabActivity'
 import { useScrollRegionHeight } from '../hooks/useScrollRegionHeight'
-import { formatClassLabel } from '../utils/classFormat'
+import { formatClassLabel, syncPartTimeFromClassLabel } from '../utils/classFormat'
 import { dateKey, formatDateLabel } from '../utils/dates'
 import { buildAttendanceLogFromSummary } from '../utils/activityLog'
 import {
@@ -40,15 +35,31 @@ import {
   runOcrJob,
   subscribeOcr,
 } from '../utils/ocrSession'
-import { RECOMMENDED_CLOUD_VISION } from '../../lib/cloudVisionDefaults.js'
 import { filterByNameSearch } from '../utils/tableNameSearch'
 import { UI, formatLpCount } from '../utils/uiCopy'
 import TableNameSearch from './TableNameSearch'
+import BulkScreenshotImport from './BulkScreenshotImport'
+import {
+  clearAllImportDraftSessions,
+  clearJsonImportSession,
+  clearScreenshotImportSession,
+  loadJsonImportSession,
+  loadScreenshotImportSession,
+  saveJsonImportSession,
+  saveScreenshotImportSession,
+} from '../utils/importDraftSession.js'
+import {
+  confirmImportNavigationLeave,
+  getImportTabActivity,
+} from '../utils/importDraftGuard.jsx'
+import {
+  hasJsonImportDraft,
+  hasScreenshotImportDraft,
+} from '../utils/importDraftState.js'
 import {
   fileToDataUrl,
   isVisionEngineConfigured,
   checkVisionLlmConnection,
-  isLocalVisionSetup,
   prewarmVisionModel,
   VISION_SCAN_ENGINE,
 } from '../utils/parseScreenshot'
@@ -58,17 +69,26 @@ import {
   hasUnresolvedSimilarNames,
   linkImportRowToRoster,
   markImportRowAsNewStudent,
+  mergeImportEnrichmentWithResolved,
   countSimilarPending,
   polishImportRow,
   needsSimilarReviewWarning,
   shouldShowRosterNameReplacement,
   topSimilarityScore,
 } from '../utils/importNameResolution'
+import ImportDateField from './ImportDateField'
 import ImportSaveConfirmModal from './ImportSaveConfirmModal'
 import SimilarNameResolveModal from './SimilarNameResolveModal'
 import BackButton from './BackButton'
+import ImportScanEngineSwitch from './ImportScanEngineSwitch'
+import ImportTabInfoTip from './ImportTabInfoTip'
 import PanelChrome from './PanelChrome'
 import SaveFieldOverlay from './SaveFieldOverlay'
+import { IMPORT_TAB_TIPS } from '../utils/importTabTips'
+import {
+  loadStoredScreenshotEngine,
+  storeScreenshotEngine,
+} from '../utils/screenshotEnginePreference'
 
 const emptyMeta = {
   intake: '',
@@ -87,91 +107,7 @@ function formatElapsed(seconds) {
   return m > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${s}s`
 }
 
-function ScanSpinner({ progress, stageLabel, elapsedSeconds = 0, progressStalled = false, onCancel }) {
-  const pct = Math.round((progress ?? 0) * 100)
-  return (
-    <div className="ocr-spinner" aria-live="polite">
-      <Progress type="circle" percent={pct} size={88} strokeColor="var(--primary)" />
-      <div className="ocr-spinner-text">
-        <Typography.Text strong>{stageLabel || 'Reading screenshot…'}</Typography.Text>
-        <Typography.Text type="secondary" style={{ display: 'block' }}>
-          {pct}% complete · {formatElapsed(elapsedSeconds)} elapsed
-        </Typography.Text>
-        <Progress percent={pct} showInfo={false} style={{ marginTop: 8 }} />
-        {progressStalled && (
-          <Typography.Text type="warning" style={{ display: 'block', fontSize: '0.85rem' }}>
-            Still working — large screenshots can take a minute with vision AI.
-          </Typography.Text>
-        )}
-        {onCancel && (
-          <Button size="small" style={{ marginTop: 8 }} onClick={onCancel}>
-            Cancel Scan
-          </Button>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function SaveSuccess({
-  meta,
-  classLabel,
-  savedCount,
-  resetCountdown,
-  onGoToWarnings,
-  onImportAnother,
-}) {
-  return (
-    <Result
-      status="success"
-      title={UI.attendanceSaved}
-      subTitle={
-        <>
-          <strong>{formatDateLabel(meta.date)}</strong>
-          {classLabel && <> — {classLabel}</>}
-        </>
-      }
-      extra={
-        <div className="import-save-success-extra">
-          <Typography.Paragraph style={{ marginBottom: 0 }}>
-            {formatLpCount(savedCount.total)} ·{' '}
-            <Typography.Text type={savedCount.absent > 0 ? 'danger' : undefined} strong>
-              {savedCount.absent} absent
-            </Typography.Text>
-          </Typography.Paragraph>
-          {resetCountdown > 0 && (
-            <Typography.Text type="secondary" className="import-save-success-reset">
-              Ready for the next import in {resetCountdown}s — or use a button below.
-            </Typography.Text>
-          )}
-          <Space wrap className="import-save-success-actions">
-            {savedCount.absent > 0 && (
-              <Button type="primary" onClick={onGoToWarnings}>
-                {UI.viewDashboard}
-              </Button>
-            )}
-            <Button onClick={onImportAnother}>{UI.importAnotherNow}</Button>
-          </Space>
-        </div>
-      }
-    />
-  )
-}
-
 const SUCCESS_RESET_SECONDS = 5
-const SCREENSHOT_ENGINE_STORAGE_KEY = 'lp-hub-screenshot-engine'
-
-function loadStoredScreenshotEngine() {
-  try {
-    const stored = localStorage.getItem(SCREENSHOT_ENGINE_STORAGE_KEY)
-    if (stored === VISION_SCAN_ENGINE.cloud && isVisionEngineConfigured(VISION_SCAN_ENGINE.cloud)) {
-      return VISION_SCAN_ENGINE.cloud
-    }
-  } catch {
-    // ignore
-  }
-  return VISION_SCAN_ENGINE.local
-}
 
 export default function AttendanceImport({
   importPortalSession,
@@ -181,8 +117,10 @@ export default function AttendanceImport({
   isActive = true,
   onGoToWarnings,
   onTabActivityChange,
+  navigationGuardRef,
 }) {
   const [importMode, setImportMode] = useState('json')
+  const bulkLeaveGuardRef = useRef(null)
   const [jsonText, setJsonText] = useState('')
   const [pendingScreenshot, setPendingScreenshot] = useState(null)
   const pasteZoneRef = useRef(null)
@@ -208,7 +146,6 @@ export default function AttendanceImport({
   const [confirmError, setConfirmError] = useState('')
   const [saving, setSaving] = useState(false)
   const [parseMessage, setParseMessage] = useState('')
-  const [jsonExportMessage, setJsonExportMessage] = useState('')
   const [resetCountdown, setResetCountdown] = useState(0)
   const [importView, setImportView] = useState('input')
   const [importWarnings, setImportWarnings] = useState([])
@@ -216,41 +153,53 @@ export default function AttendanceImport({
   const [lastScanModalOpen, setLastScanModalOpen] = useState(false)
   const [similarModalKey, setSimilarModalKey] = useState(null)
   const [reviewNameSearch, setReviewNameSearch] = useState('')
+  const [bulkPanelActivity, setBulkPanelActivity] = useState(null)
+  const [jsonDraftRestored, setJsonDraftRestored] = useState(false)
+  const [screenshotDraftRestored, setScreenshotDraftRestored] = useState(false)
   const savedRef = useRef(false)
+  const savedNotifyRef = useRef(false)
+  const jsonDraftNotifyRef = useRef(false)
+  const screenshotDraftNotifyRef = useRef(false)
   const screenshotSessionRef = useRef(null)
+  const jsonSessionRef = useRef(null)
+  const notify = useAppNotifier()
+
+  const jsonHasDraft = hasJsonImportDraft({
+    jsonText,
+    reviewSource,
+    studentsLength: students.length,
+  })
+  const screenshotHasDraft = hasScreenshotImportDraft({
+    pendingScreenshot,
+    lastScannedScreenshot,
+    reviewSource,
+    studentsLength: students.length,
+  })
 
   const hasUnsavedDraft = useCallback(() => {
-    return (
-      students.length > 0 ||
-      Boolean(jsonText.trim()) ||
-      Boolean(pendingScreenshot) ||
-      processing
-    )
-  }, [students.length, jsonText, pendingScreenshot, processing])
+    return jsonHasDraft || screenshotHasDraft || processing
+  }, [jsonHasDraft, screenshotHasDraft, processing])
+
+  useEffect(() => {
+    const json = loadJsonImportSession()
+    if (json) jsonSessionRef.current = json
+    const shot = loadScreenshotImportSession()
+    if (shot) screenshotSessionRef.current = shot
+  }, [])
 
   const resetJsonImportReview = useCallback(() => {
     setStudents([])
     setMeta(emptyMeta)
     setParseMessage('')
-    setJsonExportMessage('')
     setError('')
     setReviewSource(null)
     setImportWarnings([])
     setImportView('input')
   }, [])
 
-  const snapshotScreenshotSession = useCallback(() => {
-    const hasScreenshotWork =
-      lastScannedScreenshot ||
-      pendingScreenshot ||
-      (reviewSource === 'screenshot' && students.length > 0)
-
-    if (!hasScreenshotWork) {
-      screenshotSessionRef.current = null
-      return
-    }
-
-    screenshotSessionRef.current = {
+  const buildScreenshotSnapshot = useCallback(() => {
+    if (!screenshotHasDraft) return null
+    return {
       students,
       meta,
       importView,
@@ -263,6 +212,7 @@ export default function AttendanceImport({
       portalJson: reviewSource === 'screenshot' ? jsonText : '',
     }
   }, [
+    screenshotHasDraft,
     students,
     meta,
     importView,
@@ -275,10 +225,22 @@ export default function AttendanceImport({
     jsonText,
   ])
 
+  const snapshotScreenshotSession = useCallback(() => {
+    const snap = buildScreenshotSnapshot()
+    if (!snap) {
+      screenshotSessionRef.current = null
+      clearScreenshotImportSession()
+      return
+    }
+    screenshotSessionRef.current = snap
+    saveScreenshotImportSession(snap)
+  }, [buildScreenshotSnapshot])
+
   const restoreScreenshotSession = useCallback(() => {
-    const snap = screenshotSessionRef.current
+    const snap = screenshotSessionRef.current || loadScreenshotImportSession()
     if (!snap) return
 
+    screenshotSessionRef.current = snap
     setStudents(snap.students ?? [])
     setMeta(snap.meta ?? emptyMeta)
     setImportView(snap.importView ?? 'input')
@@ -288,11 +250,14 @@ export default function AttendanceImport({
     setLastScannedScreenshot(snap.lastScannedScreenshot ?? null)
     setPendingScreenshot(snap.pendingScreenshot ?? null)
     setPreviewUrl(snap.previewUrl ?? null)
+    if (snap.portalJson) setJsonText(snap.portalJson)
     setError('')
+    setScreenshotDraftRestored(true)
   }, [])
 
   const clearScreenshotSession = useCallback(() => {
     screenshotSessionRef.current = null
+    clearScreenshotImportSession()
     setLastScannedScreenshot(null)
     setPendingScreenshot(null)
     setPreviewUrl(null)
@@ -304,15 +269,71 @@ export default function AttendanceImport({
     setParseMessage('')
     setError('')
     setLastScanModalOpen(false)
+    setScreenshotDraftRestored(false)
+  }, [])
+
+  const buildJsonSnapshot = useCallback(() => {
+    if (!jsonHasDraft) return null
+    return {
+      jsonText,
+      students: reviewSource === 'json' ? students : [],
+      meta: reviewSource === 'json' ? meta : emptyMeta(),
+      importView: reviewSource === 'json' ? importView : 'input',
+      importWarnings: reviewSource === 'json' ? importWarnings : [],
+      parseMessage: reviewSource === 'json' ? parseMessage : '',
+      reviewSource: reviewSource === 'json' ? reviewSource : null,
+    }
+  }, [jsonHasDraft, jsonText, students, meta, importView, importWarnings, parseMessage, reviewSource])
+
+  const snapshotJsonSession = useCallback(() => {
+    const snap = buildJsonSnapshot()
+    if (!snap) {
+      jsonSessionRef.current = null
+      clearJsonImportSession()
+      return
+    }
+    jsonSessionRef.current = snap
+    saveJsonImportSession(snap)
+  }, [buildJsonSnapshot])
+
+  const restoreJsonSession = useCallback(() => {
+    const snap = jsonSessionRef.current || loadJsonImportSession()
+    if (!snap) return
+
+    jsonSessionRef.current = snap
+    setJsonText(snap.jsonText ?? '')
+    setStudents(snap.students ?? [])
+    setMeta(snap.meta ?? emptyMeta)
+    setImportView(snap.importView ?? 'input')
+    setImportWarnings(snap.importWarnings ?? [])
+    setParseMessage(snap.parseMessage ?? '')
+    setReviewSource(snap.reviewSource ?? null)
+    setError('')
+    setJsonDraftRestored(true)
+  }, [])
+
+  const clearJsonSession = useCallback(() => {
+    jsonSessionRef.current = null
+    clearJsonImportSession()
+    setJsonText('')
+    setJsonDraftRestored(false)
   }, [])
 
   const handleImportModeChange = useCallback(
-    (mode) => {
+    async (mode) => {
       if (mode === importMode) return
 
-      if (importMode === 'screenshot') {
-        snapshotScreenshotSession()
-      }
+      const ok = await confirmImportNavigationLeave({
+        fromMode: importMode,
+        bulkLeaveGuard: bulkLeaveGuardRef.current,
+        processing: importMode === 'screenshot' && processing,
+        hasJsonDraft: importMode === 'json' && jsonHasDraft,
+        hasScreenshotDraft: importMode === 'screenshot' && screenshotHasDraft,
+      })
+      if (!ok) return
+
+      if (importMode === 'json') snapshotJsonSession()
+      if (importMode === 'screenshot') snapshotScreenshotSession()
 
       resetJsonImportReview()
 
@@ -321,22 +342,105 @@ export default function AttendanceImport({
         setPreviewUrl(null)
         setLastScannedScreenshot(null)
         setLastScanModalOpen(false)
-        if (importMode === 'screenshot') {
-          setJsonText('')
-        }
-      } else {
+        restoreJsonSession()
+      } else if (mode === 'screenshot') {
+        setJsonText('')
         restoreScreenshotSession()
+      } else {
+        setJsonText('')
+        setPendingScreenshot(null)
+        setPreviewUrl(null)
+        setLastScannedScreenshot(null)
+        setLastScanModalOpen(false)
       }
 
       setImportMode(mode)
     },
     [
       importMode,
+      processing,
+      jsonHasDraft,
+      screenshotHasDraft,
+      snapshotJsonSession,
       snapshotScreenshotSession,
       resetJsonImportReview,
+      restoreJsonSession,
       restoreScreenshotSession,
     ],
   )
+
+  useEffect(() => {
+    if (!navigationGuardRef) return undefined
+    navigationGuardRef.current = async (targetTabId) => {
+      if (targetTabId === 'import') return true
+      return confirmImportNavigationLeave({
+        fromMode: importMode,
+        bulkLeaveGuard: bulkLeaveGuardRef.current,
+        processing: importMode === 'screenshot' && processing,
+        hasJsonDraft: importMode === 'json' && jsonHasDraft,
+        hasScreenshotDraft: importMode === 'screenshot' && screenshotHasDraft,
+      })
+    }
+    return () => {
+      navigationGuardRef.current = null
+    }
+  }, [
+    navigationGuardRef,
+    importMode,
+    processing,
+    jsonHasDraft,
+    screenshotHasDraft,
+  ])
+
+  useEffect(() => {
+    if (importMode !== 'json') return undefined
+    const t = setTimeout(() => {
+      if (jsonHasDraft) {
+        const snap = buildJsonSnapshot()
+        if (snap) {
+          jsonSessionRef.current = snap
+          saveJsonImportSession(snap)
+        }
+      } else {
+        clearJsonImportSession()
+      }
+    }, 400)
+    return () => clearTimeout(t)
+  }, [
+    importMode,
+    jsonHasDraft,
+    buildJsonSnapshot,
+    jsonText,
+    students,
+    meta,
+    importView,
+    importWarnings,
+    parseMessage,
+    reviewSource,
+  ])
+
+  useEffect(() => {
+    if (importMode !== 'screenshot') return undefined
+    const t = setTimeout(() => {
+      if (screenshotHasDraft) {
+        snapshotScreenshotSession()
+      } else {
+        clearScreenshotImportSession()
+      }
+    }, 400)
+    return () => clearTimeout(t)
+  }, [
+    importMode,
+    screenshotHasDraft,
+    snapshotScreenshotSession,
+    students,
+    meta,
+    importView,
+    pendingScreenshot,
+    lastScannedScreenshot,
+    previewUrl,
+    reviewSource,
+  ])
 
   const backFromReview = useCallback(() => {
     if (reviewSource === 'json') {
@@ -360,7 +464,6 @@ export default function AttendanceImport({
     setJsonText('')
     setError('')
     setParseMessage('')
-    setJsonExportMessage('')
     setImportMode('json')
     setImportView('input')
     setConfirmOpen(false)
@@ -370,6 +473,10 @@ export default function AttendanceImport({
     setReviewSource(null)
     setImportWarnings([])
     screenshotSessionRef.current = null
+    jsonSessionRef.current = null
+    clearAllImportDraftSessions()
+    setJsonDraftRestored(false)
+    setScreenshotDraftRestored(false)
   }, [])
 
   useEffect(() => {
@@ -404,22 +511,55 @@ export default function AttendanceImport({
     }
   }, [isActive, hasUnsavedDraft, resetToFreshForm])
 
-  useAutoDismiss(Boolean(parseMessage) && !hasUnsavedDraft(), () => setParseMessage(''))
-  useAutoDismiss(Boolean(jsonExportMessage), () => setJsonExportMessage(''))
+  useEffect(() => {
+    if (!error) return
+    notify.error({
+      key: NOTIFIER_KEYS.importError,
+      title: error,
+      duration: 8,
+    })
+  }, [error, notify])
+
+  useEffect(() => {
+    if (!jsonDraftRestored || !jsonHasDraft || jsonDraftNotifyRef.current) return
+    jsonDraftNotifyRef.current = true
+    notify.draft({
+      key: NOTIFIER_KEYS.importDraftJson,
+      title: 'JSON draft restored',
+      description:
+        'Your pasted JSON and review data from this browser session were loaded. Save to your roster when review is complete.',
+      onClose: () => setJsonDraftRestored(false),
+    })
+  }, [jsonDraftRestored, jsonHasDraft, notify])
+
+  useEffect(() => {
+    if (!screenshotDraftRestored || !screenshotHasDraft || screenshotDraftNotifyRef.current) return
+    screenshotDraftNotifyRef.current = true
+    notify.draft({
+      key: NOTIFIER_KEYS.importDraftScreenshot,
+      title: 'Screenshot draft restored',
+      description:
+        'Your screenshot preview and scan review from this browser session were loaded. Save to your roster when review is complete.',
+      onClose: () => setScreenshotDraftRestored(false),
+    })
+  }, [screenshotDraftRestored, screenshotHasDraft, notify])
 
   const applyParsed = useCallback(
     (parsed, source = 'json') => {
       const cm = parsed.meta.classMeta
-      const nextMeta = {
-        intake: cm?.intake ?? '',
-        level: cm?.level ?? '',
-        qualification: cm?.qualification ?? parsed.meta.classLabel ?? '',
-        group: cm?.group ?? '',
-        date: parsed.meta.date || dateKey(),
-        module: parsed.meta.module || '',
-        startTime: parsed.meta.startTime || '',
-        duration: parsed.meta.duration || '',
-      }
+      const nextMeta = syncPartTimeFromClassLabel(
+        {
+          intake: cm?.intake ?? '',
+          level: cm?.level ?? '',
+          qualification: cm?.qualification ?? parsed.meta.classLabel ?? '',
+          group: cm?.group ?? '',
+          date: parsed.meta.date || dateKey(),
+          module: parsed.meta.module || '',
+          startTime: parsed.meta.startTime || '',
+          duration: parsed.meta.duration || '',
+        },
+        parsed.meta.classLabel ?? '',
+      )
       const enriched = enrichImportStudentsWithRoster(parsed.students, classes, nextMeta)
       const pendingSimilar = countSimilarPending(enriched)
       const warnings = parsed.warnings ?? []
@@ -444,6 +584,8 @@ export default function AttendanceImport({
         message = `${source === 'screenshot' ? 'Scanned' : 'Parsed'} ${studentWord}. ${pendingSimilar} name${pendingSimilar === 1 ? '' : 's'} under 95% match need review in the table.`
       } else if (missingClass && source === 'screenshot') {
         message = `Scanned ${studentWord}. Class header was not detected — fill Intake, Level, Group, and Programme below before saving.`
+      } else if (warnings.includes('missing_module') && source === 'screenshot') {
+        message = `Scanned ${studentWord}. Module not detected — enter the module/subject line before saving.`
       } else if (source === 'screenshot') {
         message = `Scanned ${studentWord}. Review attendance in the table below, then save.`
       } else {
@@ -454,9 +596,13 @@ export default function AttendanceImport({
       }
 
       setParseMessage(message)
+      notify.success({
+        key: NOTIFIER_KEYS.importParse,
+        title: message,
+      })
       setImportView('review')
     },
-    [classes],
+    [classes, notify],
   )
 
   const applyFromExtractedJson = useCallback(
@@ -504,21 +650,7 @@ export default function AttendanceImport({
         present: row.present,
       }))
       const enriched = enrichImportStudentsWithRoster(base, classes, meta)
-
-      return enriched.map((fresh) => {
-        const prev = current.find(
-          (p) =>
-            p.index === fresh.index &&
-            (p.importName || p.name) === (fresh.importName || fresh.name),
-        )
-        if (prev?.matchStatus === 'exact' || prev?.matchStatus === 'new') {
-          return prev
-        }
-        if (prev?.matchStatus === 'linked_roster') {
-          return polishImportRow(prev)
-        }
-        return fresh
-      }).map(polishImportRow)
+      return mergeImportEnrichmentWithResolved(current, enriched)
     })
   }, [meta.intake, meta.level, meta.group, meta.qualification, classes, importView])
 
@@ -561,7 +693,8 @@ export default function AttendanceImport({
   }, [importMode])
 
   useEffect(() => {
-    if (importMode !== 'screenshot' || !isVisionEngineConfigured(screenshotEngine)) {
+    const usesVision = importMode === 'screenshot' || importMode === 'bulk-screenshots'
+    if (!usesVision || !isVisionEngineConfigured(screenshotEngine)) {
       setVisionConnection(null)
       return undefined
     }
@@ -581,11 +714,7 @@ export default function AttendanceImport({
 
   function handleScreenshotEngineChange(value) {
     setScreenshotEngine(value)
-    try {
-      localStorage.setItem(SCREENSHOT_ENGINE_STORAGE_KEY, value)
-    } catch {
-      // ignore
-    }
+    storeScreenshotEngine(value)
   }
 
   const stageScreenshot = useCallback(async (file) => {
@@ -782,6 +911,8 @@ export default function AttendanceImport({
     setPendingImport(null)
     setConfirmSummary(null)
     setConfirmError('')
+    if (reviewSource === 'json') clearJsonSession()
+    if (reviewSource === 'screenshot') clearScreenshotSession()
   }
 
   async function handleSave(e) {
@@ -850,9 +981,15 @@ export default function AttendanceImport({
     const json = buildPortalJson(meta, students)
     try {
       await navigator.clipboard.writeText(json)
-      setJsonExportMessage('JSON copied to clipboard.')
+      notify.success({
+        key: NOTIFIER_KEYS.importExport,
+        title: 'JSON copied to clipboard.',
+      })
     } catch {
-      setJsonExportMessage('Could not copy JSON. Try downloading instead.')
+      notify.warning({
+        key: NOTIFIER_KEYS.importExport,
+        title: 'Could not copy JSON. Try downloading instead.',
+      })
     }
   }
 
@@ -866,7 +1003,10 @@ export default function AttendanceImport({
     anchor.download = `attendance-${meta.date || 'export'}.json`
     anchor.click()
     URL.revokeObjectURL(url)
-    setJsonExportMessage('JSON file downloaded.')
+    notify.success({
+      key: NOTIFIER_KEYS.importExport,
+      title: 'JSON file downloaded.',
+    })
   }
 
   const classLabel =
@@ -919,28 +1059,201 @@ export default function AttendanceImport({
     return students.find((r) => importRowKey(r) === similarModalKey) ?? null
   }, [similarModalKey, students])
 
-  const importTabActivity = useMemo(() => {
-    if (saving || processing) return 'processing'
-    if (students.length > 0 || jsonText.trim() || pendingScreenshot) return 'draft'
-    return null
-  }, [saving, processing, students.length, jsonText, pendingScreenshot])
+  const importTabActivity = useMemo(
+    () =>
+      getImportTabActivity({
+        importMode,
+        bulkPanelActivity,
+        saving,
+        processing,
+        hasJsonDraft: jsonHasDraft,
+        hasScreenshotDraft: screenshotHasDraft,
+      }),
+    [
+      importMode,
+      bulkPanelActivity,
+      saving,
+      processing,
+      jsonHasDraft,
+      screenshotHasDraft,
+    ],
+  )
 
   useReportTabActivity('import', importTabActivity, onTabActivityChange)
 
-  if (saved) {
-    return (
-      <section className="panel portal-panel workspace-panel">
-        <SaveSuccess
-          meta={meta}
-          classLabel={classLabel}
-          savedCount={savedCount}
-          resetCountdown={resetCountdown}
-          onGoToWarnings={handleGoToDashboard}
-          onImportAnother={handleImportAnother}
-        />
-      </section>
-    )
-  }
+  useEffect(() => {
+    if (!saved) {
+      savedNotifyRef.current = false
+      return
+    }
+    if (savedNotifyRef.current) return
+    savedNotifyRef.current = true
+    notify.success({
+      key: NOTIFIER_KEYS.importSave,
+      title: UI.attendanceSaved,
+      description: (
+        <>
+          <strong>{formatDateLabel(meta.date)}</strong>
+          {classLabel ? ` — ${classLabel}` : ''}
+          <br />
+          {formatLpCount(savedCount.total)} · {savedCount.absent} absent
+          {resetCountdown > 0 ? ` · Next import in ${resetCountdown}s` : ''}
+        </>
+      ),
+      duration: 8,
+      btn:
+        savedCount.absent > 0
+          ? createElement(
+              Button,
+              { size: 'small', type: 'primary', onClick: handleGoToDashboard },
+              UI.viewDashboard,
+            )
+          : undefined,
+    })
+  }, [
+    saved,
+    meta.date,
+    classLabel,
+    savedCount,
+    resetCountdown,
+    notify,
+    handleGoToDashboard,
+  ])
+
+  useEffect(() => {
+    if (importMode !== 'screenshot') {
+      notify.destroy(NOTIFIER_KEYS.importVision)
+      return
+    }
+    if (visionConnection?.ok === false) {
+      notify.error({
+        key: NOTIFIER_KEYS.importVision,
+        title:
+          screenshotEngine === VISION_SCAN_ENGINE.local
+            ? 'Ollama is not reachable'
+            : 'Cloud API unavailable',
+        description: visionConnection.message,
+        duration: 0,
+        minimizable: true,
+      })
+      return
+    }
+    if (isVisionEngineConfigured(screenshotEngine) && !visionConnection?.ok) {
+      notify.progress({
+        key: NOTIFIER_KEYS.importVision,
+        title: 'Checking vision AI connection',
+        description:
+          screenshotEngine === VISION_SCAN_ENGINE.local
+            ? 'Connecting to Ollama on this device…'
+            : 'Connecting to cloud vision API…',
+      })
+      return
+    }
+    notify.destroy(NOTIFIER_KEYS.importVision)
+  }, [importMode, screenshotEngine, visionConnection, notify])
+
+  useEffect(() => {
+    const showPending =
+      reviewSource === 'screenshot' &&
+      students.length > 0 &&
+      importView === 'input' &&
+      !processing
+    if (!showPending) {
+      notify.destroy(NOTIFIER_KEYS.importReviewPending)
+      return
+    }
+    notify.draft({
+      key: NOTIFIER_KEYS.importReviewPending,
+      title: `Screenshot scan review — ${formatLpCount(students.length)}`,
+      description: 'Continue review before saving to your roster.',
+      duration: 0,
+      minimizable: true,
+      btn: createElement(
+        Button,
+        { size: 'small', type: 'primary', onClick: () => setImportView('review') },
+        UI.continueReview,
+      ),
+    })
+  }, [reviewSource, students.length, importView, processing, notify])
+
+  useEffect(() => {
+    if (!processing) {
+      notify.destroy(NOTIFIER_KEYS.screenshotScan)
+      return undefined
+    }
+    const pct = Math.round((ocrProgress ?? 0) * 100)
+    const stalledNote = ocrProgressStalled
+      ? 'Still working — large screenshots can take a minute.'
+      : null
+    notify.progress({
+      key: NOTIFIER_KEYS.screenshotScan,
+      title: ocrStageLabel || 'Reading screenshot…',
+      description: (
+        <>
+          <div>
+            {pct}% complete · {formatElapsed(ocrElapsedSeconds)} elapsed
+          </div>
+          {stalledNote && (
+            <Typography.Text type="warning" style={{ fontSize: '0.82rem' }}>
+              {stalledNote}
+            </Typography.Text>
+          )}
+        </>
+      ),
+      btn: createElement(Button, { size: 'small', onClick: handleCancelOcr }, 'Cancel scan'),
+    })
+    return undefined
+  }, [
+    processing,
+    ocrProgress,
+    ocrStageLabel,
+    ocrElapsedSeconds,
+    ocrProgressStalled,
+    notify,
+  ])
+
+  useEffect(() => {
+    if (!showReview || similarPendingCount <= 0) {
+      notify.destroy('import-similar-names')
+      return
+    }
+    notify.warning({
+      key: 'import-similar-names',
+      title: `${similarPendingCount} name${similarPendingCount === 1 ? '' : 's'} under 95% match`,
+      description: 'Click Review in the table to confirm each match before saving.',
+      duration: 0,
+      minimizable: true,
+    })
+  }, [showReview, similarPendingCount, notify])
+
+  useEffect(() => {
+    if (!showReview || !importWarnings.includes('missing_class')) {
+      notify.destroy('import-missing-class')
+      return
+    }
+    notify.warning({
+      key: 'import-missing-class',
+      title: 'Class header not detected from screenshot',
+      description: 'Enter Intake, Level, Group, and Programme below before saving.',
+      duration: 0,
+      minimizable: true,
+    })
+  }, [showReview, importWarnings, notify])
+
+  useEffect(() => {
+    if (!showReview || !importWarnings.includes('missing_module')) {
+      notify.destroy('import-missing-module')
+      return
+    }
+    notify.warning({
+      key: 'import-missing-module',
+      title: 'Module not detected from screenshot',
+      description:
+        'Enter the module/subject line (e.g. L5CPT | SECURITY) before saving. Without it, attendance saves as a general session.',
+      duration: 0,
+      minimizable: true,
+    })
+  }, [showReview, importWarnings, notify])
 
   return (
     <section className="panel portal-panel workspace-panel">
@@ -950,45 +1263,70 @@ export default function AttendanceImport({
         </div>
       )}
 
-      <PanelChrome
-        title="Record Attendance"
-        description={
-          <span>
-            Use <strong>Screenshot</strong> for vision AI import, or <strong>JSON</strong> to paste
-            portal export manually if a scan fails.
-          </span>
-        }
-      />
-
-      {showReview && parseMessage && (
-        <div className="import-review-banner-stack">
-          <Alert
-            type="success"
-            showIcon
-            className="import-alert-banner"
-            title={parseMessage}
-          />
-        </div>
-      )}
+      <PanelChrome title="Record Attendance" />
 
       <div className="import-workspace">
       {showImportInput && (
       <div className="import-mode-region">
       <Tabs
         activeKey={importMode}
-        onChange={handleImportModeChange}
+        onChange={(mode) => {
+          handleImportModeChange(mode)
+        }}
         items={[
-          { key: 'json', label: 'JSON' },
-          { key: 'screenshot', label: 'Screenshot' },
+          {
+            key: 'json',
+            label: (
+              <span className="import-tab-label">
+                JSON
+                <ImportTabInfoTip tabId="json" active={importMode === 'json'} {...IMPORT_TAB_TIPS.json} />
+              </span>
+            ),
+          },
+          {
+            key: 'screenshot',
+            label: (
+              <span className="import-tab-label">
+                Screenshot
+                <ImportTabInfoTip
+                  tabId="screenshot"
+                  active={importMode === 'screenshot'}
+                  {...IMPORT_TAB_TIPS.screenshot}
+                />
+              </span>
+            ),
+          },
+          {
+            key: 'bulk-screenshots',
+            label: (
+              <span className="import-tab-label">
+                Bulk Screenshots <Tag className="import-tab-beta-tag">Beta</Tag>
+                <ImportTabInfoTip
+                  tabId="bulk-screenshots"
+                  active={importMode === 'bulk-screenshots'}
+                  {...IMPORT_TAB_TIPS['bulk-screenshots']}
+                />
+              </span>
+            ),
+          },
         ]}
         className="import-tabs"
       />
 
-      {importMode === 'json' ? (
+      {importMode === 'bulk-screenshots' ? (
+        <BulkScreenshotImport
+          classes={classes}
+          attendance={attendance}
+          importPortalSession={importPortalSession}
+          recordAction={recordAction}
+          onActivityChange={setBulkPanelActivity}
+          leaveGuardRef={bulkLeaveGuardRef}
+          screenshotEngine={screenshotEngine}
+          onScreenshotEngineChange={handleScreenshotEngineChange}
+          cloudScanConfigured={cloudScanConfigured}
+        />
+      ) : importMode === 'json' ? (
         <div className="json-import-panel">
-          <Typography.Paragraph type="secondary" className="json-import-hint">
-            Paste JSON exported from your attendance platform, or upload a <code>.json</code> file.
-          </Typography.Paragraph>
           <div className="json-import-textarea-wrap">
             <Input.TextArea
               className="json-import-textarea"
@@ -1019,99 +1357,13 @@ export default function AttendanceImport({
         </div>
       ) : (
         <div className="import-screenshot-panel">
-          <div className="import-scan-engine-row">
-            <Typography.Text className="import-scan-engine-label">Scan using</Typography.Text>
-            <Segmented
-              className="import-scan-engine"
-              value={screenshotEngine}
-              onChange={handleScreenshotEngineChange}
-              options={[
-                { label: UI.scanEngineThisDevice, value: VISION_SCAN_ENGINE.local },
-                {
-                  label: (
-                    <span className="import-scan-engine-cloud-label">
-                      {UI.scanEngineCloud}
-                      {!cloudScanConfigured && (
-                        <Tag className="import-scan-engine-tag">Setup</Tag>
-                      )}
-                    </span>
-                  ),
-                  value: VISION_SCAN_ENGINE.cloud,
-                  disabled: !cloudScanConfigured,
-                },
-              ]}
-            />
-          </div>
-          <Typography.Paragraph type="secondary" className="import-scan-engine-hint">
-            {screenshotEngine === VISION_SCAN_ENGINE.local
-              ? 'Runs Ollama on this computer — free and private. Best for daily use while developing.'
-              : `${RECOMMENDED_CLOUD_VISION.label} via OpenRouter — free on Vercel. Add VISION_CLOUD_API_KEY from openrouter.ai/settings/keys (see DEPLOY.md).`}
-          </Typography.Paragraph>
-
-          {isVisionEngineConfigured(screenshotEngine) ? (
-            visionConnection?.ok === false ? (
-              <Alert
-                type="error"
-                showIcon
-                className="import-alert-banner"
-                title={
-                  screenshotEngine === VISION_SCAN_ENGINE.local
-                    ? 'Ollama Is Not Reachable'
-                    : 'Cloud API Unavailable'
-                }
-                description={visionConnection.message}
-              />
-            ) : (
-              <Alert
-                type="success"
-                showIcon
-                className="import-alert-banner"
-                title="Vision AI Ready — full screenshot scan (class, names, checkboxes)."
-                description={
-                  visionConnection?.ok
-                    ? isLocalVisionSetup(screenshotEngine)
-                      ? 'Paste your screenshot and scan. First scan may take a minute on CPU — keep this tab open so the model stays loaded. For fastest import, paste Copilot JSON on the JSON tab.'
-                      : `Paste your portal screenshot and click ${UI.scanScreenshot}. Attendance opens in the review table (same as JSON import).`
-                    : screenshotEngine === VISION_SCAN_ENGINE.local
-                      ? 'Checking connection to Ollama…'
-                      : 'Checking cloud API…'
-                }
-              />
-            )
-          ) : (
-            <Alert
-              type="warning"
-              showIcon
-              className="import-alert-banner"
-              title="Vision AI Is Not Configured"
-              description={
-                <>
-                  Add <code>VITE_VISION_LLM_*</code> to your <code>.env</code> file. For free local
-                  scanning, install Ollama and run <code>ollama pull qwen2.5vl:7b</code> (see{' '}
-                  <code>.env.example</code>).
-                </>
-              }
-            />
-          )}
-
-          {!processing ? (
+          <ImportScanEngineSwitch
+            value={screenshotEngine}
+            onChange={handleScreenshotEngineChange}
+            cloudConfigured={cloudScanConfigured}
+          />
+          <SaveFieldOverlay busy={processing} label="Scanning screenshot…">
             <>
-              {reviewSource === 'screenshot' &&
-                students.length > 0 &&
-                importView === 'input' && (
-                  <Alert
-                    type="info"
-                    showIcon
-                    className="import-alert-banner import-alert-with-action"
-                    title={`Screenshot Scan Review — ${formatLpCount(students.length)}`}
-                    action={
-                      <Button size="small" type="primary" onClick={() => setImportView('review')}>
-                        {UI.continueReview}
-                      </Button>
-                    }
-                  />
-                )}
-
               {lastScannedScreenshot && (
                 <div className="import-screenshot-toolbar">
                   <Button onClick={() => setLastScanModalOpen(true)}>View Last Scanned Screenshot</Button>
@@ -1180,27 +1432,10 @@ export default function AttendanceImport({
                 {pendingScreenshot && <Button type="link" onClick={clearPendingScreenshot}>Clear</Button>}
               </Space>
             </>
-          ) : (
-            <ScanSpinner
-              progress={ocrProgress}
-              stageLabel={ocrStageLabel}
-              elapsedSeconds={ocrElapsedSeconds}
-              progressStalled={ocrProgressStalled}
-              onCancel={handleCancelOcr}
-            />
-          )}
+          </SaveFieldOverlay>
         </div>
       )}
       </div>
-      )}
-
-      {showImportInput && (error || (parseMessage && !error)) && (
-        <div className="import-status-stack">
-          {error && <Alert type="error" showIcon className="import-alert-banner" title={error} />}
-          {parseMessage && !error && (
-            <Alert type="success" showIcon className="import-alert-banner" title={parseMessage} />
-          )}
-        </div>
       )}
 
       {showReview && (
@@ -1209,27 +1444,6 @@ export default function AttendanceImport({
             <form className="portal-form import-review-form" onSubmit={handleSave}>
               <fieldset className="portal-form-fields import-review-fields" disabled={saving}>
                 <div className="import-review-toolbar">
-                  {importWarnings.includes('missing_class') && (
-                    <Alert
-                      type="warning"
-                      showIcon
-                      className="import-alert-banner"
-                      title="Class Header Not Detected From Screenshot"
-                      description="The scan could not read the INTAKE / LEVEL / GROUP line. Enter those fields below before saving."
-                    />
-                  )}
-
-                  <Alert
-                    type="info"
-                    showIcon={false}
-                    className="import-alert-banner import-alert-class-summary"
-                    title={
-                      <>
-                        Class: <strong>{classLabel || 'Review class details below'}</strong>
-                      </>
-                    }
-                  />
-
                   <Row gutter={[12, 12]} className="portal-meta-row">
                     <Col xs={12} sm={8} md={4}>
                       <Typography.Text className="field-label">Intake</Typography.Text>
@@ -1264,15 +1478,10 @@ export default function AttendanceImport({
                     </Col>
                     <Col xs={24} sm={12} md={6}>
                       <Typography.Text className="field-label">Date</Typography.Text>
-                      <DatePicker
-                        value={meta.date ? dayjs(meta.date) : null}
-                        onChange={(value) =>
-                          setMeta((m) => ({
-                            ...m,
-                            date: value ? value.format('YYYY-MM-DD') : dateKey(),
-                          }))
-                        }
-                        style={{ width: '100%' }}
+                      <ImportDateField
+                        value={meta.date}
+                        onChange={(next) => setMeta((m) => ({ ...m, date: next }))}
+                        disabled={saving}
                       />
                     </Col>
                     <Col xs={24} sm={12} md={6}>
@@ -1314,14 +1523,6 @@ export default function AttendanceImport({
                   <Typography.Text type="secondary" className="import-review-hint">
                     Checked = present · Unchecked = absent
                   </Typography.Text>
-                  {jsonExportMessage && (
-                    <Alert
-                      type="success"
-                      showIcon
-                      className="import-alert-banner"
-                      title={jsonExportMessage}
-                    />
-                  )}
                 </div>
 
                 <div className="table-scroll-region portal-student-list-scroll import-review-table-region table-scroll-region-with-search">
@@ -1331,15 +1532,6 @@ export default function AttendanceImport({
                     matchCount={filteredReviewRows.length}
                     totalCount={reviewTableRows.length}
                   />
-                  {similarPendingCount > 0 && (
-                    <Alert
-                      type="warning"
-                      showIcon
-                      className="import-similar-notice import-alert-banner"
-                      title={`${similarPendingCount} name${similarPendingCount === 1 ? '' : 's'} under 95% match — click Review in the table to confirm`}
-                    />
-                  )}
-
                   <div className="import-review-table-wrap" ref={studentTableRef}>
                   {filteredReviewRows.length === 0 ? (
                     <Empty

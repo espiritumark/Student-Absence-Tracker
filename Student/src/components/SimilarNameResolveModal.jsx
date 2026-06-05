@@ -1,6 +1,6 @@
 import { Button, Modal, Radio, Typography } from 'antd'
+import { useEffect, useState } from 'react'
 import { formatSimilarityPercent } from '../utils/nameMatching'
-import { topSimilarityScore } from '../utils/importNameResolution'
 
 export default function SimilarNameResolveModal({
   open,
@@ -9,10 +9,34 @@ export default function SimilarNameResolveModal({
   onLinkRoster,
   onMarkNew,
 }) {
+  const [selectedId, setSelectedId] = useState(null)
+
+  useEffect(() => {
+    if (!open || !row) {
+      setSelectedId(null)
+      return
+    }
+    setSelectedId(row.suggestedRosterId ?? row.similarCandidates?.[0]?.id ?? null)
+  }, [open, row?.index, row?.importName, row?.name, row?.suggestedRosterId])
+
   if (!row) {
     return (
-      <Modal open={open} onCancel={onClose} footer={null} destroyOnHidden title="Similar Name" />
+      <Modal
+        open={open}
+        onCancel={onClose}
+        footer={null}
+        destroyOnHidden
+        centered
+        title="Similar Name"
+      />
     )
+  }
+
+  function confirmLinkRoster() {
+    const candidate = row.similarCandidates?.find((c) => c.id === selectedId)
+    if (!candidate) return
+    onLinkRoster(row, candidate)
+    onClose()
   }
 
   return (
@@ -20,10 +44,18 @@ export default function SimilarNameResolveModal({
       open={open}
       onCancel={onClose}
       title={`#${row.index} — Similar Roster Match`}
-      footer={null}
       destroyOnHidden
+      centered
       width={520}
       className="similar-name-resolve-modal"
+      footer={[
+        <Button key="cancel" onClick={onClose}>
+          Cancel
+        </Button>,
+        <Button key="confirm" type="primary" disabled={!selectedId} onClick={confirmLinkRoster}>
+          Use Roster Name
+        </Button>,
+      ]}
     >
       <Typography.Paragraph className="similar-name-resolve-scanned">
         Scanned name: <strong>{row.importName || row.name}</strong>
@@ -35,13 +67,8 @@ export default function SimilarNameResolveModal({
 
       <Radio.Group
         className="similar-name-resolve-options"
-        onChange={(e) => {
-          const candidate = row.similarCandidates?.find((c) => c.id === e.target.value)
-          if (candidate) {
-            onLinkRoster(row, candidate)
-            onClose()
-          }
-        }}
+        value={selectedId ?? undefined}
+        onChange={(e) => setSelectedId(e.target.value)}
       >
         {row.similarCandidates?.map((candidate) => (
           <Radio key={candidate.id} value={candidate.id} className="similar-name-resolve-radio">
