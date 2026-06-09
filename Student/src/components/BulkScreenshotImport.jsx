@@ -2,10 +2,6 @@ import {
   Button,
   Checkbox,
   Empty,
-  Input,
-  InputNumber,
-  Row,
-  Col,
   Space,
   Table,
   Tag,
@@ -54,6 +50,8 @@ import {
   maxBulkIdFromQueue,
   saveBulkScreenshotSession,
 } from '../utils/importDraftSession.js'
+import ImportReviewTableSummary from './ImportReviewTableSummary'
+import { applyImportMetaChange, copyImportMeta } from '../utils/importMetaApply'
 import { filterByNameSearch } from '../utils/tableNameSearch'
 import { UI, formatLpCount } from '../utils/uiCopy'
 import {
@@ -63,7 +61,7 @@ import {
   VISION_SCAN_ENGINE,
 } from '../utils/parseScreenshot'
 import BulkQueueAdvancePrompt from './BulkQueueAdvancePrompt'
-import ImportDateField from './ImportDateField'
+import ImportSessionMetaFields from './ImportSessionMetaFields'
 import BulkQueueDock from './BulkQueueDock'
 import ImportScanEngineSwitch from './ImportScanEngineSwitch'
 import ImportSaveConfirmModal from './ImportSaveConfirmModal'
@@ -112,7 +110,12 @@ function readInitialBulkState() {
     return { queue: [], selectedId: null, restored: false, maxId: 0 }
   }
   return {
-    queue: snap.queue,
+    queue: snap.queue.map((item) => ({
+      ...item,
+      scannedMeta:
+        item.scannedMeta ?? (item.meta ? copyImportMeta(item.meta) : null),
+      scannedWarnings: item.scannedWarnings ?? [...(item.warnings ?? [])],
+    })),
     selectedId: snap.selectedId ?? snap.queue[0]?.id ?? null,
     restored: true,
     maxId: maxBulkIdFromQueue(snap.queue),
@@ -253,15 +256,63 @@ export default function BulkScreenshotImport({
     [selectedId],
   )
 
-  const patchMeta = useCallback(
-    (field, value) => {
-      updateSelected((item) => ({
-        ...item,
-        meta: { ...(item.meta ?? emptyMeta()), [field]: value },
-      }))
+  const applyMetaPatch = useCallback(
+    (patch) => {
+      if (!selectedItem?.meta) return false
+      const result = applyImportMetaChange({
+        currentMeta: selectedItem.meta,
+        patch,
+        classes,
+        students: selectedItem.students,
+        warnings: selectedItem.warnings,
+      })
+      if (!result.ok) {
+        notify.error({
+          key: 'bulk-meta-class-match',
+          title: 'No matching class found',
+          description: result.error,
+          duration: 8,
+        })
+        return false
+      }
+
+      updateSelected({
+        meta: result.nextMeta,
+        warnings: result.nextWarnings,
+      })
+
+      if (result.classMatched && result.matchedClassLabel) {
+        notify.success({
+          key: 'bulk-meta-class-match',
+          title: 'Class matched',
+          description: `${result.matchedClassLabel} — Learning Partner list updated for review.`,
+          duration: 5,
+        })
+      }
+      return true
     },
-    [updateSelected],
+    [selectedItem, classes, updateSelected, notify],
   )
+
+  const patchMeta = useCallback(
+    (field, value) => applyMetaPatch({ [field]: value }),
+    [applyMetaPatch],
+  )
+
+  const revertToScannedMeta = useCallback(() => {
+    if (!selectedItem?.scannedMeta) return
+    const restoredMeta = copyImportMeta(selectedItem.scannedMeta)
+    updateSelected({
+      meta: restoredMeta,
+      warnings: [...(selectedItem.scannedWarnings ?? selectedItem.warnings ?? [])],
+    })
+    notify.info({
+      key: 'bulk-meta-revert',
+      title: 'Session details restored',
+      description: 'Reverted to values from the original scan.',
+      duration: 4,
+    })
+  }, [selectedItem, classes, updateSelected, notify])
 
   const addFilesToQueue = useCallback(async (fileList) => {
     const files = [...fileList].filter((f) => f.type?.startsWith('image/'))
@@ -968,54 +1019,16 @@ export default function BulkScreenshotImport({
                   onSubmit={handleSaveSession}
                 >
                   <div className="bulk-screenshot-review-scroll">
-                  <Row gutter={[12, 12]} className="portal-meta-row">
-                    <Col xs={12} sm={8} md={4}>
-                      <Typography.Text className="field-label">Intake</Typography.Text>
-                      <InputNumber
-                        value={meta.intake === '' ? null : Number(meta.intake)}
-                        onChange={(v) => patchMeta('intake', v ?? '')}
-                        style={{ width: '100%' }}
-                      />
-                    </Col>
-                    <Col xs={12} sm={8} md={4}>
-                      <Typography.Text className="field-label">Level</Typography.Text>
-                      <InputNumber
-                        value={meta.level === '' ? null : Number(meta.level)}
-                        onChange={(v) => patchMeta('level', v ?? '')}
-                        style={{ width: '100%' }}
-                      />
-                    </Col>
-                    <Col xs={12} sm={8} md={4}>
-                      <Typography.Text className="field-label">Group</Typography.Text>
-                      <InputNumber
-                        value={meta.group === '' ? null : Number(meta.group)}
-                        onChange={(v) => patchMeta('group', v ?? '')}
-                        style={{ width: '100%' }}
-                      />
-                    </Col>
-                    <Col xs={24} md={12}>
-                      <Typography.Text className="field-label">Qualification / Programme</Typography.Text>
-                      <Input
-                        value={meta.qualification}
-                        onChange={(e) => patchMeta('qualification', e.target.value)}
-                      />
-                    </Col>
-                    <Col xs={24} sm={12} md={6}>
-                      <Typography.Text className="field-label">Date</Typography.Text>
-                      <ImportDateField
-                        value={meta.date}
-                        onChange={(next) => patchMeta('date', next)}
-                        disabled={saving}
-                      />
-                    </Col>
-                    <Col xs={24} sm={12} md={6}>
-                      <Typography.Text className="field-label">Module</Typography.Text>
-                      <Input
-                        value={meta.module}
-                        onChange={(e) => patchMeta('module', e.target.value)}
-                      />
-                    </Col>
-                  </Row>
+                  <ImportSessionMetaFields
+                    meta={meta}
+                    scannedMeta={selectedItem.scannedMeta}
+                    onPatchMeta={patchMeta}
+                    onApplyBulkPatch={applyMetaPatch}
+                    onRevertScanned={revertToScannedMeta}
+                    classes={classes}
+                    attendance={attendance}
+                    disabled={saving}
+                  />
 
                   <div className="import-review-toolbar-row">
                     <Space wrap className="import-review-actions">
@@ -1024,6 +1037,7 @@ export default function BulkScreenshotImport({
                       </Button>
                       <Button onClick={() => setAllPresent(false)}>Uncheck All</Button>
                     </Space>
+                    <ImportReviewTableSummary students={students} />
                     <TableNameSearch
                       className="import-review-name-search"
                       value={nameSearch}

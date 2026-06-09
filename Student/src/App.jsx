@@ -11,7 +11,7 @@ import FeedbackPanel from './components/FeedbackPanel'
 import ReportingPanel from './components/ReportingPanel'
 import ActivityHistoryPanel from './components/ActivityHistoryPanel'
 import TabLabel from './components/TabLabel'
-import { APP_NAME, APP_TAGLINE } from './constants/branding'
+import { APP_LOGO, APP_NAME } from './constants/branding'
 import { UI } from './utils/uiCopy'
 import { useAuth } from './contexts/AuthContext'
 import { useReportedViolations } from './hooks/useReportedViolations'
@@ -187,13 +187,8 @@ function AppContent() {
       <div className={`app-shell${lockAppTabs ? ' app-shell-import-busy' : ''}`}>
         <Header className="app-layout-header">
         <div className="app-header-row">
-          <div className="app-header-copy">
-            <Typography.Title level={3} className="app-brand-title" style={{ margin: 0 }}>
-              {APP_NAME}
-            </Typography.Title>
-            <Typography.Paragraph type="secondary" className="tagline" style={{ marginBottom: 0 }}>
-              {APP_TAGLINE}
-            </Typography.Paragraph>
+          <div className="app-header-brand">
+            <img src={APP_LOGO} alt={APP_NAME} className="app-brand-logo" />
           </div>
           <AuthPanel />
         </div>

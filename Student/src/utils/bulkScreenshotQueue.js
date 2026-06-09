@@ -1,11 +1,5 @@
-import {
-  findMatchingClass,
-  isLikelyFalsePartTimeFromModule,
-  isPartTimeQualification,
-  qualificationBaseEqual,
-  resolveImportClassLabel,
-  syncPartTimeFromClassLabel,
-} from './classFormat'
+import { syncPartTimeFromClassLabel } from './classFormat'
+import { alignMetaWithRoster, copyImportMeta } from './importMetaApply'
 import { dateKey } from './dates'
 import {
   enrichImportStudentsWithRoster,
@@ -44,50 +38,6 @@ export function queueItemClassLabel(meta) {
   const parts = [meta.intake, meta.level, meta.qualification, meta.group].filter(Boolean)
   if (parts.length >= 2) return parts.join(' ')
   return meta.qualification || meta.module || 'Class'
-}
-
-function alignMetaWithRoster(meta, classes) {
-  const scannedPt = isPartTimeQualification(meta.qualification)
-  const matched = findMatchingClass(classes, {
-    intake: Number(meta.intake) || null,
-    level: Number(meta.level) || null,
-    qualification: meta.qualification,
-    group: Number(meta.group) || null,
-  })
-  if (!matched?.qualification) {
-    return { meta, extraWarnings: [] }
-  }
-
-  const scannedQual = String(meta.qualification || '').trim()
-  const rosterQual = matched.qualification || ''
-  const rosterPt = isPartTimeQualification(rosterQual)
-  const extraWarnings = []
-
-  // False-positive PT from module codes (e.g. L5CPT) — align to full-time roster programme.
-  if (scannedPt && !rosterPt && isLikelyFalsePartTimeFromModule(meta)) {
-    extraWarnings.push('qualification_roster_sync')
-    return {
-      meta: { ...meta, qualification: rosterQual },
-      matchedClassLabel: resolveImportClassLabel(meta, matched),
-      extraWarnings,
-    }
-  }
-
-  const qualMismatch = scannedQual && !qualificationBaseEqual(scannedQual, rosterQual)
-  if (qualMismatch && !scannedPt) {
-    extraWarnings.push('qualification_roster_sync')
-    return {
-      meta: { ...meta, qualification: rosterQual },
-      matchedClassLabel: resolveImportClassLabel(meta, matched),
-      extraWarnings,
-    }
-  }
-
-  return {
-    meta,
-    matchedClassLabel: resolveImportClassLabel(meta, matched),
-    extraWarnings: [],
-  }
 }
 
 export function applyVisionResultToQueueItem(item, result, classes = []) {
@@ -137,6 +87,8 @@ export function applyVisionResultToQueueItem(item, result, classes = []) {
     stageLabel: '',
     error: '',
     meta,
+    scannedMeta: copyImportMeta(meta),
+    scannedWarnings: [...warnings],
     students: [...enriched].sort((a, b) => a.name.localeCompare(b.name)),
     warnings,
     portalJson: result?.portalJson || '',

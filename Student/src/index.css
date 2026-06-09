@@ -110,10 +110,20 @@ body {
   background: linear-gradient(180deg, #0d9488 0%, #14b8a6 55%, #5eead4 100%);
 }
 
-.app-brand-title.ant-typography {
-  color: var(--header-accent-text) !important;
-  font-weight: 700 !important;
-  letter-spacing: -0.02em;
+.app-header-brand {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+}
+
+.app-brand-logo {
+  display: block;
+  height: 3.35rem;
+  width: auto;
+  max-width: min(100%, 18rem);
+  object-fit: contain;
+  object-position: left center;
 }
 
 .app-shell-body {
@@ -295,6 +305,13 @@ body {
   min-height: 40vh;
   color: var(--muted);
   gap: 1rem;
+}
+
+.loading-screen-logo {
+  height: 4.5rem;
+  width: auto;
+  max-width: min(90vw, 16rem);
+  object-fit: contain;
 }
 
 .loading-spinner {
@@ -4173,6 +4190,18 @@ details[open] .collapsible-summary::before {
   vertical-align: middle;
 }
 
+.import-session-meta-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  margin: 0 0 0.45rem;
+}
+
+.import-session-meta-bulk-error {
+  margin: 0.75rem 0 0 !important;
+}
+
 .import-review-toolbar-row {
   display: flex;
   flex-wrap: wrap;
@@ -4184,6 +4213,80 @@ details[open] .collapsible-summary::before {
 .import-review-toolbar-row .import-review-actions {
   margin-top: 0;
   flex: 0 0 auto;
+}
+
+.import-review-toolbar-summary {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+
+.import-review-summary-strip {
+  display: inline-flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0;
+  padding: 0.18rem 0.3rem;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--surface) 88%, var(--primary-soft)) 0%,
+    var(--surface-inset) 100%
+  );
+  border: 1px solid color-mix(in srgb, var(--primary-soft-border) 55%, var(--border));
+  border-radius: 999px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.import-review-summary-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.32rem;
+  padding: 0.22rem 0.58rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.import-review-summary-value {
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--text);
+}
+
+.import-review-summary-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--text-subtle);
+}
+
+.import-review-summary-item-total .import-review-summary-value {
+  color: var(--header-accent-text);
+}
+
+.import-review-summary-item-present .import-review-summary-value {
+  color: var(--success-text);
+}
+
+.import-review-summary-item-present .import-review-summary-label {
+  color: color-mix(in srgb, var(--success-text) 82%, var(--text-subtle));
+}
+
+.import-review-summary-item-absent-active .import-review-summary-value,
+.import-review-summary-item-absent-active .import-review-summary-label {
+  color: var(--critical);
+}
+
+.import-review-summary-sep {
+  align-self: stretch;
+  width: 1px;
+  margin: 0.28rem 0;
+  background: color-mix(in srgb, var(--border) 70%, transparent);
 }
 
 .table-name-search-bar.import-review-name-search {

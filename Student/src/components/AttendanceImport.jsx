@@ -3,7 +3,6 @@ import {
   Checkbox,
   Empty,
   Input,
-  InputNumber,
   Row,
   Col,
   Space,
@@ -35,8 +34,14 @@ import {
   runOcrJob,
   subscribeOcr,
 } from '../utils/ocrSession'
+import {
+  applyImportMetaChange,
+  copyImportMeta,
+  reEnrichImportStudents,
+} from '../utils/importMetaApply'
 import { filterByNameSearch } from '../utils/tableNameSearch'
 import { UI, formatLpCount } from '../utils/uiCopy'
+import ImportReviewTableSummary from './ImportReviewTableSummary'
 import TableNameSearch from './TableNameSearch'
 import BulkScreenshotImport from './BulkScreenshotImport'
 import {
@@ -76,7 +81,7 @@ import {
   shouldShowRosterNameReplacement,
   topSimilarityScore,
 } from '../utils/importNameResolution'
-import ImportDateField from './ImportDateField'
+import ImportSessionMetaFields from './ImportSessionMetaFields'
 import ImportSaveConfirmModal from './ImportSaveConfirmModal'
 import SimilarNameResolveModal from './SimilarNameResolveModal'
 import BackButton from './BackButton'
@@ -149,6 +154,8 @@ export default function AttendanceImport({
   const [resetCountdown, setResetCountdown] = useState(0)
   const [importView, setImportView] = useState('input')
   const [importWarnings, setImportWarnings] = useState([])
+  const [scannedMeta, setScannedMeta] = useState(null)
+  const [scannedWarnings, setScannedWarnings] = useState([])
   const [lastScannedScreenshot, setLastScannedScreenshot] = useState(null)
   const [lastScanModalOpen, setLastScanModalOpen] = useState(false)
   const [similarModalKey, setSimilarModalKey] = useState(null)
@@ -194,6 +201,8 @@ export default function AttendanceImport({
     setError('')
     setReviewSource(null)
     setImportWarnings([])
+    setScannedMeta(null)
+    setScannedWarnings([])
     setImportView('input')
   }, [])
 
@@ -204,6 +213,8 @@ export default function AttendanceImport({
       meta,
       importView,
       importWarnings,
+      scannedMeta,
+      scannedWarnings,
       parseMessage,
       reviewSource,
       lastScannedScreenshot,
@@ -217,6 +228,8 @@ export default function AttendanceImport({
     meta,
     importView,
     importWarnings,
+    scannedMeta,
+    scannedWarnings,
     parseMessage,
     reviewSource,
     lastScannedScreenshot,
@@ -245,6 +258,8 @@ export default function AttendanceImport({
     setMeta(snap.meta ?? emptyMeta)
     setImportView(snap.importView ?? 'input')
     setImportWarnings(snap.importWarnings ?? [])
+    setScannedMeta(snap.scannedMeta ?? null)
+    setScannedWarnings(snap.scannedWarnings ?? [])
     setParseMessage(snap.parseMessage ?? '')
     setReviewSource(snap.reviewSource ?? null)
     setLastScannedScreenshot(snap.lastScannedScreenshot ?? null)
@@ -266,6 +281,8 @@ export default function AttendanceImport({
     setImportView('input')
     setReviewSource(null)
     setImportWarnings([])
+    setScannedMeta(null)
+    setScannedWarnings([])
     setParseMessage('')
     setError('')
     setLastScanModalOpen(false)
@@ -280,10 +297,23 @@ export default function AttendanceImport({
       meta: reviewSource === 'json' ? meta : emptyMeta(),
       importView: reviewSource === 'json' ? importView : 'input',
       importWarnings: reviewSource === 'json' ? importWarnings : [],
+      scannedMeta: reviewSource === 'json' ? scannedMeta : null,
+      scannedWarnings: reviewSource === 'json' ? scannedWarnings : [],
       parseMessage: reviewSource === 'json' ? parseMessage : '',
       reviewSource: reviewSource === 'json' ? reviewSource : null,
     }
-  }, [jsonHasDraft, jsonText, students, meta, importView, importWarnings, parseMessage, reviewSource])
+  }, [
+    jsonHasDraft,
+    jsonText,
+    students,
+    meta,
+    importView,
+    importWarnings,
+    scannedMeta,
+    scannedWarnings,
+    parseMessage,
+    reviewSource,
+  ])
 
   const snapshotJsonSession = useCallback(() => {
     const snap = buildJsonSnapshot()
@@ -306,6 +336,8 @@ export default function AttendanceImport({
     setMeta(snap.meta ?? emptyMeta)
     setImportView(snap.importView ?? 'input')
     setImportWarnings(snap.importWarnings ?? [])
+    setScannedMeta(snap.scannedMeta ?? null)
+    setScannedWarnings(snap.scannedWarnings ?? [])
     setParseMessage(snap.parseMessage ?? '')
     setReviewSource(snap.reviewSource ?? null)
     setError('')
@@ -472,6 +504,8 @@ export default function AttendanceImport({
     setConfirmError('')
     setReviewSource(null)
     setImportWarnings([])
+    setScannedMeta(null)
+    setScannedWarnings([])
     screenshotSessionRef.current = null
     jsonSessionRef.current = null
     clearAllImportDraftSessions()
@@ -578,6 +612,8 @@ export default function AttendanceImport({
       setError('')
       setReviewSource(source)
       setImportWarnings(warnings)
+      setScannedMeta(copyImportMeta(nextMeta))
+      setScannedWarnings([...warnings])
 
       let message = ''
       if (pendingSimilar > 0) {
@@ -604,6 +640,61 @@ export default function AttendanceImport({
     },
     [classes, notify],
   )
+
+  const applyMetaPatch = useCallback(
+    (patch) => {
+      const result = applyImportMetaChange({
+        currentMeta: meta,
+        patch,
+        classes,
+        students,
+        warnings: importWarnings,
+      })
+      if (!result.ok) {
+        notify.error({
+          key: 'import-meta-class-match',
+          title: 'No matching class found',
+          description: result.error,
+          duration: 8,
+        })
+        return false
+      }
+
+      setMeta(result.nextMeta)
+      setStudents(result.nextStudents)
+      setImportWarnings(result.nextWarnings)
+
+      if (result.classMatched && result.matchedClassLabel) {
+        notify.success({
+          key: 'import-meta-class-match',
+          title: 'Class matched',
+          description: `${result.matchedClassLabel} — Learning Partner list updated for review.`,
+          duration: 5,
+        })
+      }
+      return true
+    },
+    [meta, classes, students, importWarnings, notify],
+  )
+
+  const patchMeta = useCallback(
+    (field, value) => applyMetaPatch({ [field]: value }),
+    [applyMetaPatch],
+  )
+
+  const revertToScannedMeta = useCallback(() => {
+    if (!scannedMeta) return
+    const restoredMeta = copyImportMeta(scannedMeta)
+    setMeta(restoredMeta)
+    setImportWarnings([...(scannedWarnings || [])])
+    setStudents((current) => reEnrichImportStudents(current, restoredMeta, classes))
+    notify.info({
+      key: 'import-meta-revert',
+      title: 'Session details restored',
+      description: 'Reverted to values from the original scan.',
+      duration: 4,
+    })
+  }, [scannedMeta, scannedWarnings, classes, notify])
 
   const applyFromExtractedJson = useCallback(
     (jsonRaw, source, { previewUrl } = {}) => {
@@ -1444,53 +1535,17 @@ export default function AttendanceImport({
             <form className="portal-form import-review-form" onSubmit={handleSave}>
               <fieldset className="portal-form-fields import-review-fields" disabled={saving}>
                 <div className="import-review-toolbar">
+                  <ImportSessionMetaFields
+                    meta={meta}
+                    scannedMeta={scannedMeta}
+                    onPatchMeta={patchMeta}
+                    onApplyBulkPatch={applyMetaPatch}
+                    onRevertScanned={revertToScannedMeta}
+                    classes={classes}
+                    attendance={attendance}
+                    disabled={saving}
+                  />
                   <Row gutter={[12, 12]} className="portal-meta-row">
-                    <Col xs={12} sm={8} md={4}>
-                      <Typography.Text className="field-label">Intake</Typography.Text>
-                      <InputNumber
-                        value={meta.intake === '' ? null : Number(meta.intake)}
-                        onChange={(value) => setMeta((m) => ({ ...m, intake: value ?? '' }))}
-                        style={{ width: '100%' }}
-                      />
-                    </Col>
-                    <Col xs={12} sm={8} md={4}>
-                      <Typography.Text className="field-label">Level</Typography.Text>
-                      <InputNumber
-                        value={meta.level === '' ? null : Number(meta.level)}
-                        onChange={(value) => setMeta((m) => ({ ...m, level: value ?? '' }))}
-                        style={{ width: '100%' }}
-                      />
-                    </Col>
-                    <Col xs={12} sm={8} md={4}>
-                      <Typography.Text className="field-label">Group</Typography.Text>
-                      <InputNumber
-                        value={meta.group === '' ? null : Number(meta.group)}
-                        onChange={(value) => setMeta((m) => ({ ...m, group: value ?? '' }))}
-                        style={{ width: '100%' }}
-                      />
-                    </Col>
-                    <Col xs={24} md={12}>
-                      <Typography.Text className="field-label">Qualification / Programme</Typography.Text>
-                      <Input
-                        value={meta.qualification}
-                        onChange={(e) => setMeta((m) => ({ ...m, qualification: e.target.value }))}
-                      />
-                    </Col>
-                    <Col xs={24} sm={12} md={6}>
-                      <Typography.Text className="field-label">Date</Typography.Text>
-                      <ImportDateField
-                        value={meta.date}
-                        onChange={(next) => setMeta((m) => ({ ...m, date: next }))}
-                        disabled={saving}
-                      />
-                    </Col>
-                    <Col xs={24} sm={12} md={6}>
-                      <Typography.Text className="field-label">Module</Typography.Text>
-                      <Input
-                        value={meta.module}
-                        onChange={(e) => setMeta((m) => ({ ...m, module: e.target.value }))}
-                      />
-                    </Col>
                     <Col xs={12} sm={6}>
                       <Typography.Text className="field-label">Start Time</Typography.Text>
                       <Input
@@ -1507,31 +1562,35 @@ export default function AttendanceImport({
                     </Col>
                   </Row>
 
-                  <Space wrap className="import-review-actions">
-                    <Button type="primary" onClick={() => setAllPresent(true)}>
-                      Check All
-                    </Button>
-                    <Button onClick={() => setAllPresent(false)}>Uncheck All</Button>
-                    {reviewSource === 'screenshot' && lastScannedScreenshot && (
-                      <Button onClick={() => setLastScanModalOpen(true)}>
-                        View Screenshot
+                  <div className="import-review-toolbar-row">
+                    <Space wrap className="import-review-actions">
+                      <Button type="primary" onClick={() => setAllPresent(true)}>
+                        Check All
                       </Button>
-                    )}
-                    <Button onClick={handleCopyJson}>Copy as JSON</Button>
-                    <Button onClick={handleDownloadJson}>Download JSON</Button>
-                  </Space>
+                      <Button onClick={() => setAllPresent(false)}>Uncheck All</Button>
+                      {reviewSource === 'screenshot' && lastScannedScreenshot && (
+                        <Button onClick={() => setLastScanModalOpen(true)}>
+                          View Screenshot
+                        </Button>
+                      )}
+                      <Button onClick={handleCopyJson}>Copy as JSON</Button>
+                      <Button onClick={handleDownloadJson}>Download JSON</Button>
+                    </Space>
+                    <ImportReviewTableSummary students={reviewTableRows} />
+                    <TableNameSearch
+                      className="import-review-name-search"
+                      value={reviewNameSearch}
+                      onChange={setReviewNameSearch}
+                      matchCount={filteredReviewRows.length}
+                      totalCount={reviewTableRows.length}
+                    />
+                  </div>
                   <Typography.Text type="secondary" className="import-review-hint">
                     Checked = present · Unchecked = absent
                   </Typography.Text>
                 </div>
 
                 <div className="table-scroll-region portal-student-list-scroll import-review-table-region table-scroll-region-with-search">
-                  <TableNameSearch
-                    value={reviewNameSearch}
-                    onChange={setReviewNameSearch}
-                    matchCount={filteredReviewRows.length}
-                    totalCount={reviewTableRows.length}
-                  />
                   <div className="import-review-table-wrap" ref={studentTableRef}>
                   {filteredReviewRows.length === 0 ? (
                     <Empty
