@@ -130,7 +130,8 @@ The **Screenshot** tab uses a vision language model to read class details, Learn
 ### This Device (free, local — best accuracy on your PC)
 
 1. Install [Ollama](https://ollama.com) and run `ollama pull qwen2.5vl:7b`
-2. Add to `.env` (local dev only — not for Vercel users):
+2. `npm run dev` starts Ollama automatically if it is not already running on port `11434` (use `npm run dev:vite` or `SKIP_OLLAMA=1 npm run dev` to skip).
+3. Add to `.env` (local dev only — not for Vercel users):
 
    ```
    VITE_VISION_LLM_API_KEY=ollama
