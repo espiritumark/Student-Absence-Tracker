@@ -71,7 +71,7 @@ export default function ImportSessionMetaFields({
     <>
       {showMetaActions ? (
         <div className="import-session-meta-actions">
-          <Space wrap size={[8, 8]}>
+          <Space wrap size={[12, 8]}>
             {onApplyBulkPatch ? (
               <Button size="small" disabled={disabled} onClick={() => setBulkOpen(true)}>
                 Edit All Session Details

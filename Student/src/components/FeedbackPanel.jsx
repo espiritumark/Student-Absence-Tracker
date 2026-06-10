@@ -1,35 +1,36 @@
-import { Alert, Button, Card, Checkbox, Input, Select, Space, Typography } from 'antd'
+import { CopyOutlined, DownloadOutlined } from '@ant-design/icons'
+import { Alert, Button, Empty, Table, Tooltip, Typography } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { useAppNotifier } from '../hooks/useAppNotifier'
-import { LEARNING_PARTNER } from '../constants/branding'
-import { getEffectiveAbsenceCounts } from '../utils/attendanceStats'
-import { composeFeedback, suggestAttendanceEmphasis } from '../utils/feedbackCompose'
-import { isFeedbackLlmConfigured, refineFeedbackWithLlm } from '../utils/feedbackLlm'
-import {
-  ATTENDANCE_EMPHASIS,
-  ASSIGNMENT_QUALITY,
-  PARTICIPATION_LEVEL,
-  assignmentOptions,
-  attendanceEmphasisOptions,
-  participationOptions,
-} from '../utils/feedbackTraits'
+import { useScrollRegionHeight } from '../hooks/useScrollRegionHeight'
 import { formatClassLabel } from '../utils/classFormat'
-import FormField from './FormField'
+import { formatDbError, isFeedbackColumnMissingError } from '../lib/database'
+import { downloadCsv, slugifyFilenamePart } from '../utils/csvExport'
+import {
+  countFeedbackWords,
+  FEEDBACK_WORD_MAX,
+  FEEDBACK_WORD_MIN,
+  truncateFeedbackPreview,
+} from '../utils/feedbackWords'
+import { filterByNameSearch } from '../utils/tableNameSearch'
+import { UI } from '../utils/uiCopy'
+import FeedbackStudentModal from './FeedbackStudentModal'
 import PanelChrome from './PanelChrome'
 import SearchableSelect from './SearchableSelect'
-import { UI } from '../utils/uiCopy'
+import TableNameSearch from './TableNameSearch'
 
-export default function FeedbackPanel({ classes = [], attendance = {} }) {
+export default function FeedbackPanel({
+  classes = [],
+  attendance = {},
+  updateStudent,
+  useCloud = false,
+  syncError = '',
+}) {
   const notify = useAppNotifier()
   const [classId, setClassId] = useState('')
-  const [partnerId, setPartnerId] = useState('')
-  const [attendanceEmphasis, setAttendanceEmphasis] = useState(ATTENDANCE_EMPHASIS.auto)
-  const [participation, setParticipation] = useState(PARTICIPATION_LEVEL.active)
-  const [assignmentQuality, setAssignmentQuality] = useState(ASSIGNMENT_QUALITY.good)
-  const [includeAttendance, setIncludeAttendance] = useState(true)
-  const [extraNotes, setExtraNotes] = useState('')
-  const [output, setOutput] = useState('')
-  const [refining, setRefining] = useState(false)
+  const [nameSearch, setNameSearch] = useState('')
+  const [modalPartnerId, setModalPartnerId] = useState(null)
+  const [saving, setSaving] = useState(false)
 
   const classOptions = useMemo(
     () =>
@@ -44,267 +45,261 @@ export default function FeedbackPanel({ classes = [], attendance = {} }) {
     [classes, classId],
   )
 
-  const partnerOptions = useMemo(() => {
+  const classAttendance = attendance[classId] || {}
+
+  const rosterRows = useMemo(() => {
     if (!selectedClass) return []
     return [...(selectedClass.students ?? [])]
       .sort((a, b) => a.name.localeCompare(b.name))
-      .map((s) => ({ value: s.id, label: s.name }))
+      .map((student) => {
+        const feedback = String(student.feedback ?? '').trim()
+        return {
+          key: student.id,
+          id: student.id,
+          name: student.name,
+          student,
+          feedback,
+          wordCount: countFeedbackWords(feedback),
+          preview: truncateFeedbackPreview(feedback),
+        }
+      })
   }, [selectedClass])
 
-  const selectedPartner = useMemo(
-    () => selectedClass?.students?.find((s) => s.id === partnerId) ?? null,
-    [selectedClass, partnerId],
+  const filteredRows = useMemo(
+    () => filterByNameSearch(rosterRows, nameSearch, (row) => row.name),
+    [rosterRows, nameSearch],
   )
 
-  const classAttendance = attendance[classId] || {}
-  const counts = useMemo(() => {
-    if (!selectedPartner) return { total: 0, consecutive: 0, recorded: { total: 0, consecutive: 0 } }
-    return getEffectiveAbsenceCounts(selectedPartner, classAttendance)
-  }, [selectedPartner, classAttendance])
+  const modalPartner = useMemo(
+    () => selectedClass?.students?.find((s) => s.id === modalPartnerId) ?? null,
+    [selectedClass, modalPartnerId],
+  )
+
+  const withFeedbackCount = rosterRows.filter((row) => row.feedback).length
+  const needsFeedbackMigration = useCloud && isFeedbackColumnMissingError(syncError)
 
   useEffect(() => {
     if (classId && !classOptions.some((o) => o.value === classId)) {
       setClassId('')
-      setPartnerId('')
+      setModalPartnerId(null)
     }
   }, [classId, classOptions])
 
   useEffect(() => {
-    if (partnerId && !partnerOptions.some((o) => o.value === partnerId)) {
-      setPartnerId('')
+    if (modalPartnerId && !rosterRows.some((row) => row.id === modalPartnerId)) {
+      setModalPartnerId(null)
     }
-  }, [partnerId, partnerOptions])
+  }, [modalPartnerId, rosterRows])
 
   useEffect(() => {
-    if (attendanceEmphasis !== ATTENDANCE_EMPHASIS.auto) return
-    if (!selectedPartner) return
-    // Auto mode: no need to store — compose uses suggestAttendanceEmphasis
-  }, [attendanceEmphasis, selectedPartner, counts])
+    setNameSearch('')
+  }, [classId])
 
-  const suggestedEmphasis = suggestAttendanceEmphasis({
-    total: counts.total,
-    consecutive: counts.consecutive,
-  })
+  const [tableRef, tableHeight] = useScrollRegionHeight(320)
 
-  const suggestedLabel =
-    attendanceEmphasisOptions.find((o) => o.value === suggestedEmphasis)?.label ?? suggestedEmphasis
-
-  const hasAttendanceStats = Boolean(selectedPartner)
-  const statPlaceholder = '--'
-  const displayTotal = hasAttendanceStats ? counts.total : statPlaceholder
-  const displayStreak = hasAttendanceStats ? counts.consecutive : statPlaceholder
-  const displaySuggestedTone =
-    hasAttendanceStats && attendanceEmphasis === ATTENDANCE_EMPHASIS.auto
-      ? suggestedLabel
-      : statPlaceholder
-
-  function handleGenerate() {
-    if (!selectedPartner) {
-      notify.warning({ title: `Select a ${UI.learningPartner} first.` })
-      return
-    }
-    const text = composeFeedback({
-      counts: { total: counts.total, consecutive: counts.consecutive },
-      attendanceEmphasis,
-      participation,
-      assignmentQuality,
-      extraNotes,
-      includeAttendance,
-    })
-    setOutput(text)
-  }
-
-  async function handleRefine() {
-    if (!output.trim()) {
-      notify.warning({ title: 'Generate a draft first, or paste text to refine.' })
-      return
-    }
-    if (!selectedPartner || !selectedClass) return
-    setRefining(true)
+  async function handleCopyFeedback(text) {
+    if (!text?.trim()) return
     try {
-      const refined = await refineFeedbackWithLlm(output, {
-        partnerName: selectedPartner.name,
-        className: formatClassLabel(selectedClass),
-        total: counts.total,
-        consecutive: counts.consecutive,
-        extraNotes,
-      })
-      setOutput(refined)
-      notify.success({ title: 'Feedback refined.' })
-    } catch (err) {
-      notify.error({ title: err.message || 'Could not refine feedback.' })
-    } finally {
-      setRefining(false)
-    }
-  }
-
-  async function handleCopy() {
-    if (!output.trim()) {
-      notify.warning({ title: 'Nothing to copy yet.' })
-      return
-    }
-    try {
-      await navigator.clipboard.writeText(output)
+      await navigator.clipboard.writeText(text.trim())
       notify.success({ title: 'Copied to clipboard.' })
     } catch {
       notify.error({ title: 'Could not copy — select the text and copy manually.' })
     }
   }
 
-  const aiReady = isFeedbackLlmConfigured()
+  function handleExportCsv() {
+    if (!selectedClass || filteredRows.length === 0) return
+
+    downloadCsv(
+      `feedback-${slugifyFilenamePart(formatClassLabel(selectedClass)) || 'class'}.csv`,
+      [UI.learningPartnerName, 'Feedback', 'Words'],
+      filteredRows.map((row) => [
+        row.name,
+        row.feedback,
+        row.feedback ? String(row.wordCount) : '',
+      ]),
+    )
+    notify.success({ title: 'CSV exported.' })
+  }
+
+  async function handleSaveFeedback(targetClassId, studentId, feedbackText) {
+    if (!updateStudent) {
+      notify.error({ title: 'Saving feedback is not available.' })
+      return
+    }
+    setSaving(true)
+    try {
+      await updateStudent(targetClassId, studentId, {
+        feedback: feedbackText?.trim() ? feedbackText.trim() : null,
+      })
+      notify.success({
+        title: feedbackText?.trim() ? 'Feedback saved.' : 'Feedback removed.',
+      })
+    } catch (err) {
+      notify.error({
+        title: 'Could not save feedback.',
+        description: formatDbError(err),
+      })
+      throw err
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <section className="panel feedback-panel workspace-panel">
       <PanelChrome
         title="Feedback"
-        description="Build report-style feedback from absence totals and streaks, participation and assignment quality, and your own notes. Copy or refine with AI when configured."
+        description={`Choose a class to review every ${UI.learningPartner.toLowerCase()} and their saved feedback. Click a row to open the feedback editor (${FEEDBACK_WORD_MIN}–${FEEDBACK_WORD_MAX} words per save).`}
       />
 
       <div className="workspace-body">
-        <div className="feedback-workspace-split">
-          <div className="feedback-details-pane">
-        <Card size="small" title="Select" className="feedback-panel-card">
-          <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
-            <FormField label="Class">
-              <SearchableSelect
-                placeholder="Choose class…"
-                options={classOptions}
-                value={classId || undefined}
-                onChange={(v) => {
-                  setClassId(v ?? '')
-                  setPartnerId('')
-                }}
-                allowClear
-              />
-            </FormField>
-            <FormField label={LEARNING_PARTNER.singularTitle}>
-              <SearchableSelect
-                placeholder={
-                  classId
-                    ? `Choose ${UI.learningPartner}…`
-                    : 'Select a class first'
-                }
-                options={partnerOptions}
-                value={partnerId || undefined}
-                onChange={(v) => setPartnerId(v ?? '')}
-                disabled={!classId}
-                allowClear
-              />
-            </FormField>
+        {needsFeedbackMigration ? (
+          <Alert
+            type="error"
+            showIcon
+            className="feedback-setup-alert"
+            title="Cloud database update required before saving feedback"
+            description={
+              <>
+                Run this once in your Supabase project&apos;s SQL Editor, then refresh and save
+                again:
+                <pre className="feedback-setup-sql">
+                  alter table public.students{'\n'}
+                  {'  '}add column if not exists feedback text;
+                </pre>
+                File: <code>supabase/migrate-feedback.sql</code>
+              </>
+            }
+          />
+        ) : null}
 
-            <div className="feedback-stats-row">
-              <Typography.Text type="secondary">From attendance records</Typography.Text>
-              <div className="feedback-stats-badges">
-                <span className="feedback-stat">
-                  <strong className="feedback-stat-value">{displayTotal}</strong> total absence days
-                </span>
-                <span className="feedback-stat">
-                  <strong className="feedback-stat-value">{displayStreak}</strong> day streak
-                </span>
-              </div>
-              {attendanceEmphasis === ATTENDANCE_EMPHASIS.auto && (
-                <Typography.Text type="secondary" className="feedback-auto-hint">
-                  Suggested attendance tone:{' '}
-                  <span className="feedback-stat-value feedback-stat-value-tone">
-                    {displaySuggestedTone}
-                  </span>
-                </Typography.Text>
+        <div className="feedback-roster-toolbar filter-toolbar">
+          <SearchableSelect
+            placeholder="Choose class…"
+            options={classOptions}
+            value={classId || undefined}
+            onChange={(v) => {
+              setClassId(v ?? '')
+              setModalPartnerId(null)
+            }}
+            allowClear
+            label="Class"
+          />
+        </div>
+        {selectedClass && (
+          <Typography.Text type="secondary" className="master-pane-hint feedback-roster-summary">
+            {withFeedbackCount} of {rosterRows.length} with saved feedback
+          </Typography.Text>
+        )}
+
+        {!selectedClass ? (
+          <Empty
+            className="workspace-empty"
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description="Select a class to view learning partners and their feedback."
+          />
+        ) : (
+          <div className="table-scroll-region portal-student-list-scroll feedback-roster-region table-scroll-region-with-search">
+            <div className="feedback-roster-table-toolbar">
+              <TableNameSearch
+                value={nameSearch}
+                onChange={setNameSearch}
+                matchCount={filteredRows.length}
+                totalCount={rosterRows.length}
+                className="feedback-roster-name-search"
+              />
+              <Button
+                size="small"
+                icon={<DownloadOutlined />}
+                onClick={handleExportCsv}
+                disabled={filteredRows.length === 0}
+              >
+                Export CSV
+              </Button>
+            </div>
+            <div className="feedback-roster-table-wrap" ref={tableRef}>
+              {filteredRows.length === 0 ? (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="No names match this search."
+                />
+              ) : (
+                <Table
+                  size="small"
+                  pagination={{ pageSize: 40, showSizeChanger: false, hideOnSinglePage: true }}
+                  scroll={{ y: tableHeight }}
+                  rowClassName={(row) =>
+                    row.feedback ? 'feedback-roster-row-has-feedback' : 'feedback-roster-row-empty'
+                  }
+                  dataSource={filteredRows}
+                  onRow={(row) => ({
+                    onClick: () => setModalPartnerId(row.id),
+                  })}
+                  columns={[
+                    {
+                      title: UI.learningPartnerName,
+                      dataIndex: 'name',
+                      ellipsis: true,
+                    },
+                    {
+                      title: 'Feedback',
+                      key: 'feedback',
+                      ellipsis: true,
+                      render: (_, row) =>
+                        row.feedback ? (
+                          <Typography.Text className="feedback-roster-preview">
+                            {row.preview}
+                          </Typography.Text>
+                        ) : (
+                          <Typography.Text type="secondary">No feedback saved</Typography.Text>
+                        ),
+                    },
+                    {
+                      title: '',
+                      key: 'copy',
+                      width: 44,
+                      align: 'center',
+                      className: 'feedback-roster-copy-col',
+                      render: (_, row) => (
+                        <Tooltip title={row.feedback ? 'Copy feedback' : 'No feedback saved'}>
+                          <Button
+                            type="text"
+                            size="small"
+                            className="feedback-roster-copy-btn"
+                            icon={<CopyOutlined />}
+                            disabled={!row.feedback}
+                            aria-label={
+                              row.feedback
+                                ? `Copy feedback for ${row.name}`
+                                : `No feedback to copy for ${row.name}`
+                            }
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              handleCopyFeedback(row.feedback)
+                            }}
+                          />
+                        </Tooltip>
+                      ),
+                    },
+                  ]}
+                />
               )}
             </div>
-          </Space>
-        </Card>
-
-        <Card size="small" title={UI.traitsAndNotes} className="feedback-panel-card">
-          <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
-            <FormField label="Attendance in Feedback">
-              <Select
-                value={attendanceEmphasis}
-                onChange={setAttendanceEmphasis}
-                options={attendanceEmphasisOptions}
-                style={{ width: '100%' }}
-              />
-            </FormField>
-            <Checkbox
-              checked={includeAttendance}
-              onChange={(e) => setIncludeAttendance(e.target.checked)}
-            >
-              Include attendance paragraph
-            </Checkbox>
-            <FormField label="Participation">
-              <Select
-                value={participation}
-                onChange={setParticipation}
-                options={participationOptions}
-                style={{ width: '100%' }}
-              />
-            </FormField>
-            <FormField label="Assignments & Quality">
-              <Select
-                value={assignmentQuality}
-                onChange={setAssignmentQuality}
-                options={assignmentOptions}
-                style={{ width: '100%' }}
-              />
-            </FormField>
-            <FormField label="Extra Notes (Optional)">
-              <Input.TextArea
-                value={extraNotes}
-                onChange={(e) => setExtraNotes(e.target.value)}
-                placeholder="e.g. strong in group work, needs support with deadlines…"
-                rows={3}
-                maxLength={2000}
-                showCount
-              />
-            </FormField>
-            <Space wrap>
-              <Button type="primary" onClick={handleGenerate} disabled={!selectedPartner}>
-                {UI.generateFeedback}
-              </Button>
-              {aiReady && (
-                <Button onClick={handleRefine} loading={refining} disabled={!output.trim()}>
-                  Refine with AI
-                </Button>
-              )}
-              <Button onClick={handleCopy} disabled={!output.trim()}>
-                Copy
-              </Button>
-            </Space>
-            {!aiReady && (
-              <Alert
-                type="info"
-                showIcon
-                title="AI Refine Optional"
-                description="Templates work offline. For Refine with AI, configure Ollama or VITE_VISION_LLM_API_KEY (see .env.example). Use VITE_FEEDBACK_LLM_MODEL for a text model such as llama3.2."
-              />
-            )}
-          </Space>
-        </Card>
           </div>
-
-          <div className="feedback-output-pane">
-            <Card
-              size="small"
-              title={UI.generatedFeedback}
-              className="feedback-panel-card feedback-panel-output-card"
-            >
-              <div className="feedback-output-field">
-                <Input.TextArea
-                  className="feedback-output-area"
-                  value={output}
-                  onChange={(e) => setOutput(e.target.value)}
-                  placeholder={`Click ${UI.generateFeedback}, then edit here before copying.`}
-                  maxLength={8000}
-                />
-                <div className="feedback-output-footer">
-                  <span className="feedback-char-count" aria-live="polite">
-                    {output.length} / 8000
-                  </span>
-                </div>
-              </div>
-            </Card>
-          </div>
-        </div>
+        )}
       </div>
+
+      <FeedbackStudentModal
+        open={Boolean(modalPartner && selectedClass)}
+        classId={classId}
+        classMeta={selectedClass}
+        partner={modalPartner}
+        classAttendance={classAttendance}
+        saving={saving}
+        onClose={() => setModalPartnerId(null)}
+        onSaveFeedback={handleSaveFeedback}
+      />
     </section>
   )
 }

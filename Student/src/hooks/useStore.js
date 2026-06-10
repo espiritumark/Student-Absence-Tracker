@@ -13,6 +13,7 @@ import {
   dbSetSessionMeta,
   dbUpdateStudent,
   fetchAppState,
+  formatDbError,
 } from '../lib/database'
 import { isSupabaseConfigured } from '../lib/supabase'
 import {
@@ -236,7 +237,7 @@ export function useStore() {
               error: e.message,
             }),
           )
-          setSyncError(e.message)
+          setSyncError(formatDbError(e))
           throw e
         }
         return null
@@ -290,7 +291,7 @@ export function useStore() {
               error: e.message,
             }),
           )
-          setSyncError(e.message)
+          setSyncError(formatDbError(e))
           throw e
         }
         return
@@ -340,7 +341,7 @@ export function useStore() {
               error: e.message,
             }),
           )
-          setSyncError(e.message)
+          setSyncError(formatDbError(e))
         }
         return
       }
@@ -376,8 +377,9 @@ export function useStore() {
           await dbUpdateStudent(studentId, patch)
           await refreshFromCloud({ silent: true })
         } catch (e) {
-          setSyncError(e.message)
-          throw e
+          const message = formatDbError(e)
+          setSyncError(message)
+          throw new Error(message)
         }
         return
       }
@@ -408,7 +410,7 @@ export function useStore() {
           }
           await refreshFromCloud({ silent: true })
         } catch (e) {
-          setSyncError(e.message)
+          setSyncError(formatDbError(e))
           throw e
         }
         return
@@ -458,7 +460,7 @@ export function useStore() {
               error: e.message,
             }),
           )
-          setSyncError(e.message)
+          setSyncError(formatDbError(e))
         }
         return
       }
@@ -504,7 +506,7 @@ export function useStore() {
           await dbSetAttendance(user.id, classId, day, studentId, patch)
           await refreshFromCloud({ silent: true })
         } catch (e) {
-          setSyncError(e.message)
+          setSyncError(formatDbError(e))
         }
         return
       }
@@ -557,7 +559,7 @@ export function useStore() {
           await dbDeleteSession(user.id, classId, sessionKey)
           await refreshFromCloud({ silent: true })
         } catch (e) {
-          setSyncError(e.message)
+          setSyncError(formatDbError(e))
           throw e
         }
         return
@@ -585,7 +587,7 @@ export function useStore() {
           await dbDeleteModuleSessions(user.id, classId, moduleFilter)
           await refreshFromCloud({ silent: true })
         } catch (e) {
-          setSyncError(e.message)
+          setSyncError(formatDbError(e))
           throw e
         }
         return 0
@@ -622,7 +624,7 @@ export function useStore() {
           await dbSetSessionMeta(user.id, classId, day, meta)
           await refreshFromCloud({ silent: true })
         } catch (e) {
-          setSyncError(e.message)
+          setSyncError(formatDbError(e))
         }
         return
       }
@@ -648,7 +650,7 @@ export function useStore() {
           await dbImportPortalSession(user.id, payload)
           await refreshFromCloud({ silent: true })
         } catch (e) {
-          setSyncError(e.message)
+          setSyncError(formatDbError(e))
           throw e
         }
         return
@@ -767,7 +769,7 @@ export function useStore() {
               error: e.message,
             }),
           )
-          setSyncError(e.message)
+          setSyncError(formatDbError(e))
           throw e
         }
       }

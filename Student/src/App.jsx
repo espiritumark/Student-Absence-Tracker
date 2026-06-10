@@ -241,7 +241,13 @@ function AppContent() {
             />
           </div>
           <div className="tab-panel" hidden={tab !== 'feedback'} aria-hidden={tab !== 'feedback'}>
-            <FeedbackPanel classes={store.classes} attendance={store.attendance} />
+            <FeedbackPanel
+              classes={store.classes}
+              attendance={store.attendance}
+              updateStudent={store.updateStudent}
+              useCloud={store.useCloud}
+              syncError={store.syncError}
+            />
           </div>
           <div className="tab-panel" hidden={tab !== 'reporting'} aria-hidden={tab !== 'reporting'}>
             <ReportingPanel

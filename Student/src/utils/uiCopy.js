@@ -50,6 +50,8 @@ export const UI = {
   generateFeedback: 'Generate Feedback',
   traitsAndNotes: 'Traits & Notes',
   generatedFeedback: 'Generated Feedback',
+  saveFeedback: 'Save Feedback',
+  feedbackSaved: 'Feedback Saved',
   parseJson: 'Parse JSON',
   scanScreenshot: 'Scan Screenshot',
   pasteScreenshot: 'Paste Screenshot',

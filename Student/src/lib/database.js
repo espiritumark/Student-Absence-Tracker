@@ -4,6 +4,22 @@ import { makeSessionKey, sessionDateFromKey, sessionModuleFromKey } from '../uti
 import { normalizeModuleKey } from '../utils/sessionKeys'
 import { supabase } from './supabase'
 
+/** Turn Supabase/PostgREST errors into actionable messages where possible. */
+export function isFeedbackColumnMissingError(error) {
+  const message = String(error?.message ?? error ?? '')
+  return /feedback.*column|schema cache/i.test(message)
+}
+
+export function formatDbError(error) {
+  const message = String(error?.message ?? error ?? 'Unknown error')
+  if (isFeedbackColumnMissingError(message)) {
+    return (
+      'Cloud database is missing the feedback column. Run supabase/migrate-feedback.sql in the Supabase SQL Editor, then try again.'
+    )
+  }
+  return message
+}
+
 function normalizeName(name) {
   return name.trim().replace(/\s+/g, ' ').toUpperCase()
 }
@@ -15,6 +31,7 @@ function mapStudent(row) {
     manualTotalAbsences: row.manual_total_absences,
     manualConsecutiveAbsences: row.manual_consecutive_absences,
     manualNoPriorNotice: row.manual_no_prior_notice,
+    feedback: row.feedback ?? '',
   }
 }
 
@@ -134,6 +151,9 @@ export async function dbUpdateStudent(studentId, patch) {
   }
   if ('manualNoPriorNotice' in patch) {
     row.manual_no_prior_notice = patch.manualNoPriorNotice
+  }
+  if ('feedback' in patch) {
+    row.feedback = patch.feedback?.trim() ? patch.feedback.trim() : null
   }
   const { error } = await supabase.from('students').update(row).eq('id', studentId)
   if (error) throw error
@@ -464,11 +484,16 @@ export async function dbMigrateLocalState(userId, localState) {
       const added = await dbAddStudent(userId, classId, st.name)
       if (added) {
         idMap.set(st.id, added.id)
-        if (st.manualTotalAbsences != null || st.manualConsecutiveAbsences != null) {
+        if (
+          st.manualTotalAbsences != null ||
+          st.manualConsecutiveAbsences != null ||
+          st.feedback?.trim()
+        ) {
           await dbUpdateStudent(added.id, {
             manualTotalAbsences: st.manualTotalAbsences ?? null,
             manualConsecutiveAbsences: st.manualConsecutiveAbsences ?? null,
             manualNoPriorNotice: st.manualNoPriorNotice ?? false,
+            feedback: st.feedback?.trim() || null,
           })
         }
       }

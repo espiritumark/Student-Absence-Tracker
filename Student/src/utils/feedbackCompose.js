@@ -22,87 +22,51 @@ function resolveAttendanceEmphasis(emphasis, counts) {
   return emphasis
 }
 
-function attendanceParagraph(emphasis) {
+function shortAttendancePhrase(emphasis) {
   switch (emphasis) {
     case ATTENDANCE_EMPHASIS.consistent:
-      return `The ${lp} maintains consistent attendance, which supports continuity in learning and classroom participation.`
+      return `The ${lp} attends consistently, supporting steady progress.`
     case ATTENDANCE_EMPHASIS.mild:
-      return `The ${lp} has had some absences. Improved attendance consistency would help strengthen participation and continuity in learning.`
+      return `The ${lp} has some absences; more consistent attendance would help.`
     case ATTENDANCE_EMPHASIS.limited:
-      return `The ${lp}'s attendance and engagement records are limited. Improved attendance consistency would support stronger participation and continuity in learning.`
+      return `The ${lp}'s attendance is limited and affects continuity in learning.`
     case ATTENDANCE_EMPHASIS.significant:
-      return `The ${lp}'s attendance records show a concerning pattern of absences. Consistent attendance is essential for meaningful participation and progress; addressing this should be a priority.`
+      return `The ${lp}'s absences are a concern and need urgent improvement.`
     default:
       return ''
   }
 }
 
-function participationClause(level) {
-  switch (level) {
-    case PARTICIPATION_LEVEL.energetic:
-      return 'participates energetically during lessons, contributes ideas willingly, and helps maintain a positive classroom atmosphere'
-    case PARTICIPATION_LEVEL.active:
-      return 'participates actively during lessons and engages constructively with class activities'
-    case PARTICIPATION_LEVEL.attentive:
-      return 'listens attentively, participates when invited, and generally follows lesson expectations'
-    case PARTICIPATION_LEVEL.passive:
-      return 'is often quiet during lessons and would benefit from more consistent voluntary participation'
-    case PARTICIPATION_LEVEL.lazy:
-      return 'shows limited engagement during lessons and would benefit from a more proactive approach to participation'
-    default:
-      return 'participates in lessons at a level that reflects their current engagement'
-  }
-}
+function shortEngagementPhrase(participation, assignmentQuality) {
+  const part =
+    participation === PARTICIPATION_LEVEL.energetic
+      ? 'participates energetically'
+      : participation === PARTICIPATION_LEVEL.active
+        ? 'participates actively'
+        : participation === PARTICIPATION_LEVEL.attentive
+          ? 'listens attentively and joins in when invited'
+          : participation === PARTICIPATION_LEVEL.passive
+            ? 'is often quiet and could contribute more'
+            : participation === PARTICIPATION_LEVEL.lazy
+              ? 'shows limited engagement in lessons'
+              : 'participates at a moderate level'
 
-function assignmentClause(quality) {
-  switch (quality) {
-    case ASSIGNMENT_QUALITY.excellent:
-      return 'consistently produces excellent, thorough work and demonstrates a strong commitment to learning'
-    case ASSIGNMENT_QUALITY.good:
-      return 'completes tasks diligently and produces good-quality work'
-    case ASSIGNMENT_QUALITY.inconsistent:
-      return 'submits work with variable effort and quality; more consistent application would strengthen outcomes'
-    case ASSIGNMENT_QUALITY.poor:
-      return 'often submits incomplete or low-quality work and would benefit from greater care and follow-through on assignments'
-    default:
-      return 'completes assigned work in line with current expectations'
-  }
-}
+  const assign =
+    assignmentQuality === ASSIGNMENT_QUALITY.excellent
+      ? 'produces excellent work'
+      : assignmentQuality === ASSIGNMENT_QUALITY.good
+        ? 'completes work to a good standard'
+        : assignmentQuality === ASSIGNMENT_QUALITY.inconsistent
+          ? 'submits work with variable effort'
+          : assignmentQuality === ASSIGNMENT_QUALITY.poor
+            ? 'often submits incomplete work'
+            : 'meets basic assignment expectations'
 
-function engagementParagraph(participation, assignmentQuality) {
-  const part = participationClause(participation)
-  const assign = assignmentClause(assignmentQuality)
-
-  const energeticPositive =
-    participation === PARTICIPATION_LEVEL.energetic ||
-    participation === PARTICIPATION_LEVEL.active
-  const qualityPositive =
-    assignmentQuality === ASSIGNMENT_QUALITY.excellent ||
-    assignmentQuality === ASSIGNMENT_QUALITY.good
-
-  if (energeticPositive && qualityPositive) {
-    return `The ${lp} listens attentively, ${part}, and ${assign}, contributing positively to the classroom environment.`
-  }
-
-  if (
-    participation === PARTICIPATION_LEVEL.lazy ||
-    assignmentQuality === ASSIGNMENT_QUALITY.poor
-  ) {
-    return `The ${lp} ${part}. They ${assign}. With greater consistency in effort and attendance, they could make stronger progress.`
-  }
-
-  return `The ${lp} ${part}. They ${assign}.`
+  return `They ${part} and ${assign}.`
 }
 
 /**
- * Build feedback prose from attendance stats, trait picks, and optional teacher notes.
- * @param {object} input
- * @param {{ total: number, consecutive: number }} input.counts
- * @param {string} input.attendanceEmphasis
- * @param {string} input.participation
- * @param {string} input.assignmentQuality
- * @param {string} [input.extraNotes]
- * @param {boolean} [input.includeAttendance=true]
+ * Build compact feedback (target 30–50 words) from stats, traits, and notes.
  */
 export function composeFeedback({
   counts,
@@ -113,19 +77,19 @@ export function composeFeedback({
   includeAttendance = true,
 }) {
   const resolved = resolveAttendanceEmphasis(attendanceEmphasis, counts)
-  const paragraphs = []
+  const sentences = []
 
   if (includeAttendance) {
-    const att = attendanceParagraph(resolved)
-    if (att) paragraphs.push(att)
+    const att = shortAttendancePhrase(resolved)
+    if (att) sentences.push(att)
   }
 
-  paragraphs.push(engagementParagraph(participation, assignmentQuality))
+  sentences.push(shortEngagementPhrase(participation, assignmentQuality))
 
   const notes = extraNotes.trim()
   if (notes) {
-    paragraphs.push(notes.endsWith('.') ? notes : `${notes}.`)
+    sentences.push(notes.endsWith('.') ? notes : `${notes}.`)
   }
 
-  return paragraphs.join('\n\n')
+  return sentences.join(' ')
 }

@@ -1018,7 +1018,7 @@ export default function BulkScreenshotImport({
                   className="portal-form import-review-form bulk-screenshot-review-form"
                   onSubmit={handleSaveSession}
                 >
-                  <div className="bulk-screenshot-review-scroll">
+                  <div className="bulk-screenshot-review-header">
                   <ImportSessionMetaFields
                     meta={meta}
                     scannedMeta={selectedItem.scannedMeta}
@@ -1053,12 +1053,14 @@ export default function BulkScreenshotImport({
                       summary appears before changes are applied.
                     </Typography.Text>
                   )}
+                  </div>
 
+                  <div className="bulk-screenshot-review-table-region portal-student-list-scroll">
                   <div className="bulk-screenshot-review-table-wrap">
                     <Table
                       size="small"
                       rowKey="key"
-                      pagination={{ pageSize: 25, hideOnSinglePage: true }}
+                      pagination={{ pageSize: 25, hideOnSinglePage: true, showSizeChanger: false }}
                       dataSource={filteredRows}
                       rowClassName={(row) =>
                         needsSimilarReviewWarning(row) ? 'import-row-similar-pending' : ''

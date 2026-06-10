@@ -95,7 +95,7 @@ import {
   storeScreenshotEngine,
 } from '../utils/screenshotEnginePreference'
 
-const emptyMeta = {
+const emptyMeta = () => ({
   intake: '',
   level: '',
   qualification: '',
@@ -104,7 +104,7 @@ const emptyMeta = {
   module: '',
   startTime: '',
   duration: '',
-}
+})
 
 function formatElapsed(seconds) {
   const m = Math.floor(seconds / 60)
@@ -140,7 +140,7 @@ export default function AttendanceImport({
   const [screenshotEngine, setScreenshotEngine] = useState(loadStoredScreenshotEngine)
   const [visionConnection, setVisionConnection] = useState(null)
   const [error, setError] = useState('')
-  const [meta, setMeta] = useState(emptyMeta)
+  const [meta, setMeta] = useState(() => emptyMeta())
   const [students, setStudents] = useState([])
   const [previewUrl, setPreviewUrl] = useState(null)
   const [saved, setSaved] = useState(false)
@@ -196,7 +196,7 @@ export default function AttendanceImport({
 
   const resetJsonImportReview = useCallback(() => {
     setStudents([])
-    setMeta(emptyMeta)
+    setMeta(emptyMeta())
     setParseMessage('')
     setError('')
     setReviewSource(null)
@@ -255,7 +255,7 @@ export default function AttendanceImport({
 
     screenshotSessionRef.current = snap
     setStudents(snap.students ?? [])
-    setMeta(snap.meta ?? emptyMeta)
+    setMeta(snap.meta ?? emptyMeta())
     setImportView(snap.importView ?? 'input')
     setImportWarnings(snap.importWarnings ?? [])
     setScannedMeta(snap.scannedMeta ?? null)
@@ -277,7 +277,7 @@ export default function AttendanceImport({
     setPendingScreenshot(null)
     setPreviewUrl(null)
     setStudents([])
-    setMeta(emptyMeta)
+    setMeta(emptyMeta())
     setImportView('input')
     setReviewSource(null)
     setImportWarnings([])
@@ -333,7 +333,7 @@ export default function AttendanceImport({
     jsonSessionRef.current = snap
     setJsonText(snap.jsonText ?? '')
     setStudents(snap.students ?? [])
-    setMeta(snap.meta ?? emptyMeta)
+    setMeta(snap.meta ?? emptyMeta())
     setImportView(snap.importView ?? 'input')
     setImportWarnings(snap.importWarnings ?? [])
     setScannedMeta(snap.scannedMeta ?? null)
@@ -487,7 +487,7 @@ export default function AttendanceImport({
     savedRef.current = false
     setSaved(false)
     setResetCountdown(0)
-    setMeta(emptyMeta)
+    setMeta(emptyMeta())
     setStudents([])
     setPreviewUrl(null)
     setPendingScreenshot(null)
