@@ -7,11 +7,21 @@ import { supabase } from './supabase'
 /** Turn Supabase/PostgREST errors into actionable messages where possible. */
 export function isFeedbackColumnMissingError(error) {
   const message = String(error?.message ?? error ?? '')
-  return /feedback.*column|schema cache/i.test(message)
+  return /'feedback' column of 'students'/i.test(message)
+}
+
+export function isFeedbackNotesColumnMissingError(error) {
+  const message = String(error?.message ?? error ?? '')
+  return /'feedback_notes' column of 'students'/i.test(message)
 }
 
 export function formatDbError(error) {
   const message = String(error?.message ?? error ?? 'Unknown error')
+  if (isFeedbackNotesColumnMissingError(message)) {
+    return (
+      'Cloud database is missing the feedback_notes column. Run supabase/migrate-feedback.sql in the Supabase SQL Editor, then try again.'
+    )
+  }
   if (isFeedbackColumnMissingError(message)) {
     return (
       'Cloud database is missing the feedback column. Run supabase/migrate-feedback.sql in the Supabase SQL Editor, then try again.'
@@ -32,6 +42,7 @@ function mapStudent(row) {
     manualConsecutiveAbsences: row.manual_consecutive_absences,
     manualNoPriorNotice: row.manual_no_prior_notice,
     feedback: row.feedback ?? '',
+    feedbackNotes: row.feedback_notes ?? '',
   }
 }
 
@@ -154,6 +165,9 @@ export async function dbUpdateStudent(studentId, patch) {
   }
   if ('feedback' in patch) {
     row.feedback = patch.feedback?.trim() ? patch.feedback.trim() : null
+  }
+  if ('feedbackNotes' in patch) {
+    row.feedback_notes = patch.feedbackNotes?.trim() ? patch.feedbackNotes.trim() : null
   }
   const { error } = await supabase.from('students').update(row).eq('id', studentId)
   if (error) throw error
@@ -487,13 +501,15 @@ export async function dbMigrateLocalState(userId, localState) {
         if (
           st.manualTotalAbsences != null ||
           st.manualConsecutiveAbsences != null ||
-          st.feedback?.trim()
+          st.feedback?.trim() ||
+          st.feedbackNotes?.trim()
         ) {
           await dbUpdateStudent(added.id, {
             manualTotalAbsences: st.manualTotalAbsences ?? null,
             manualConsecutiveAbsences: st.manualConsecutiveAbsences ?? null,
             manualNoPriorNotice: st.manualNoPriorNotice ?? false,
             feedback: st.feedback?.trim() || null,
+            feedbackNotes: st.feedbackNotes?.trim() || null,
           })
         }
       }

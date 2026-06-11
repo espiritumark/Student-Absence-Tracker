@@ -15,8 +15,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAppNotifier } from '../hooks/useAppNotifier'
 import { getEffectiveAbsenceCounts } from '../utils/attendanceStats'
 import { formatClassLabel } from '../utils/classFormat'
+import { formatPersonName } from '../utils/nameMatching'
 import { composeFeedback, suggestAttendanceEmphasis } from '../utils/feedbackCompose'
-import { isFeedbackLlmConfigured, refineFeedbackWithLlm } from '../utils/feedbackLlm'
+import { isFeedbackLlmConfigured, refineFeedbackWithLlm, refineNotesWithLlm } from '../utils/feedbackLlm'
 import {
   ASSIGNMENT_QUALITY,
   ATTENDANCE_EMPHASIS,
@@ -26,6 +27,7 @@ import {
   participationOptions,
 } from '../utils/feedbackTraits'
 import {
+  FEEDBACK_NOTES_MAX,
   FEEDBACK_WORD_MAX,
   FEEDBACK_WORD_MIN,
   countFeedbackWords,
@@ -34,6 +36,7 @@ import {
   mergeFeedbackDraft,
 } from '../utils/feedbackWords'
 import { UI } from '../utils/uiCopy'
+import CopyIconButton from './CopyIconButton'
 import ConfirmDialog from './ConfirmDialog'
 import FormField from './FormField'
 import SaveFieldOverlay from './SaveFieldOverlay'
@@ -57,21 +60,24 @@ export default function FeedbackStudentModal({
   partner,
   classAttendance = {},
   onClose,
-  onSaveFeedback,
+  onSaveStudentFields,
   saving = false,
+  needsCloudMigration = false,
 }) {
   const notify = useAppNotifier()
   const [attendanceEmphasis, setAttendanceEmphasis] = useState(ATTENDANCE_EMPHASIS.auto)
   const [participation, setParticipation] = useState(PARTICIPATION_LEVEL.active)
   const [assignmentQuality, setAssignmentQuality] = useState(ASSIGNMENT_QUALITY.good)
   const [includeAttendance, setIncludeAttendance] = useState(true)
-  const [extraNotes, setExtraNotes] = useState('')
+  const [composeNotes, setComposeNotes] = useState('')
   const [draft, setDraft] = useState('')
+  const [notesDraft, setNotesDraft] = useState('')
   const [saveMode, setSaveMode] = useState(SAVE_MODES.replace)
-  const [refining, setRefining] = useState(false)
+  const [refiningField, setRefiningField] = useState(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
 
   const savedFeedback = String(partner?.feedback ?? '').trim()
+  const savedNotes = String(partner?.feedbackNotes ?? '').trim()
   const hasSaved = Boolean(savedFeedback)
 
   const counts = useMemo(() => {
@@ -85,15 +91,17 @@ export default function FeedbackStudentModal({
     setParticipation(PARTICIPATION_LEVEL.active)
     setAssignmentQuality(ASSIGNMENT_QUALITY.good)
     setIncludeAttendance(true)
-    setExtraNotes('')
+    setComposeNotes('')
     setDraft('')
+    setNotesDraft(savedNotes)
     setSaveMode(hasSaved ? SAVE_MODES.build : SAVE_MODES.replace)
     setDeleteOpen(false)
-  }, [open, partner?.id, hasSaved])
+  }, [open, partner?.id, hasSaved, savedNotes])
 
   const draftWordCount = countFeedbackWords(draft)
   const draftWordStatus = feedbackWordCountStatus(draft)
   const aiReady = isFeedbackLlmConfigured()
+  const refining = refiningField !== null
   const busy = saving || refining
 
   const suggestedEmphasis = suggestAttendanceEmphasis({
@@ -110,7 +118,7 @@ export default function FeedbackStudentModal({
       attendanceEmphasis,
       participation,
       assignmentQuality,
-      extraNotes,
+      extraNotes: composeNotes,
       includeAttendance,
     })
     setDraft(generated)
@@ -122,14 +130,14 @@ export default function FeedbackStudentModal({
       return
     }
     if (!partner || !classMeta) return
-    setRefining(true)
+    setRefiningField('feedback')
     try {
       const refined = await refineFeedbackWithLlm(draft, {
         partnerName: partner.name,
         className: formatClassLabel(classMeta),
         total: counts.total,
         consecutive: counts.consecutive,
-        extraNotes,
+        extraNotes: composeNotes,
         existingFeedback: hasSaved && saveMode === SAVE_MODES.build ? savedFeedback : '',
       })
       setDraft(refined)
@@ -144,36 +152,84 @@ export default function FeedbackStudentModal({
     } catch (err) {
       notify.error({ title: err.message || 'Could not refine feedback.' })
     } finally {
-      setRefining(false)
+      setRefiningField(null)
     }
   }
 
-  async function handleCopy(text) {
-    if (!text.trim()) return
-    try {
-      await navigator.clipboard.writeText(text)
-      notify.success({ title: 'Copied to clipboard.' })
-    } catch {
-      notify.error({ title: 'Could not copy — select the text and copy manually.' })
+  async function handleRefineNotes() {
+    if (!notesDraft.trim()) {
+      notify.warning({ title: 'Type extra notes first, then refine with AI.' })
+      return
     }
+    if (!partner || !classMeta) return
+    setRefiningField('notes')
+    try {
+      const refined = await refineNotesWithLlm(notesDraft)
+      setNotesDraft(refined)
+      notify.success({ title: 'Extra notes refined.' })
+    } catch (err) {
+      notify.error({ title: err.message || 'Could not refine extra notes.' })
+    } finally {
+      setRefiningField(null)
+    }
+  }
+
+  async function handleCopyError() {
+    notify.error({ title: 'Could not copy — select the text and copy manually.' })
   }
 
   async function handleSave() {
-    const next =
-      hasSaved && saveMode === SAVE_MODES.build
-        ? mergeFeedbackDraft(savedFeedback, draft, SAVE_MODES.build)
-        : draft.trim()
+    const trimmedDraft = draft.trim()
+    const trimmedNotes = notesDraft.trim()
+    let nextFeedback = null
 
-    if (!isValidFeedbackWordCount(next)) {
-      notify.warning({
-        title: `Feedback must be ${FEEDBACK_WORD_MIN}–${FEEDBACK_WORD_MAX} words.`,
-        description: `Current draft: ${countFeedbackWords(next)} words.`,
+    if (trimmedDraft) {
+      nextFeedback =
+        hasSaved && saveMode === SAVE_MODES.build
+          ? mergeFeedbackDraft(savedFeedback, draft, SAVE_MODES.build)
+          : trimmedDraft
+
+      if (!isValidFeedbackWordCount(nextFeedback)) {
+        notify.warning({
+          title: `Feedback must be ${FEEDBACK_WORD_MIN}–${FEEDBACK_WORD_MAX} words.`,
+          description: `Current draft: ${countFeedbackWords(nextFeedback)} words.`,
+        })
+        return
+      }
+    } else if (hasSaved) {
+      nextFeedback = savedFeedback
+    }
+
+    const feedbackUnchanged = !trimmedDraft && hasSaved
+    const notesUnchanged = trimmedNotes === savedNotes
+    if (!trimmedDraft && !hasSaved && notesUnchanged) {
+      notify.warning({ title: 'Nothing to save yet.' })
+      return
+    }
+    if (feedbackUnchanged && notesUnchanged) {
+      notify.warning({ title: 'No changes to save.' })
+      return
+    }
+
+    if (needsCloudMigration) {
+      notify.error({
+        title: 'Cloud database update required before saving',
+        description:
+          'Run supabase/migrate-feedback.sql in the Supabase SQL Editor, then refresh this page.',
       })
       return
     }
 
+    const patch = {}
+    if (trimmedDraft) {
+      patch.feedback = nextFeedback
+    }
+    if (!notesUnchanged) {
+      patch.feedbackNotes = trimmedNotes || null
+    }
+
     try {
-      await onSaveFeedback?.(classId, partner.id, next)
+      await onSaveStudentFields?.(classId, partner.id, patch)
       onClose?.()
     } catch {
       // Error surfaced by FeedbackPanel and cloud sync banner.
@@ -182,7 +238,7 @@ export default function FeedbackStudentModal({
 
   async function handleDelete() {
     try {
-      await onSaveFeedback?.(classId, partner.id, '')
+      await onSaveStudentFields?.(classId, partner.id, { feedback: null })
       setDeleteOpen(false)
       onClose?.()
     } catch {
@@ -196,13 +252,13 @@ export default function FeedbackStudentModal({
     <>
       <Modal
         open={open}
-        title={`Feedback — ${partner.name}`}
+        title={`Feedback — ${formatPersonName(partner.name)}`}
         onCancel={busy ? undefined : onClose}
         width="min(1080px, 96vw)"
         className="feedback-student-modal"
         destroyOnHidden
         closable={!busy}
-        maskClosable={!busy}
+        mask={{ closable: !busy }}
         keyboard={!busy}
         footer={
           <Space wrap>
@@ -214,23 +270,38 @@ export default function FeedbackStudentModal({
                 Remove Saved Feedback
               </Button>
             )}
-            <Button
-              onClick={() => handleCopy(hasSaved && !draft.trim() ? savedFeedback : draft)}
-              disabled={busy || (!draft.trim() && !hasSaved)}
-            >
-              Copy
-            </Button>
-            <Button type="primary" loading={saving} disabled={busy} onClick={handleSave}>
+            <Button type="primary" loading={saving} disabled={busy || needsCloudMigration} onClick={handleSave}>
               {UI.saveFeedback}
             </Button>
           </Space>
         }
       >
         <div className="feedback-modal-body">
+          {needsCloudMigration ? (
+            <Alert
+              type="error"
+              showIcon
+              className="feedback-setup-alert"
+              title="Cloud database update required before saving"
+              description={
+                <>
+                  Run this once in your Supabase project&apos;s SQL Editor, then refresh and save
+                  again:
+                  <pre className="feedback-setup-sql">
+                    alter table public.students{'\n'}
+                    {'  '}add column if not exists feedback text;{'\n'}
+                    alter table public.students{'\n'}
+                    {'  '}add column if not exists feedback_notes text;
+                  </pre>
+                  File: <code>supabase/migrate-feedback.sql</code>
+                </>
+              }
+            />
+          ) : null}
           <Typography.Text type="secondary" className="feedback-modal-compose-lead">
             {hasSaved
-              ? 'Adjust traits on the left. Saved feedback and your new draft are on the right — build on saved or replace when you save (30–50 words).'
-              : 'Generate or write feedback in the right panel, then save (30–50 words).'}
+              ? 'Adjust traits on the left. Saved feedback and your new draft are on the right — build on saved or replace when you save (30–50 words). Extra notes are saved with the same button.'
+              : 'Generate or write feedback, add optional extra notes, then save everything with Save Feedback (30–50 words for feedback).'}
           </Typography.Text>
 
           <div className="feedback-workspace-split">
@@ -294,10 +365,10 @@ export default function FeedbackStudentModal({
                       disabled={busy}
                     />
                   </FormField>
-                  <FormField label="Extra Notes (Optional)">
+                  <FormField label={UI.feedbackComposeNotes}>
                     <Input.TextArea
-                      value={extraNotes}
-                      onChange={(e) => setExtraNotes(e.target.value)}
+                      value={composeNotes}
+                      onChange={(e) => setComposeNotes(e.target.value)}
                       placeholder="e.g. strong in group work, needs support with deadlines…"
                       rows={3}
                       maxLength={500}
@@ -311,7 +382,7 @@ export default function FeedbackStudentModal({
                     {aiReady && (
                       <Button
                         onClick={handleRefine}
-                        loading={refining}
+                        loading={refiningField === 'feedback'}
                         disabled={saving || refining || !draft.trim()}
                       >
                         Refine with AI
@@ -331,50 +402,76 @@ export default function FeedbackStudentModal({
             </div>
 
             <div className="feedback-output-pane feedback-modal-output-stack">
-              {hasSaved && (
-                <Card
-                  size="small"
-                  title={UI.feedbackSaved}
-                  className="feedback-panel-card feedback-modal-saved-card"
-                >
-                  <Typography.Paragraph className="feedback-modal-saved-text">
-                    {savedFeedback}
-                  </Typography.Paragraph>
-                  <Space wrap size={[6, 6]}>
+              <Card
+                size="small"
+                title={UI.feedbackSaved}
+                className={`feedback-panel-card feedback-modal-saved-card${
+                  hasSaved ? '' : ' feedback-modal-saved-card-empty'
+                }`}
+                extra={
+                  hasSaved ? (
+                    <CopyIconButton
+                      text={savedFeedback}
+                      disabled={busy}
+                      onCopyError={handleCopyError}
+                    />
+                  ) : null
+                }
+              >
+                {hasSaved ? (
+                  <>
+                    <Typography.Paragraph className="feedback-modal-saved-text">
+                      {savedFeedback}
+                    </Typography.Paragraph>
                     <Tag color="success">{countFeedbackWords(savedFeedback)} words</Tag>
-                    <Button
-                      size="small"
-                      type="link"
-                      disabled={busy}
-                      onClick={() => handleCopy(savedFeedback)}
-                    >
-                      Copy Saved
-                    </Button>
-                  </Space>
-                  <FormField label="When Saving" className="feedback-modal-save-mode-field">
-                    <Radio.Group
-                      value={saveMode}
-                      onChange={(e) => setSaveMode(e.target.value)}
-                      optionType="button"
-                      buttonStyle="solid"
-                      className="feedback-save-mode-group"
-                      disabled={busy}
-                    >
-                      <Radio.Button value={SAVE_MODES.build}>Build on Saved</Radio.Button>
-                      <Radio.Button value={SAVE_MODES.replace}>Replace Entirely</Radio.Button>
-                    </Radio.Group>
-                  </FormField>
-                </Card>
-              )}
+                    <FormField label="When Saving" className="feedback-modal-save-mode-field">
+                      <Radio.Group
+                        value={saveMode}
+                        onChange={(e) => setSaveMode(e.target.value)}
+                        optionType="button"
+                        buttonStyle="solid"
+                        className="feedback-save-mode-group"
+                        disabled={busy}
+                      >
+                        <Radio.Button value={SAVE_MODES.build}>Build on Saved</Radio.Button>
+                        <Radio.Button value={SAVE_MODES.replace}>Replace Entirely</Radio.Button>
+                      </Radio.Group>
+                    </FormField>
+                  </>
+                ) : (
+                  <div className="feedback-modal-saved-empty">
+                    <Input.TextArea
+                      className="feedback-modal-saved-placeholder"
+                      value=""
+                      readOnly
+                      disabled
+                      rows={4}
+                      placeholder="Saved feedback will appear here."
+                    />
+                    <div className="feedback-modal-saved-empty-overlay" aria-hidden>
+                      <Typography.Text className="feedback-modal-saved-empty-title">
+                        No saved feedback yet
+                      </Typography.Text>
+                      <Typography.Text type="secondary">
+                        Generate a draft below, then save ({FEEDBACK_WORD_MIN}–{FEEDBACK_WORD_MAX}{' '}
+                        words).
+                      </Typography.Text>
+                    </div>
+                  </div>
+                )}
+              </Card>
 
               <Card
                 size="small"
                 title={hasSaved ? 'New Draft' : UI.generatedFeedback}
                 className="feedback-panel-card feedback-panel-output-card"
+                extra={
+                  <CopyIconButton text={draft} disabled={busy} onCopyError={handleCopyError} />
+                }
               >
                 <SaveFieldOverlay
-                  busy={refining}
-                  label="Refining with AI…"
+                  busy={refiningField === 'feedback'}
+                  label="Refining feedback with AI…"
                   className="feedback-output-spin"
                 >
                   <div className="feedback-output-field">
@@ -398,6 +495,48 @@ export default function FeedbackStudentModal({
                     </div>
                   </div>
                 </SaveFieldOverlay>
+              </Card>
+
+              <Card
+                size="small"
+                title={UI.feedbackExtraNotes}
+                className="feedback-panel-card feedback-modal-notes-card"
+                extra={
+                  <CopyIconButton text={notesDraft} disabled={busy} onCopyError={handleCopyError} />
+                }
+              >
+                <Typography.Text type="secondary" className="feedback-modal-notes-lead">
+                  Private notes for your reference — saved with feedback (up to{' '}
+                  {FEEDBACK_NOTES_MAX.toLocaleString()} characters). Refine with AI when configured.
+                </Typography.Text>
+                <SaveFieldOverlay
+                  busy={refiningField === 'notes'}
+                  label="Refining extra notes with AI…"
+                  className="feedback-notes-spin"
+                >
+                  <Input.TextArea
+                    className="feedback-modal-notes-area"
+                    value={notesDraft}
+                    onChange={(e) => setNotesDraft(e.target.value)}
+                    placeholder="Observations, follow-ups, context for next term…"
+                    rows={4}
+                    maxLength={FEEDBACK_NOTES_MAX}
+                    showCount
+                    disabled={busy}
+                  />
+                </SaveFieldOverlay>
+                {aiReady ? (
+                  <div className="feedback-modal-notes-actions">
+                    <Button
+                      size="small"
+                      onClick={handleRefineNotes}
+                      loading={refiningField === 'notes'}
+                      disabled={saving || refining || !notesDraft.trim()}
+                    >
+                      Refine with AI
+                    </Button>
+                  </div>
+                ) : null}
               </Card>
             </div>
           </div>

@@ -27,6 +27,7 @@ create table if not exists public.students (
   manual_consecutive_absences integer,
   manual_no_prior_notice boolean not null default false,
   feedback text,
+  feedback_notes text,
   created_at timestamptz not null default now(),
   unique (class_id, name)
 );

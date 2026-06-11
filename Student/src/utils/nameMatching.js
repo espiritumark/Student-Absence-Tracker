@@ -73,3 +73,51 @@ export function similarityDisplayPercent(score) {
 export function formatSimilarityPercent(score) {
   return `${similarityDisplayPercent(score)}%`
 }
+
+const NAME_PARTICLES = new Set([
+  'bin',
+  'binti',
+  'bt',
+  'bte',
+  'van',
+  'von',
+  'de',
+  'del',
+  'della',
+  'di',
+  'da',
+  'al',
+  'el',
+  'af',
+  'ibn',
+])
+
+function titleCaseWord(word) {
+  if (!word) return ''
+  return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+}
+
+/** Present stored roster names (often ALL CAPS) in readable title case. */
+export function formatPersonName(name) {
+  const text = String(name ?? '')
+    .trim()
+    .replace(/\s+/g, ' ')
+  if (!text) return ''
+
+  return text
+    .split(' ')
+    .map((word, index) => {
+      const segments = word.split(/(-|'|\.)+/).filter((part) => part.length > 0)
+      return segments
+        .map((part, segmentIndex) => {
+          if (/^[-'.]+$/.test(part)) return part
+          const lower = part.toLowerCase()
+          if (index > 0 && segmentIndex === 0 && NAME_PARTICLES.has(lower)) {
+            return lower
+          }
+          return titleCaseWord(part)
+        })
+        .join('')
+    })
+    .join(' ')
+}

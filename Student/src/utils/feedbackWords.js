@@ -1,5 +1,6 @@
 export const FEEDBACK_WORD_MIN = 30
 export const FEEDBACK_WORD_MAX = 50
+export const FEEDBACK_NOTES_MAX = 2000
 
 export function countFeedbackWords(text) {
   const trimmed = String(text ?? '').trim()
@@ -96,4 +97,27 @@ export function clampFeedbackWords(text, max = FEEDBACK_WORD_MAX) {
 export function sanitizeRefinedFeedback(text, { partnerName, max = FEEDBACK_WORD_MAX } = {}) {
   const stripped = stripPartnerNameFromFeedback(text, partnerName)
   return clampFeedbackWords(stripped, max)
+}
+
+export function clampNotesLength(text, max = FEEDBACK_NOTES_MAX) {
+  const trimmed = String(text ?? '').trim()
+  if (trimmed.length <= max) return trimmed
+  return trimmed.slice(0, max).trimEnd()
+}
+
+const NOTES_BOILERPLATE_LINE =
+  /^(learning partner|class|total absences(?:\s*\(days\))?|current absence streak(?:\s*\(days\))?|character limit|compose notes|draft notes to refine)\s*:/i
+
+/** Drop prompt-style headers the model sometimes echoes back into notes. */
+export function stripNotesBoilerplate(text) {
+  return String(text ?? '')
+    .split('\n')
+    .filter((line) => !NOTES_BOILERPLATE_LINE.test(line.trim()))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+export function sanitizeRefinedNotes(text, { max = FEEDBACK_NOTES_MAX } = {}) {
+  return clampNotesLength(stripNotesBoilerplate(text), max)
 }

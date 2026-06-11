@@ -1,10 +1,14 @@
-import { CopyOutlined, DownloadOutlined } from '@ant-design/icons'
-import { Alert, Button, Empty, Table, Tooltip, Typography } from 'antd'
+import { DownloadOutlined, EditOutlined } from '@ant-design/icons'
+import { Alert, Button, Empty, Table, Typography } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { useAppNotifier } from '../hooks/useAppNotifier'
-import { useScrollRegionHeight } from '../hooks/useScrollRegionHeight'
+import {
+  ANT_TABLE_HEADER_OFFSET,
+  ANT_TABLE_PAGINATION_OFFSET,
+  useScrollRegionHeight,
+} from '../hooks/useScrollRegionHeight'
 import { formatClassLabel } from '../utils/classFormat'
-import { formatDbError, isFeedbackColumnMissingError } from '../lib/database'
+import { formatDbError, isFeedbackColumnMissingError, isFeedbackNotesColumnMissingError } from '../lib/database'
 import { downloadCsv, slugifyFilenamePart } from '../utils/csvExport'
 import {
   countFeedbackWords,
@@ -13,7 +17,9 @@ import {
   truncateFeedbackPreview,
 } from '../utils/feedbackWords'
 import { filterByNameSearch } from '../utils/tableNameSearch'
+import { formatPersonName } from '../utils/nameMatching'
 import { UI } from '../utils/uiCopy'
+import CopyIconButton from './CopyIconButton'
 import FeedbackStudentModal from './FeedbackStudentModal'
 import PanelChrome from './PanelChrome'
 import SearchableSelect from './SearchableSelect'
@@ -57,6 +63,7 @@ export default function FeedbackPanel({
           key: student.id,
           id: student.id,
           name: student.name,
+          displayName: formatPersonName(student.name),
           student,
           feedback,
           wordCount: countFeedbackWords(feedback),
@@ -77,6 +84,8 @@ export default function FeedbackPanel({
 
   const withFeedbackCount = rosterRows.filter((row) => row.feedback).length
   const needsFeedbackMigration = useCloud && isFeedbackColumnMissingError(syncError)
+  const needsNotesMigration = useCloud && isFeedbackNotesColumnMissingError(syncError)
+  const needsCloudMigration = needsFeedbackMigration || needsNotesMigration
 
   useEffect(() => {
     if (classId && !classOptions.some((o) => o.value === classId)) {
@@ -95,49 +104,52 @@ export default function FeedbackPanel({
     setNameSearch('')
   }, [classId])
 
-  const [tableRef, tableHeight] = useScrollRegionHeight(320)
-
-  async function handleCopyFeedback(text) {
-    if (!text?.trim()) return
-    try {
-      await navigator.clipboard.writeText(text.trim())
-      notify.success({ title: 'Copied to clipboard.' })
-    } catch {
-      notify.error({ title: 'Could not copy — select the text and copy manually.' })
-    }
-  }
+  const showTablePagination = filteredRows.length > 40
+  const tableChromeOffset =
+    ANT_TABLE_HEADER_OFFSET + (showTablePagination ? ANT_TABLE_PAGINATION_OFFSET : 0)
+  const tableRemeasureKey = `${selectedClass?.id ?? ''}:${filteredRows.length}:${showTablePagination ? 1 : 0}`
+  const [tableRef, tableHeight] = useScrollRegionHeight(320, tableChromeOffset, tableRemeasureKey)
 
   function handleExportCsv() {
     if (!selectedClass || filteredRows.length === 0) return
 
     downloadCsv(
       `feedback-${slugifyFilenamePart(formatClassLabel(selectedClass)) || 'class'}.csv`,
-      [UI.learningPartnerName, 'Feedback', 'Words'],
+      [UI.learningPartnerName, 'Feedback', 'Words', UI.feedbackExtraNotes],
       filteredRows.map((row) => [
-        row.name,
+        row.displayName,
         row.feedback,
         row.feedback ? String(row.wordCount) : '',
+        String(row.student.feedbackNotes ?? '').trim(),
       ]),
     )
     notify.success({ title: 'CSV exported.' })
   }
 
-  async function handleSaveFeedback(targetClassId, studentId, feedbackText) {
+  async function handleSaveStudentFields(targetClassId, studentId, patch) {
     if (!updateStudent) {
-      notify.error({ title: 'Saving feedback is not available.' })
+      notify.error({ title: 'Saving is not available.' })
       return
     }
     setSaving(true)
     try {
-      await updateStudent(targetClassId, studentId, {
-        feedback: feedbackText?.trim() ? feedbackText.trim() : null,
-      })
-      notify.success({
-        title: feedbackText?.trim() ? 'Feedback saved.' : 'Feedback removed.',
-      })
+      await updateStudent(targetClassId, studentId, patch)
+      const savedFeedback = 'feedback' in patch
+      const savedNotes = 'feedbackNotes' in patch
+      if (savedFeedback && savedNotes) {
+        notify.success({ title: 'Feedback and notes saved.' })
+      } else if (savedFeedback) {
+        notify.success({
+          title: patch.feedback?.trim() ? 'Feedback saved.' : 'Feedback removed.',
+        })
+      } else if (savedNotes) {
+        notify.success({
+          title: patch.feedbackNotes?.trim() ? 'Extra notes saved.' : 'Extra notes removed.',
+        })
+      }
     } catch (err) {
       notify.error({
-        title: 'Could not save feedback.',
+        title: 'Could not save.',
         description: formatDbError(err),
       })
       throw err
@@ -150,7 +162,7 @@ export default function FeedbackPanel({
     <section className="panel feedback-panel workspace-panel">
       <PanelChrome
         title="Feedback"
-        description={`Choose a class to review every ${UI.learningPartner.toLowerCase()} and their saved feedback. Click a row to open the feedback editor (${FEEDBACK_WORD_MIN}–${FEEDBACK_WORD_MAX} words per save).`}
+        description={`Choose a class to review every ${UI.learningPartner} and their saved feedback. Click a row to open the feedback editor (${FEEDBACK_WORD_MIN}–${FEEDBACK_WORD_MAX} words per save).`}
       />
 
       <div className="workspace-body">
@@ -166,7 +178,30 @@ export default function FeedbackPanel({
                 again:
                 <pre className="feedback-setup-sql">
                   alter table public.students{'\n'}
-                  {'  '}add column if not exists feedback text;
+                  {'  '}add column if not exists feedback text;{'\n'}
+                  alter table public.students{'\n'}
+                  {'  '}add column if not exists feedback_notes text;
+                </pre>
+                File: <code>supabase/migrate-feedback.sql</code>
+              </>
+            }
+          />
+        ) : null}
+        {needsNotesMigration && !needsFeedbackMigration ? (
+          <Alert
+            type="error"
+            showIcon
+            className="feedback-setup-alert"
+            title="Cloud database update required before saving extra notes"
+            description={
+              <>
+                Run this once in your Supabase project&apos;s SQL Editor, then refresh and save
+                again:
+                <pre className="feedback-setup-sql">
+                  alter table public.students{'\n'}
+                  {'  '}add column if not exists feedback text;{'\n'}
+                  alter table public.students{'\n'}
+                  {'  '}add column if not exists feedback_notes text;
                 </pre>
                 File: <code>supabase/migrate-feedback.sql</code>
               </>
@@ -197,7 +232,7 @@ export default function FeedbackPanel({
           <Empty
             className="workspace-empty"
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description="Select a class to view learning partners and their feedback."
+            description={`Select a class to view ${UI.learningPartners} and their feedback.`}
           />
         ) : (
           <div className="table-scroll-region portal-student-list-scroll feedback-roster-region table-scroll-region-with-search">
@@ -208,9 +243,13 @@ export default function FeedbackPanel({
                 matchCount={filteredRows.length}
                 totalCount={rosterRows.length}
                 className="feedback-roster-name-search"
+                placeholder={UI.feedbackSearchPlaceholder}
+                showSearchIcon
+                compact
               />
               <Button
                 size="small"
+                className="feedback-roster-export-btn"
                 icon={<DownloadOutlined />}
                 onClick={handleExportCsv}
                 disabled={filteredRows.length === 0}
@@ -235,12 +274,19 @@ export default function FeedbackPanel({
                   dataSource={filteredRows}
                   onRow={(row) => ({
                     onClick: () => setModalPartnerId(row.id),
+                    className: 'feedback-roster-row-clickable',
                   })}
                   columns={[
                     {
                       title: UI.learningPartnerName,
                       dataIndex: 'name',
                       ellipsis: true,
+                      render: (_, row) => (
+                        <span className="feedback-roster-name-link">
+                          <EditOutlined className="feedback-roster-edit-icon" aria-hidden />
+                          <span className="feedback-roster-name-text">{row.displayName}</span>
+                        </span>
+                      ),
                     },
                     {
                       title: 'Feedback',
@@ -262,24 +308,17 @@ export default function FeedbackPanel({
                       align: 'center',
                       className: 'feedback-roster-copy-col',
                       render: (_, row) => (
-                        <Tooltip title={row.feedback ? 'Copy feedback' : 'No feedback saved'}>
-                          <Button
-                            type="text"
-                            size="small"
-                            className="feedback-roster-copy-btn"
-                            icon={<CopyOutlined />}
-                            disabled={!row.feedback}
-                            aria-label={
-                              row.feedback
-                                ? `Copy feedback for ${row.name}`
-                                : `No feedback to copy for ${row.name}`
-                            }
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              handleCopyFeedback(row.feedback)
-                            }}
-                          />
-                        </Tooltip>
+                        <CopyIconButton
+                          text={row.feedback}
+                          className="feedback-roster-copy-btn"
+                          emptyTooltip="No feedback saved"
+                          stopPropagation
+                          onCopyError={() =>
+                            notify.error({
+                              title: 'Could not copy — select the text and copy manually.',
+                            })
+                          }
+                        />
                       ),
                     },
                   ]}
@@ -297,8 +336,9 @@ export default function FeedbackPanel({
         partner={modalPartner}
         classAttendance={classAttendance}
         saving={saving}
+        needsCloudMigration={needsCloudMigration}
         onClose={() => setModalPartnerId(null)}
-        onSaveFeedback={handleSaveFeedback}
+        onSaveStudentFields={handleSaveStudentFields}
       />
     </section>
   )

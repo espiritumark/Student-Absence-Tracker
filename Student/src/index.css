@@ -1302,6 +1302,23 @@ body {
   padding-left: 0.35rem;
 }
 
+.table-name-search-bar-compact {
+  flex: 0 1 auto;
+  width: min(100%, 14rem);
+  max-width: 14rem;
+  margin-bottom: 0;
+}
+
+.table-name-search-bar-compact .table-name-search-input.ant-input-affix-wrapper,
+.table-name-search-bar-compact .table-name-search-input.ant-input {
+  background: var(--bg);
+}
+
+.table-name-search-icon {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 .table-scroll-region-with-search {
   display: flex;
   flex-direction: column;
@@ -5622,24 +5639,33 @@ details[open] .collapsible-summary::before {
   font-size: 0.85rem;
   display: block;
   margin-bottom: 0.5rem;
+  flex-shrink: 0;
 }
 
 .feedback-roster-region {
-  flex: 1;
-  min-height: clamp(12rem, 42vh, calc(100vh - 16rem));
+  flex: 1 1 auto;
+  min-height: 12rem;
+  overflow: hidden;
 }
 
 .feedback-roster-table-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: 0.5rem 0.75rem;
   margin-bottom: 0.35rem;
+  flex-shrink: 0;
+}
+
+.feedback-roster-export-btn {
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .feedback-roster-name-search {
-  flex: 1 1 14rem;
-  min-width: min(100%, 14rem);
+  flex: 0 1 auto;
+  min-width: min(100%, 11rem);
   margin-bottom: 0;
 }
 
@@ -5648,20 +5674,128 @@ details[open] .collapsible-summary::before {
 }
 
 .feedback-roster-copy-btn.ant-btn {
-  color: var(--muted);
+  color: var(--primary);
+  opacity: 0.9;
+  transition:
+    color 0.2s ease,
+    transform 0.2s ease,
+    background 0.2s ease,
+    opacity 0.2s ease;
 }
 
 .feedback-roster-copy-btn.ant-btn:not(:disabled):hover {
+  color: color-mix(in srgb, var(--primary) 82%, #000000);
+  opacity: 1;
+  transform: scale(1.12);
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.feedback-copy-btn.ant-btn {
   color: var(--primary);
+  opacity: 0.9;
+  transition:
+    color 0.2s ease,
+    transform 0.2s ease,
+    background 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.feedback-copy-btn.ant-btn:not(:disabled):hover {
+  color: color-mix(in srgb, var(--primary) 82%, #000000);
+  opacity: 1;
+  transform: scale(1.12);
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.feedback-copy-btn.ant-btn:not(:disabled):active {
+  transform: scale(1.02);
+}
+
+.feedback-copy-btn.ant-btn:disabled {
+  color: var(--muted);
+  opacity: 0.35;
+}
+
+.feedback-panel-card.ant-card-small > .ant-card-head .ant-card-head-wrapper {
+  align-items: center;
+}
+
+.feedback-panel-card.ant-card-small > .ant-card-head .ant-card-extra {
+  margin-inline-start: auto;
+  padding-inline-start: 0.5rem;
 }
 
 .feedback-roster-table-wrap {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.feedback-roster-table-wrap .ant-table-wrapper,
+.feedback-roster-table-wrap .ant-spin-nested-loading,
+.feedback-roster-table-wrap .ant-spin-container {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.feedback-roster-table-wrap .ant-table {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.feedback-roster-table-wrap .ant-table-container {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: none !important;
+  border-radius: 8px;
+}
+
+.feedback-roster-table-wrap .ant-table-body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.feedback-roster-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: none;
 }
 
 .feedback-roster-table-wrap .ant-table-row {
   cursor: pointer;
+}
+
+.feedback-roster-row-clickable:hover .feedback-roster-name-link {
+  color: var(--primary);
+}
+
+.feedback-roster-name-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  color: var(--primary);
+  font-weight: 500;
+  transition: color 0.15s ease;
+}
+
+.feedback-roster-edit-icon {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  opacity: 0.75;
 }
 
 .feedback-roster-row-has-feedback > td {
@@ -5679,6 +5813,68 @@ details[open] .collapsible-summary::before {
 .feedback-student-modal .feedback-modal-saved-card {
   border-color: color-mix(in srgb, var(--success-text) 22%, var(--border));
   background: color-mix(in srgb, var(--success-bg) 45%, #ffffff);
+}
+
+.feedback-modal-saved-card-empty {
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--surface-muted, #f8fafc) 80%, #ffffff);
+}
+
+.feedback-modal-saved-empty {
+  position: relative;
+}
+
+.feedback-modal-saved-placeholder.ant-input[disabled] {
+  color: transparent;
+  background: color-mix(in srgb, var(--border) 12%, #ffffff);
+  cursor: not-allowed;
+  resize: none;
+}
+
+.feedback-modal-saved-empty-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  text-align: center;
+  pointer-events: none;
+}
+
+.feedback-modal-saved-empty-title {
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.feedback-modal-notes-card {
+  flex-shrink: 0;
+}
+
+.feedback-modal-notes-lead {
+  display: block;
+  font-size: 0.82rem;
+  margin-bottom: 0.45rem;
+}
+
+.feedback-modal-notes-area {
+  resize: vertical;
+}
+
+.feedback-modal-notes-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-top: 0.45rem;
+}
+
+.feedback-notes-spin,
+.feedback-notes-spin .ant-spin-container {
+  display: flex;
+  flex-direction: column;
 }
 
 .feedback-modal-saved-text {
