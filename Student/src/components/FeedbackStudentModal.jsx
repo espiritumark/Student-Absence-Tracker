@@ -480,6 +480,7 @@ export default function FeedbackStudentModal({
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
                       placeholder={`Click ${UI.generateFeedback}, then edit here before saving (${FEEDBACK_WORD_MIN}–${FEEDBACK_WORD_MAX} words).`}
+                      rows={5}
                       readOnly={busy}
                     />
                     <div className="feedback-output-footer">

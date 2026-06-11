@@ -27,11 +27,11 @@ function shortAttendancePhrase(emphasis) {
     case ATTENDANCE_EMPHASIS.consistent:
       return `The ${lp} attends consistently, supporting steady progress.`
     case ATTENDANCE_EMPHASIS.mild:
-      return `The ${lp} has some absences; more consistent attendance would help.`
+      return `The ${lp} can strengthen their progress by building a more regular attendance pattern.`
     case ATTENDANCE_EMPHASIS.limited:
-      return `The ${lp}'s attendance is limited and affects continuity in learning.`
+      return `The ${lp} would benefit from improving attendance so they can stay connected to lesson content.`
     case ATTENDANCE_EMPHASIS.significant:
-      return `The ${lp}'s absences are a concern and need urgent improvement.`
+      return `The ${lp} can support their learning by prioritising attendance and catching up promptly after missed days.`
     default:
       return ''
   }
@@ -46,10 +46,10 @@ function shortEngagementPhrase(participation, assignmentQuality) {
         : participation === PARTICIPATION_LEVEL.attentive
           ? 'listens attentively and joins in when invited'
           : participation === PARTICIPATION_LEVEL.passive
-            ? 'is often quiet and could contribute more'
-            : participation === PARTICIPATION_LEVEL.lazy
-              ? 'shows limited engagement in lessons'
-              : 'participates at a moderate level'
+            ? 'can build confidence by contributing more often in class'
+          : participation === PARTICIPATION_LEVEL.lazy
+            ? 'can increase their engagement by taking more active steps in lessons'
+            : 'participates at a moderate level'
 
   const assign =
     assignmentQuality === ASSIGNMENT_QUALITY.excellent
@@ -57,9 +57,9 @@ function shortEngagementPhrase(participation, assignmentQuality) {
       : assignmentQuality === ASSIGNMENT_QUALITY.good
         ? 'completes work to a good standard'
         : assignmentQuality === ASSIGNMENT_QUALITY.inconsistent
-          ? 'submits work with variable effort'
+          ? 'shows they can produce good work and can aim for more consistent effort'
           : assignmentQuality === ASSIGNMENT_QUALITY.poor
-            ? 'often submits incomplete work'
+            ? 'would benefit from completing and submitting work more thoroughly'
             : 'meets basic assignment expectations'
 
   return `They ${part} and ${assign}.`
