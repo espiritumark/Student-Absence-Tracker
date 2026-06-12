@@ -39,6 +39,7 @@ import { UI } from '../utils/uiCopy'
 import CopyIconButton from './CopyIconButton'
 import ConfirmDialog from './ConfirmDialog'
 import FormField from './FormField'
+import RefineAiIconButton from './RefineAiIconButton'
 import SaveFieldOverlay from './SaveFieldOverlay'
 
 const SAVE_MODES = {
@@ -174,8 +175,49 @@ export default function FeedbackStudentModal({
     }
   }
 
+  async function handleRefineComposeNotes() {
+    if (!composeNotes.trim()) {
+      notify.warning({ title: 'Add compose notes first, then refine with AI.' })
+      return
+    }
+    setRefiningField('compose')
+    try {
+      const refined = await refineNotesWithLlm(composeNotes)
+      setComposeNotes(refined)
+      notify.success({ title: 'Compose notes refined.' })
+    } catch (err) {
+      notify.error({ title: err.message || 'Could not refine compose notes.' })
+    } finally {
+      setRefiningField(null)
+    }
+  }
+
   async function handleCopyError() {
     notify.error({ title: 'Could not copy — select the text and copy manually.' })
+  }
+
+  function renderFieldHeaderActions({
+    copyText,
+    onRefine,
+    refineLoading = false,
+    refineCanRun = true,
+    refineEmptyTooltip = 'Nothing to refine',
+    showRefine = aiReady,
+  }) {
+    return (
+      <Space size={2} className="feedback-card-header-actions">
+        {showRefine ? (
+          <RefineAiIconButton
+            onClick={onRefine}
+            loading={refineLoading}
+            disabled={busy || refining}
+            canRefine={refineCanRun}
+            emptyTooltip={refineEmptyTooltip}
+          />
+        ) : null}
+        <CopyIconButton text={copyText} disabled={busy} onCopyError={handleCopyError} />
+      </Space>
+    )
   }
 
   async function handleSave() {
@@ -365,30 +407,41 @@ export default function FeedbackStudentModal({
                       disabled={busy}
                     />
                   </FormField>
-                  <FormField label={UI.feedbackComposeNotes}>
-                    <Input.TextArea
-                      value={composeNotes}
-                      onChange={(e) => setComposeNotes(e.target.value)}
-                      placeholder="e.g. strong in group work, needs support with deadlines…"
-                      rows={3}
-                      maxLength={500}
-                      disabled={busy}
-                    />
+                  <FormField
+                    className="feedback-compose-notes-field"
+                    label={
+                      <span className="feedback-field-label-row">
+                        <span>{UI.feedbackComposeNotes}</span>
+                        {aiReady ? (
+                          <RefineAiIconButton
+                            onClick={handleRefineComposeNotes}
+                            loading={refiningField === 'compose'}
+                            disabled={busy || refining}
+                            canRefine={Boolean(composeNotes.trim())}
+                            emptyTooltip="Add compose notes first"
+                          />
+                        ) : null}
+                      </span>
+                    }
+                  >
+                    <SaveFieldOverlay
+                      busy={refiningField === 'compose'}
+                      label="Refining compose notes with AI…"
+                      className="feedback-compose-notes-spin"
+                    >
+                      <Input.TextArea
+                        value={composeNotes}
+                        onChange={(e) => setComposeNotes(e.target.value)}
+                        placeholder="e.g. strong in group work, needs support with deadlines…"
+                        rows={3}
+                        maxLength={500}
+                        disabled={busy}
+                      />
+                    </SaveFieldOverlay>
                   </FormField>
-                  <Space wrap>
-                    <Button type="primary" onClick={handleGenerate} disabled={busy}>
-                      {UI.generateFeedback}
-                    </Button>
-                    {aiReady && (
-                      <Button
-                        onClick={handleRefine}
-                        loading={refiningField === 'feedback'}
-                        disabled={saving || refining || !draft.trim()}
-                      >
-                        Refine with AI
-                      </Button>
-                    )}
-                  </Space>
+                  <Button type="primary" onClick={handleGenerate} disabled={busy}>
+                    {UI.generateFeedback}
+                  </Button>
                   {!aiReady && (
                     <Alert
                       type="info"
@@ -466,7 +519,13 @@ export default function FeedbackStudentModal({
                 title={hasSaved ? 'New Draft' : UI.generatedFeedback}
                 className="feedback-panel-card feedback-panel-output-card"
                 extra={
-                  <CopyIconButton text={draft} disabled={busy} onCopyError={handleCopyError} />
+                  renderFieldHeaderActions({
+                    copyText: draft,
+                    onRefine: handleRefine,
+                    refineLoading: refiningField === 'feedback',
+                    refineCanRun: Boolean(draft.trim()),
+                    refineEmptyTooltip: 'Generate or type feedback first',
+                  })
                 }
               >
                 <SaveFieldOverlay
@@ -503,12 +562,18 @@ export default function FeedbackStudentModal({
                 title={UI.feedbackExtraNotes}
                 className="feedback-panel-card feedback-modal-notes-card"
                 extra={
-                  <CopyIconButton text={notesDraft} disabled={busy} onCopyError={handleCopyError} />
+                  renderFieldHeaderActions({
+                    copyText: notesDraft,
+                    onRefine: handleRefineNotes,
+                    refineLoading: refiningField === 'notes',
+                    refineCanRun: Boolean(notesDraft.trim()),
+                    refineEmptyTooltip: 'Add extra notes first',
+                  })
                 }
               >
                 <Typography.Text type="secondary" className="feedback-modal-notes-lead">
                   Private notes for your reference — saved with feedback (up to{' '}
-                  {FEEDBACK_NOTES_MAX.toLocaleString()} characters). Refine with AI when configured.
+                  {FEEDBACK_NOTES_MAX.toLocaleString()} characters).
                 </Typography.Text>
                 <SaveFieldOverlay
                   busy={refiningField === 'notes'}
@@ -526,18 +591,6 @@ export default function FeedbackStudentModal({
                     disabled={busy}
                   />
                 </SaveFieldOverlay>
-                {aiReady ? (
-                  <div className="feedback-modal-notes-actions">
-                    <Button
-                      size="small"
-                      onClick={handleRefineNotes}
-                      loading={refiningField === 'notes'}
-                      disabled={saving || refining || !notesDraft.trim()}
-                    >
-                      Refine with AI
-                    </Button>
-                  </div>
-                ) : null}
               </Card>
             </div>
           </div>

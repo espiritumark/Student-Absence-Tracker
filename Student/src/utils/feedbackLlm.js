@@ -41,13 +41,14 @@ function readMessageContent(content) {
   return ''
 }
 
-const SYSTEM_PROMPT = `You are a teacher writing formal report feedback for one learning partner (never say "student"). Write exactly one paragraph of ${FEEDBACK_WORD_MIN}–${FEEDBACK_WORD_MAX} words in a warm, professional UK school tone.
+const SYSTEM_PROMPT = `You are a teacher writing formal report feedback for one learning partner (never say "student"). Write exactly one paragraph of ${FEEDBACK_WORD_MIN}–${FEEDBACK_WORD_MAX} words in a fair, professional UK school tone.
 
 Tone and framing:
-- Stay positive and encouraging; highlight strengths where the brief supports them.
-- For any development area, focus on practical steps the learning partner can take themselves to improve.
-- Use growth language (e.g. "would benefit from", "can build on", "aim to", "continue to develop") rather than blame, criticism, or discouragement.
-- Avoid negative or harsh wording (e.g. concern, poor, lazy, fail, urgent, disengaged, inadequate).
+- Be honest and constructive: clearly name areas that need improvement when the brief includes them (attendance, engagement, work quality, behaviour). Do not hide issues behind vague praise.
+- Hold the learning partner accountable while explaining specific, practical steps they can take themselves to improve.
+- Balance genuine strengths with clear next steps; avoid empty positivity or rewriting problems away.
+- Preserve factual details from the draft and teacher notes — rephrase professionally but do not omit them (e.g. distraction, incomplete work, absences).
+- Use respectful growth language rather than insults, labels, or discouragement (avoid lazy, fail, hopeless, inadequate).
 - Refer to them as "the learning partner" or "they" — never include their name.
 - Start directly with the feedback; no greeting or label.
 - Do not invent facts beyond the brief.
@@ -60,7 +61,7 @@ Class: ${context.className}
 Total absences (days): ${context.total}
 Current absence streak (days): ${context.consecutive}
 Hard limit: ${FEEDBACK_WORD_MAX} words maximum.
-Tone: positive and constructive — focus on strengths and practical steps the learning partner can take to improve; avoid negative or harsh wording.
+Tone: fair and constructive — name areas to improve when the brief includes them, keep the learning partner accountable, and state what they can do to improve; do not soften away specific issues from the draft or notes.
 
 Teacher notes to weave in if relevant:
 ${context.extraNotes || '(none)'}
@@ -136,7 +137,7 @@ export async function refineFeedbackWithLlm(draft, context, opts = {}) {
     messages.push({ role: 'assistant', content: raw })
     messages.push({
       role: 'user',
-      content: `Your response was ${firstCount} words. Rewrite as one paragraph of exactly ${FEEDBACK_WORD_MIN}–${FEEDBACK_WORD_MAX} words. Keep a positive, constructive tone focused on what the learning partner can work on themselves. Do not include the learning partner's name. Start directly with the feedback. Return only the feedback text.`,
+      content: `Your response was ${firstCount} words. Rewrite as one paragraph of exactly ${FEEDBACK_WORD_MIN}–${FEEDBACK_WORD_MAX} words. Keep a fair, constructive tone: name areas to improve when relevant, hold the learning partner accountable, and say what they can do to improve — without harsh wording. Preserve specific points from the draft. Do not include the learning partner's name. Start directly with the feedback. Return only the feedback text.`,
     })
 
     raw = await requestCompletion(messages, config, opts)

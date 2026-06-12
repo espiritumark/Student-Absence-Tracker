@@ -5716,6 +5716,57 @@ details[open] .collapsible-summary::before {
   opacity: 0.35;
 }
 
+.feedback-card-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.feedback-refine-btn.ant-btn {
+  color: var(--primary);
+  opacity: 0.9;
+  transition:
+    color 0.2s ease,
+    transform 0.2s ease,
+    background 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.feedback-refine-btn.ant-btn:not(:disabled):hover {
+  color: color-mix(in srgb, var(--primary) 82%, #000000);
+  opacity: 1;
+  transform: scale(1.12);
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.feedback-refine-btn.ant-btn:not(:disabled):active {
+  transform: scale(1.02);
+}
+
+.feedback-refine-btn.ant-btn:disabled {
+  color: var(--muted);
+  opacity: 0.35;
+}
+
+.feedback-compose-notes-spin,
+.feedback-compose-notes-spin .ant-spin-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.feedback-compose-notes-field .antd-field-label {
+  display: block;
+  width: 100%;
+}
+
+.feedback-field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+}
+
 .feedback-panel-card.ant-card-small > .ant-card-head .ant-card-head-wrapper {
   align-items: center;
 }

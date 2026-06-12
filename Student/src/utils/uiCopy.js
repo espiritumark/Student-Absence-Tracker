@@ -71,6 +71,8 @@ export const UI = {
   scanningQueue: 'Scanning Queue…',
   saveAgain: 'Save Again',
   stayOnThisItem: 'Stay on This Item',
+  goToNextNow: 'Go to Next',
+  refineWithAi: 'Refine with AI',
   done: 'Done',
   deleteSession: 'Delete Session',
   removeFromModule: 'Remove from This Module',

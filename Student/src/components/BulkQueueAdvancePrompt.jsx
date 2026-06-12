@@ -36,6 +36,12 @@ export default function BulkQueueAdvancePrompt({
   const remainingSec = Math.max(1, Math.ceil((BULK_QUEUE_ADVANCE_MS - elapsedMs) / 1000))
   const percent = Math.min(100, (elapsedMs / BULK_QUEUE_ADVANCE_MS) * 100)
 
+  function handleGoNextNow() {
+    if (completedRef.current) return
+    completedRef.current = true
+    onComplete()
+  }
+
   return (
     <Modal
       open={open}
@@ -49,7 +55,12 @@ export default function BulkQueueAdvancePrompt({
         </Space>
       }
       footer={
-        <Button onClick={onCancel}>{UI.stayOnThisItem}</Button>
+        <Space wrap>
+          <Button onClick={onCancel}>{UI.stayOnThisItem}</Button>
+          <Button type="primary" onClick={handleGoNextNow}>
+            {UI.goToNextNow}
+          </Button>
+        </Space>
       }
       closable={false}
       maskClosable={false}
