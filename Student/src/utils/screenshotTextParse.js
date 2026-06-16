@@ -4,6 +4,8 @@ import { parseClassHeader } from './classFormat'
 const SKIP_LINE =
   /^(class|date|module|start\s*time|duration|check\s*all|uncheck\s*all|submit|present|absent)\b/i
 
+import { dedupeImportStudentsByName } from './importNameResolution'
+
 export function parseStudentLine(text) {
   const cleaned = text.replace(/\s+/g, ' ').trim()
   if (!cleaned || SKIP_LINE.test(cleaned)) return null
@@ -49,5 +51,5 @@ export function parseStudentsFromText(text) {
       students.push({ ...parsed, present: true })
     }
   }
-  return students
+  return dedupeImportStudentsByName(students)
 }

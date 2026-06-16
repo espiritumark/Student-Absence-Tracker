@@ -2230,6 +2230,34 @@ body {
   font-weight: 600;
 }
 
+.import-match-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+}
+
+.import-match-undo.ant-btn {
+  height: auto;
+  padding: 0;
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+.import-name-cell-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.55rem;
+  margin-top: 0.2rem;
+}
+
+.import-name-cell-action.ant-btn {
+  height: auto;
+  padding: 0;
+  font-size: 0.76rem;
+  line-height: 1.25;
+}
+
 .similar-name-resolve-modal .similar-name-resolve-scanned {
   margin-bottom: 0.5rem;
 }
@@ -2253,8 +2281,45 @@ body {
   white-space: normal;
 }
 
+.similar-name-resolve-single-match {
+  margin-bottom: 0.75rem !important;
+}
+
+.similar-name-resolve-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-top: 0.85rem;
+}
+
+.similar-name-resolve-action-btn {
+  height: auto !important;
+  padding: 0.55rem 0.85rem !important;
+  text-align: left;
+  white-space: normal;
+}
+
+.similar-name-resolve-action-btn .similar-name-resolve-action-title {
+  display: block;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.similar-name-resolve-action-btn .similar-name-resolve-action-detail {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.78rem;
+  font-weight: 400;
+  line-height: 1.35;
+  opacity: 0.88;
+}
+
+.similar-name-resolve-new-btn .similar-name-resolve-action-detail {
+  opacity: 0.72;
+}
+
 .similar-name-resolve-new-btn {
-  margin-top: 0.75rem;
+  margin-top: 0;
 }
 
 .field-label {

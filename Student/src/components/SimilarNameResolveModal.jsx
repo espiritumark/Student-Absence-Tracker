@@ -1,5 +1,5 @@
 import { Button, Modal, Radio, Typography } from 'antd'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { formatSimilarityPercent } from '../utils/nameMatching'
 
 export default function SimilarNameResolveModal({
@@ -19,6 +19,14 @@ export default function SimilarNameResolveModal({
     setSelectedId(row.suggestedRosterId ?? row.similarCandidates?.[0]?.id ?? null)
   }, [open, row?.index, row?.importName, row?.name, row?.suggestedRosterId])
 
+  const selectedCandidate = useMemo(
+    () => row?.similarCandidates?.find((c) => c.id === selectedId) ?? null,
+    [row, selectedId],
+  )
+
+  const scannedName = row?.importName || row?.name || ''
+  const multipleCandidates = (row?.similarCandidates?.length ?? 0) > 1
+
   if (!row) {
     return (
       <Modal
@@ -32,10 +40,14 @@ export default function SimilarNameResolveModal({
     )
   }
 
-  function confirmLinkRoster() {
-    const candidate = row.similarCandidates?.find((c) => c.id === selectedId)
-    if (!candidate) return
-    onLinkRoster(row, candidate)
+  function linkWithNameChoice(nameChoice) {
+    if (!selectedCandidate) return
+    onLinkRoster(row, selectedCandidate, nameChoice)
+    onClose()
+  }
+
+  function markAsNew() {
+    onMarkNew(row)
     onClose()
   }
 
@@ -46,48 +58,76 @@ export default function SimilarNameResolveModal({
       title={`#${row.index} — Similar Roster Match`}
       destroyOnHidden
       centered
-      width={520}
+      width={560}
       className="similar-name-resolve-modal"
       footer={[
         <Button key="cancel" onClick={onClose}>
           Cancel
         </Button>,
-        <Button key="confirm" type="primary" disabled={!selectedId} onClick={confirmLinkRoster}>
-          Use Roster Name
-        </Button>,
       ]}
     >
       <Typography.Paragraph className="similar-name-resolve-scanned">
-        Scanned name: <strong>{row.importName || row.name}</strong>
+        Scanned name: <strong>{scannedName}</strong>
       </Typography.Paragraph>
 
       <Typography.Paragraph type="secondary" className="similar-name-resolve-intro">
-        Match is under 95% similar. Link to the roster Learning Partner or keep as a new entry.
+        Match is under 95% similar. Linking to the roster keeps attendance history, streaks, and
+        feedback on the same record.
       </Typography.Paragraph>
 
-      <Radio.Group
-        className="similar-name-resolve-options"
-        value={selectedId ?? undefined}
-        onChange={(e) => setSelectedId(e.target.value)}
-      >
-        {row.similarCandidates?.map((candidate) => (
-          <Radio key={candidate.id} value={candidate.id} className="similar-name-resolve-radio">
-            Same Learning Partner — use roster name: <strong>{candidate.name}</strong> (
-            {formatSimilarityPercent(candidate.score)} match)
-          </Radio>
-        ))}
-      </Radio.Group>
+      {multipleCandidates ? (
+        <>
+          <Typography.Text className="field-label">Roster match</Typography.Text>
+          <Radio.Group
+            className="similar-name-resolve-options"
+            value={selectedId ?? undefined}
+            onChange={(e) => setSelectedId(e.target.value)}
+          >
+            {row.similarCandidates?.map((candidate) => (
+              <Radio key={candidate.id} value={candidate.id} className="similar-name-resolve-radio">
+                <strong>{candidate.name}</strong> ({formatSimilarityPercent(candidate.score)} match)
+              </Radio>
+            ))}
+          </Radio.Group>
+        </>
+      ) : selectedCandidate ? (
+        <Typography.Paragraph className="similar-name-resolve-single-match">
+          Closest roster match: <strong>{selectedCandidate.name}</strong> (
+          {formatSimilarityPercent(selectedCandidate.score)} match)
+        </Typography.Paragraph>
+      ) : null}
 
-      <Button
-        block
-        className="similar-name-resolve-new-btn"
-        onClick={() => {
-          onMarkNew(row)
-          onClose()
-        }}
-      >
-        Different Learning Partner — Keep Scanned Name as New
-      </Button>
+      <div className="similar-name-resolve-actions">
+        <Button
+          block
+          type="primary"
+          disabled={!selectedId}
+          className="similar-name-resolve-action-btn"
+          onClick={() => linkWithNameChoice('roster')}
+        >
+          <span className="similar-name-resolve-action-title">Use roster name</span>
+          {selectedCandidate ? (
+            <span className="similar-name-resolve-action-detail">{selectedCandidate.name}</span>
+          ) : null}
+        </Button>
+
+        <Button
+          block
+          disabled={!selectedId}
+          className="similar-name-resolve-action-btn"
+          onClick={() => linkWithNameChoice('scanned')}
+        >
+          <span className="similar-name-resolve-action-title">Use scanned name</span>
+          <span className="similar-name-resolve-action-detail">{scannedName}</span>
+        </Button>
+
+        <Button block className="similar-name-resolve-action-btn similar-name-resolve-new-btn" onClick={markAsNew}>
+          <span className="similar-name-resolve-action-title">Use as a new Learning Partner</span>
+          <span className="similar-name-resolve-action-detail">
+            Keeps scanned name on a separate record with no prior history
+          </span>
+        </Button>
+      </div>
     </Modal>
   )
 }

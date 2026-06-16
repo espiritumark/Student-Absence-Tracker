@@ -1,5 +1,7 @@
 import { parseClassHeader, formatClassLabel } from './classFormat'
 import { dateKey, formatPortalDate, parsePortalDate } from './dates'
+import { dedupeImportStudentsByName } from './importNameResolution'
+import { normalizeName } from './nameMatching'
 
 /** Pull class header text from session fields when the model left class empty. */
 export function repairPortalSessionData(data) {
@@ -192,20 +194,22 @@ export function parseAttendanceJson(raw, options = {}) {
     throw new Error('JSON must include a non-empty "attendance" array.')
   }
 
-  const students = rows
+  const rawStudents = rows
     .map((row, i) => {
-      const name = String(row.name ?? row.student ?? row.student_name ?? '').trim()
+      const name = normalizeName(row.name ?? row.student ?? row.student_name ?? '')
       if (!name) return null
       const status = normalizeStatus(row.status ?? row.present)
       const index = Number(row.no ?? row.index ?? row.number ?? i + 1)
       return {
         index,
-        name: name.toUpperCase(),
+        name,
         present: status === 'present',
       }
     })
     .filter(Boolean)
     .sort((a, b) => a.index - b.index)
+
+  const students = dedupeImportStudentsByName(rawStudents)
 
   if (!students.length) {
     throw new Error('No valid Learning Partner names found in attendance array.')

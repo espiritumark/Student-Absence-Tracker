@@ -4,6 +4,12 @@ export function normalizeName(name) {
   return text.trim().replace(/\s+/g, ' ').toUpperCase()
 }
 
+/** Same spelling, ignoring case and extra spaces — used for roster and import matching. */
+export function namesMatchBySpelling(a, b) {
+  const left = normalizeName(a)
+  return left !== '' && left === normalizeName(b)
+}
+
 /** @param {string} a @param {string} b @returns {number} 0–1 */
 export function nameSimilarity(a, b) {
   const left = normalizeName(a)

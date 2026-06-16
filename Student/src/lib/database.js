@@ -134,13 +134,15 @@ export async function dbAddStudent(userId, classId, name) {
   const trimmed = normalizeName(name)
   if (!trimmed) return null
 
-  const { data: existing } = await supabase
+  const { data: existingStudents, error: fetchError } = await supabase
     .from('students')
     .select('*')
     .eq('class_id', classId)
-    .eq('name', trimmed)
-    .maybeSingle()
+  if (fetchError) throw fetchError
 
+  const existing = (existingStudents || []).find(
+    (student) => normalizeName(student.name) === trimmed,
+  )
   if (existing) return mapStudent(existing)
 
   const { data, error } = await supabase
@@ -168,6 +170,9 @@ export async function dbUpdateStudent(studentId, patch) {
   }
   if ('feedbackNotes' in patch) {
     row.feedback_notes = patch.feedbackNotes?.trim() ? patch.feedbackNotes.trim() : null
+  }
+  if ('name' in patch) {
+    row.name = normalizeName(patch.name)
   }
   const { error } = await supabase.from('students').update(row).eq('id', studentId)
   if (error) throw error
@@ -358,6 +363,16 @@ export async function dbImportPortalSession(userId, payload) {
       }
     } else if (!studentId) {
       studentId = nameToId.get(name)
+    }
+  }
+
+  for (const row of students) {
+    if (!row.rosterStudentId || row.linkedNameChoice !== 'scanned') continue
+    const existing = (existingStudents || []).find((s) => s.id === row.rosterStudentId)
+    if (!existing) continue
+    const nextName = normalizeName(row.name)
+    if (normalizeName(existing.name) !== nextName) {
+      await dbUpdateStudent(row.rosterStudentId, { name: row.name })
     }
   }
 

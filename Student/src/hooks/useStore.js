@@ -696,6 +696,17 @@ export function useStore() {
             nameToId.set(name, newId)
             cls.students = [...cls.students, { id: newId, name: row.name }]
             id = newId
+          } else if (row.rosterStudentId && row.linkedNameChoice === 'scanned') {
+            const studentIndex = cls.students.findIndex((st) => st.id === id)
+            if (studentIndex >= 0 && normalizeName(cls.students[studentIndex].name) !== name) {
+              const updated = { ...cls.students[studentIndex], name: row.name }
+              cls.students = [
+                ...cls.students.slice(0, studentIndex),
+                updated,
+                ...cls.students.slice(studentIndex + 1),
+              ]
+              nameToId.set(name, id)
+            }
           }
         }
         classes[clsIndex] = cls

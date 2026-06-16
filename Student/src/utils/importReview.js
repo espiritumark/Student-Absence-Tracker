@@ -367,6 +367,7 @@ export function buildImportPayload(meta, students) {
       present: row.present,
       rosterStudentId: row.rosterStudentId ?? null,
       importName: row.importName ?? row.name,
+      linkedNameChoice: row.linkedNameChoice ?? null,
     })),
   }
 }

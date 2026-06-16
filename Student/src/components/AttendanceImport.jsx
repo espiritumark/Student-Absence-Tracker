@@ -13,11 +13,9 @@ import {
   Typography,
   Upload,
 } from 'antd'
-import { ExclamationCircleFilled } from '@ant-design/icons'
 import { createElement, useCallback, useEffect, useRef, useState, useMemo } from 'react'
 import { useAppNotifier } from '../hooks/useAppNotifier'
 import { NOTIFIER_KEYS } from '../utils/appNotifications'
-import { formatSimilarityPercent } from '../utils/nameMatching'
 import { useReportTabActivity } from '../hooks/useReportTabActivity'
 import { useScrollRegionHeight } from '../hooks/useScrollRegionHeight'
 import { formatClassLabel, syncPartTimeFromClassLabel } from '../utils/classFormat'
@@ -72,18 +70,22 @@ import { buildPortalJson, parseAttendanceJson } from '../utils/parseAttendanceJs
 import {
   enrichImportStudentsWithRoster,
   hasUnresolvedSimilarNames,
+  importRowKey,
+  importRowsMatchByName,
   linkImportRowToRoster,
   markImportRowAsNewStudent,
   mergeImportEnrichmentWithResolved,
+  reopenImportRowForNameReviewInClass,
+  resolveImportRowRosterStudent,
   countSimilarPending,
   polishImportRow,
   needsSimilarReviewWarning,
-  shouldShowRosterNameReplacement,
-  topSimilarityScore,
 } from '../utils/importNameResolution'
 import ImportSessionMetaFields from './ImportSessionMetaFields'
 import ImportSaveConfirmModal from './ImportSaveConfirmModal'
 import SimilarNameResolveModal from './SimilarNameResolveModal'
+import ImportMatchColumn from './ImportMatchColumn'
+import ImportLearningPartnerCell from './ImportLearningPartnerCell'
 import BackButton from './BackButton'
 import ImportScanEngineSwitch from './ImportScanEngineSwitch'
 import ImportTabInfoTip from './ImportTabInfoTip'
@@ -254,8 +256,9 @@ export default function AttendanceImport({
     if (!snap) return
 
     screenshotSessionRef.current = snap
-    setStudents(snap.students ?? [])
-    setMeta(snap.meta ?? emptyMeta())
+    const restoredMeta = snap.meta ?? emptyMeta()
+    setMeta(restoredMeta)
+    setStudents(reEnrichImportStudents(snap.students ?? [], restoredMeta, classes))
     setImportView(snap.importView ?? 'input')
     setImportWarnings(snap.importWarnings ?? [])
     setScannedMeta(snap.scannedMeta ?? null)
@@ -268,7 +271,7 @@ export default function AttendanceImport({
     if (snap.portalJson) setJsonText(snap.portalJson)
     setError('')
     setScreenshotDraftRestored(true)
-  }, [])
+  }, [classes])
 
   const clearScreenshotSession = useCallback(() => {
     screenshotSessionRef.current = null
@@ -332,8 +335,9 @@ export default function AttendanceImport({
 
     jsonSessionRef.current = snap
     setJsonText(snap.jsonText ?? '')
-    setStudents(snap.students ?? [])
-    setMeta(snap.meta ?? emptyMeta())
+    const restoredMeta = snap.meta ?? emptyMeta()
+    setMeta(restoredMeta)
+    setStudents(reEnrichImportStudents(snap.students ?? [], restoredMeta, classes))
     setImportView(snap.importView ?? 'input')
     setImportWarnings(snap.importWarnings ?? [])
     setScannedMeta(snap.scannedMeta ?? null)
@@ -342,7 +346,7 @@ export default function AttendanceImport({
     setReviewSource(snap.reviewSource ?? null)
     setError('')
     setJsonDraftRestored(true)
-  }, [])
+  }, [classes])
 
   const clearJsonSession = useCallback(() => {
     jsonSessionRef.current = null
@@ -945,24 +949,20 @@ export default function AttendanceImport({
   function togglePresent(importName) {
     setStudents((rows) =>
       rows.map((r) =>
-        (r.importName || r.name) === importName ? { ...r, present: !r.present } : r,
+        importRowsMatchByName(r, { name: importName }) ? { ...r, present: !r.present } : r,
       ),
     )
-  }
-
-  function importRowKey(row) {
-    return `${row.index}-${row.importName || row.name}`
   }
 
   function openSimilarModal(row) {
     setSimilarModalKey(importRowKey(row))
   }
 
-  function handleLinkSimilarRow(row, candidate) {
+  function handleLinkSimilarRow(row, candidate, nameChoice = 'roster') {
     setStudents((rows) =>
       rows.map((r) =>
-        (r.importName || r.name) === (row.importName || row.name)
-          ? linkImportRowToRoster(r, candidate)
+        importRowsMatchByName(r, row)
+          ? linkImportRowToRoster(r, candidate, { nameChoice })
           : r,
       ),
     )
@@ -973,12 +973,48 @@ export default function AttendanceImport({
   function handleMarkSimilarRowAsNew(row) {
     setStudents((rows) =>
       rows.map((r) =>
-        (r.importName || r.name) === (row.importName || row.name)
-          ? markImportRowAsNewStudent(r)
+        importRowsMatchByName(r, row) ? markImportRowAsNewStudent(r) : r,
+      ),
+    )
+    setSimilarModalKey(null)
+    setError('')
+  }
+
+  function handleUndoNameResolution(row) {
+    setStudents((rows) =>
+      rows.map((r) =>
+        importRowsMatchByName(r, row)
+          ? reopenImportRowForNameReviewInClass(r, classes, meta)
           : r,
       ),
     )
     setSimilarModalKey(null)
+    setError('')
+  }
+
+  function handleUseScannedName(row) {
+    const rosterStudent = resolveImportRowRosterStudent(row, classes, meta)
+    if (!rosterStudent) return
+    setStudents((rows) =>
+      rows.map((r) =>
+        importRowsMatchByName(r, row)
+          ? linkImportRowToRoster(r, rosterStudent, { nameChoice: 'scanned' })
+          : r,
+      ),
+    )
+    setError('')
+  }
+
+  function handleUseRosterName(row) {
+    const rosterStudent = resolveImportRowRosterStudent(row, classes, meta)
+    if (!rosterStudent) return
+    setStudents((rows) =>
+      rows.map((r) =>
+        importRowsMatchByName(r, row)
+          ? linkImportRowToRoster(r, rosterStudent, { nameChoice: 'roster' })
+          : r,
+      ),
+    )
     setError('')
   }
 
@@ -1627,66 +1663,23 @@ export default function AttendanceImport({
                         title: UI.learningPartner,
                         key: 'name',
                         ellipsis: true,
-                        render: (_, row) => {
-                          if (shouldShowRosterNameReplacement(row)) {
-                            return (
-                              <>
-                                <Typography.Text type="secondary" delete style={{ display: 'block' }}>
-                                  {row.importName}
-                                </Typography.Text>
-                                <Typography.Text strong>{row.name}</Typography.Text>
-                              </>
-                            )
-                          }
-
-                          if (needsSimilarReviewWarning(row)) {
-                            const score = topSimilarityScore(row)
-                            return (
-                              <button
-                                type="button"
-                                className="import-similar-name-trigger"
-                                onClick={() => openSimilarModal(row)}
-                                title="Review Roster Match"
-                              >
-                                <ExclamationCircleFilled aria-hidden />
-                                <span className="import-similar-name-text">{row.name}</span>
-                                <Typography.Text type="secondary" className="import-similar-score">
-                                  {formatSimilarityPercent(score)}
-                                </Typography.Text>
-                              </button>
-                            )
-                          }
-
-                          return <Typography.Text>{row.name}</Typography.Text>
-                        },
+                        render: (_, row) => (
+                          <ImportLearningPartnerCell
+                            row={row}
+                            onReview={openSimilarModal}
+                            onUndo={handleUndoNameResolution}
+                            onUseScannedName={handleUseScannedName}
+                            onUseRosterName={handleUseRosterName}
+                          />
+                        ),
                       },
                       {
                         title: 'Match',
                         key: 'match',
                         width: 120,
-                        render: (_, row) => {
-                          if (needsSimilarReviewWarning(row)) {
-                            return (
-                              <Tag
-                                color="warning"
-                                className="import-similar-match-tag import-similar-match-tag-review"
-                                onClick={() => openSimilarModal(row)}
-                              >
-                                Review
-                              </Tag>
-                            )
-                          }
-                          if (shouldShowRosterNameReplacement(row)) {
-                            return <Tag color="processing">Roster</Tag>
-                          }
-                          if (row.matchStatus === 'exact' || row.matchStatus === 'linked_roster') {
-                            return <Tag color="success">Exact</Tag>
-                          }
-                          if (row.matchStatus === 'new') {
-                            return <Tag>New</Tag>
-                          }
-                          return null
-                        },
+                        render: (_, row) => (
+                          <ImportMatchColumn row={row} onReview={openSimilarModal} />
+                        ),
                       },
                       {
                         title: 'Status',
