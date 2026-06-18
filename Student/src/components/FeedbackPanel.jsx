@@ -158,6 +158,23 @@ export default function FeedbackPanel({
     }
   }
 
+  async function handleRenameStudent(targetClassId, studentId, name) {
+    if (!updateStudent) {
+      notify.error({ title: 'Renaming is not available.' })
+      throw new Error('Renaming is not available.')
+    }
+    try {
+      await updateStudent(targetClassId, studentId, { name })
+      notify.success({ title: 'Name updated.' })
+    } catch (err) {
+      notify.error({
+        title: 'Could not update name.',
+        description: formatDbError(err),
+      })
+      throw err
+    }
+  }
+
   return (
     <section className="panel feedback-panel workspace-panel">
       <PanelChrome
@@ -339,6 +356,7 @@ export default function FeedbackPanel({
         needsCloudMigration={needsCloudMigration}
         onClose={() => setModalPartnerId(null)}
         onSaveStudentFields={handleSaveStudentFields}
+        onRenameStudent={handleRenameStudent}
       />
     </section>
   )

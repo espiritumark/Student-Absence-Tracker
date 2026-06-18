@@ -15,7 +15,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAppNotifier } from '../hooks/useAppNotifier'
 import { getEffectiveAbsenceCounts } from '../utils/attendanceStats'
 import { formatClassLabel } from '../utils/classFormat'
-import { formatPersonName } from '../utils/nameMatching'
 import { composeFeedback, suggestAttendanceEmphasis } from '../utils/feedbackCompose'
 import { isFeedbackLlmConfigured, refineFeedbackWithLlm, refineNotesWithLlm } from '../utils/feedbackLlm'
 import {
@@ -41,6 +40,7 @@ import ConfirmDialog from './ConfirmDialog'
 import FormField from './FormField'
 import RefineAiIconButton from './RefineAiIconButton'
 import SaveFieldOverlay from './SaveFieldOverlay'
+import StudentNameCell from './StudentNameCell'
 
 const SAVE_MODES = {
   replace: 'replace',
@@ -62,6 +62,7 @@ export default function FeedbackStudentModal({
   classAttendance = {},
   onClose,
   onSaveStudentFields,
+  onRenameStudent,
   saving = false,
   needsCloudMigration = false,
 }) {
@@ -76,6 +77,7 @@ export default function FeedbackStudentModal({
   const [saveMode, setSaveMode] = useState(SAVE_MODES.replace)
   const [refiningField, setRefiningField] = useState(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [renaming, setRenaming] = useState(false)
 
   const savedFeedback = String(partner?.feedback ?? '').trim()
   const savedNotes = String(partner?.feedbackNotes ?? '').trim()
@@ -103,7 +105,7 @@ export default function FeedbackStudentModal({
   const draftWordStatus = feedbackWordCountStatus(draft)
   const aiReady = isFeedbackLlmConfigured()
   const refining = refiningField !== null
-  const busy = saving || refining
+  const busy = saving || refining || renaming
 
   const suggestedEmphasis = suggestAttendanceEmphasis({
     total: counts.total,
@@ -113,7 +115,7 @@ export default function FeedbackStudentModal({
     attendanceEmphasisOptions.find((o) => o.value === suggestedEmphasis)?.label ??
     suggestedEmphasis
 
-  function handleGenerate() {
+  async function handleGenerate() {
     const generated = composeFeedback({
       counts: { total: counts.total, consecutive: counts.consecutive },
       attendanceEmphasis,
@@ -122,7 +124,38 @@ export default function FeedbackStudentModal({
       extraNotes: composeNotes,
       includeAttendance,
     })
+
+    if (!aiReady) {
+      setDraft(generated)
+      return
+    }
+
     setDraft(generated)
+    setRefiningField('feedback')
+    try {
+      const refined = await refineFeedbackWithLlm(generated, {
+        partnerName: partner.name,
+        className: formatClassLabel(classMeta),
+        total: counts.total,
+        consecutive: counts.consecutive,
+        extraNotes: composeNotes,
+        existingFeedback: hasSaved && saveMode === SAVE_MODES.build ? savedFeedback : '',
+      })
+      setDraft(refined)
+      if (!isValidFeedbackWordCount(refined)) {
+        notify.warning({
+          title: `Generated feedback is ${countFeedbackWords(refined)} words.`,
+          description: `Adjust to ${FEEDBACK_WORD_MIN}–${FEEDBACK_WORD_MAX} words before saving.`,
+        })
+      }
+    } catch (err) {
+      notify.error({
+        title: err.message || 'Could not refine feedback.',
+        description: 'The template draft is still available to edit on the right.',
+      })
+    } finally {
+      setRefiningField(null)
+    }
   }
 
   async function handleRefine() {
@@ -288,13 +321,36 @@ export default function FeedbackStudentModal({
     }
   }
 
+  async function handleRename(nextName) {
+    if (!onRenameStudent || !partner) return
+    setRenaming(true)
+    try {
+      await onRenameStudent(classId, partner.id, nextName)
+    } finally {
+      setRenaming(false)
+    }
+  }
+
   if (!partner || !classMeta) return null
+
+  const modalTitle = (
+    <span className="feedback-modal-title-row">
+      <span>Feedback — </span>
+      <StudentNameCell
+        name={partner.name}
+        disabled={busy}
+        saving={renaming}
+        onSave={handleRename}
+        className="feedback-modal-name-cell"
+      />
+    </span>
+  )
 
   return (
     <>
       <Modal
         open={open}
-        title={`Feedback — ${formatPersonName(partner.name)}`}
+        title={modalTitle}
         onCancel={busy ? undefined : onClose}
         width="min(1080px, 96vw)"
         className="feedback-student-modal"
@@ -439,8 +495,13 @@ export default function FeedbackStudentModal({
                       />
                     </SaveFieldOverlay>
                   </FormField>
-                  <Button type="primary" onClick={handleGenerate} disabled={busy}>
-                    {UI.generateFeedback}
+                  <Button
+                    type="primary"
+                    onClick={handleGenerate}
+                    disabled={busy}
+                    loading={refiningField === 'feedback'}
+                  >
+                    {aiReady ? `${UI.generateFeedback} & Refine` : UI.generateFeedback}
                   </Button>
                   {!aiReady && (
                     <Alert
@@ -538,7 +599,7 @@ export default function FeedbackStudentModal({
                       className="feedback-output-area"
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
-                      placeholder={`Click ${UI.generateFeedback}, then edit here before saving (${FEEDBACK_WORD_MIN}–${FEEDBACK_WORD_MAX} words).`}
+                      placeholder={`${aiReady ? 'Generated and refined feedback appears here' : `Click ${UI.generateFeedback}`}, then edit before saving (${FEEDBACK_WORD_MIN}–${FEEDBACK_WORD_MAX} words).`}
                       rows={5}
                       readOnly={busy}
                     />

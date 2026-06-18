@@ -27,6 +27,7 @@ import {
 import { filterByNameSearch } from '../utils/tableNameSearch'
 import { UI, formatLpCount } from '../utils/uiCopy'
 import TableNameSearch from './TableNameSearch'
+import StudentNameCell from './StudentNameCell'
 
 function countBulkNames(text) {
   return text
@@ -47,6 +48,7 @@ export default function ClassStudentPanel({
   deleteModuleSessions,
   addStudent,
   removeStudent,
+  updateStudent,
   importStudentsBulk,
   onActivityChange,
 }) {
@@ -67,6 +69,7 @@ export default function ClassStudentPanel({
   const [removeModuleBusy, setRemoveModuleBusy] = useState(false)
   const [removeModuleError, setRemoveModuleError] = useState('')
   const [nameSearch, setNameSearch] = useState('')
+  const [renamingStudentId, setRenamingStudentId] = useState('')
 
   const classAttendance = attendance || {}
   const moduleSessionCount = useMemo(
@@ -98,7 +101,7 @@ export default function ClassStudentPanel({
   const [studentTableRef, studentTableHeight] = useScrollRegionHeight(200)
 
   const panelBusy =
-    syncing || addStudentBusy || bulkBusy || removeModuleBusy || Boolean(removingStudentId)
+    syncing || addStudentBusy || bulkBusy || removeModuleBusy || Boolean(removingStudentId) || Boolean(renamingStudentId)
 
   async function handleConfirmRemoveFromModule() {
     if (!deleteModuleSessions || !moduleFilter || removeModuleBusy) return
@@ -244,13 +247,37 @@ export default function ClassStudentPanel({
     }
   }
 
+  async function handleRenameStudent(studentId, nextName) {
+    if (!updateStudent || panelBusy) return
+    setRenamingStudentId(studentId)
+    try {
+      await updateStudent(cls.id, studentId, { name: nextName })
+      notify.success({ title: 'Name updated.' })
+    } catch (err) {
+      notify.error({
+        title: 'Could not update name',
+        description: err.message || 'Try again.',
+      })
+      throw err
+    } finally {
+      setRenamingStudentId('')
+    }
+  }
+
   const studentColumns = useMemo(
     () => [
       {
         title: UI.learningPartner,
         key: 'name',
         ellipsis: true,
-        render: (_, row) => row.student.name,
+        render: (_, row) => (
+          <StudentNameCell
+            name={row.student.name}
+            disabled={panelBusy}
+            saving={renamingStudentId === row.student.id}
+            onSave={(nextName) => handleRenameStudent(row.student.id, nextName)}
+          />
+        ),
       },
       {
         title: UI.status,
@@ -317,7 +344,7 @@ export default function ClassStudentPanel({
         ),
       },
     ],
-    [panelBusy, removingStudentId],
+    [panelBusy, removingStudentId, renamingStudentId, updateStudent, cls.id, notify],
   )
 
   const overlayLabel = bulkBusy

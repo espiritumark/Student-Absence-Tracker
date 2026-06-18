@@ -5494,6 +5494,48 @@ details[open] .collapsible-summary::before {
   font-variant-numeric: tabular-nums;
 }
 
+.student-name-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  max-width: 100%;
+}
+
+.student-name-cell .student-name-text {
+  min-width: 0;
+}
+
+.student-name-edit-btn {
+  flex-shrink: 0;
+  opacity: 0.55;
+}
+
+.student-name-cell:hover .student-name-edit-btn,
+.student-name-edit-btn:focus-visible {
+  opacity: 1;
+}
+
+.student-name-edit {
+  width: 100%;
+}
+
+.bulk-student-name-input {
+  font-weight: 600;
+}
+
+.feedback-modal-title-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+}
+
+.feedback-modal-name-cell .student-name-text {
+  font-size: inherit;
+  font-weight: 600;
+}
+
 .roster-student-type-tag {
   margin-inline-end: 0 !important;
 }

@@ -372,9 +372,23 @@ export function useStore() {
 
   const updateStudent = useCallback(
     async (classId, studentId, patch) => {
+      let nextPatch = patch
+      if ('name' in patch) {
+        const trimmed = normalizeName(patch.name)
+        if (!trimmed) throw new Error('Name cannot be empty.')
+        const roster = state.classes.find((c) => c.id === classId)?.students ?? []
+        const duplicate = roster.some(
+          (st) => st.id !== studentId && normalizeName(st.name) === trimmed,
+        )
+        if (duplicate) {
+          throw new Error('A learning partner with this name already exists in this class.')
+        }
+        nextPatch = { ...patch, name: trimmed }
+      }
+
       if (useCloud) {
         try {
-          await dbUpdateStudent(studentId, patch)
+          await dbUpdateStudent(studentId, nextPatch)
           await refreshFromCloud({ silent: true })
         } catch (e) {
           const message = formatDbError(e)
@@ -390,22 +404,37 @@ export function useStore() {
             ? {
                 ...c,
                 students: c.students.map((st) =>
-                  st.id === studentId ? { ...st, ...patch } : st,
+                  st.id === studentId ? { ...st, ...nextPatch } : st,
                 ),
               }
             : c,
         ),
       }))
     },
-    [useCloud, refreshFromCloud, runLocal],
+    [useCloud, refreshFromCloud, runLocal, state.classes],
   )
 
   const bulkUpdateStudents = useCallback(
     async (classId, updates) => {
       if (!updates?.length) return
+
+      const roster = state.classes.find((c) => c.id === classId)?.students ?? []
+      const normalizedUpdates = updates.map(({ studentId, patch }) => {
+        if (!('name' in patch)) return { studentId, patch }
+        const trimmed = normalizeName(patch.name)
+        if (!trimmed) throw new Error('Name cannot be empty.')
+        const duplicate = roster.some(
+          (st) => st.id !== studentId && normalizeName(st.name) === trimmed,
+        )
+        if (duplicate) {
+          throw new Error('A learning partner with this name already exists in this class.')
+        }
+        return { studentId, patch: { ...patch, name: trimmed } }
+      })
+
       if (useCloud) {
         try {
-          for (const { studentId, patch } of updates) {
+          for (const { studentId, patch } of normalizedUpdates) {
             await dbUpdateStudent(studentId, patch)
           }
           await refreshFromCloud({ silent: true })
@@ -420,7 +449,7 @@ export function useStore() {
         classes: s.classes.map((c) => {
           if (c.id !== classId) return c
           const patchById = Object.fromEntries(
-            updates.map(({ studentId, patch }) => [studentId, patch]),
+            normalizedUpdates.map(({ studentId, patch }) => [studentId, patch]),
           )
           return {
             ...c,
@@ -431,7 +460,7 @@ export function useStore() {
         }),
       }))
     },
-    [useCloud, refreshFromCloud, runLocal],
+    [useCloud, refreshFromCloud, runLocal, state.classes],
   )
 
   const removeStudent = useCallback(

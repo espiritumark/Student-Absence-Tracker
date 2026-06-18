@@ -271,6 +271,7 @@ function AppContent() {
               deleteModuleSessions={store.deleteModuleSessions}
               addStudent={store.addStudent}
               removeStudent={store.removeStudent}
+              updateStudent={store.updateStudent}
               importStudentsBulk={store.importStudentsBulk}
               bulkUpdateStudents={store.bulkUpdateStudents}
               recordActivity={store.recordActivity}

@@ -38,6 +38,7 @@ export default function ClassManager({
   deleteModuleSessions,
   addStudent,
   removeStudent,
+  updateStudent,
   importStudentsBulk,
   bulkUpdateStudents,
   recordActivity,
@@ -482,6 +483,7 @@ export default function ClassManager({
                     deleteModuleSessions={deleteModuleSessions}
                     addStudent={addStudent}
                     removeStudent={removeStudent}
+                    updateStudent={updateStudent}
                     importStudentsBulk={importStudentsBulk}
                     onActivityChange={setPanelActivity}
                   />

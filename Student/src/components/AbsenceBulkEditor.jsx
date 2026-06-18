@@ -1,4 +1,4 @@
-import { Button, Checkbox, Empty, InputNumber, Space, Table, Tag, Typography } from 'antd'
+import { Button, Checkbox, Empty, Input, InputNumber, Space, Table, Tag, Typography } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { useAppNotifier } from '../hooks/useAppNotifier'
 import { NOTIFIER_KEYS } from '../utils/appNotifications'
@@ -7,6 +7,7 @@ import { RISK_META, getOverallAbsenceRisk } from '../utils/absenceRisk'
 import { getEffectiveAbsenceCounts } from '../utils/attendanceStats'
 import { buildActivityEntry } from '../utils/activityLog'
 import { formatClassLabel } from '../utils/classFormat'
+import { formatPersonName, normalizeName } from '../utils/nameMatching'
 import { filterByNameSearch } from '../utils/tableNameSearch'
 import { UI, formatLpCount } from '../utils/uiCopy'
 import TableNameSearch from './TableNameSearch'
@@ -18,14 +19,20 @@ import SearchableSelect from './SearchableSelect'
 
 function emptyDraft(student) {
   return {
+    name: null,
     manualTotalAbsences: student.manualTotalAbsences ?? '',
     manualConsecutiveAbsences: student.manualConsecutiveAbsences ?? '',
     manualNoPriorNotice: Boolean(student.manualNoPriorNotice),
   }
 }
 
-function draftToPatch(draft) {
-  return {
+function draftName(student, draft) {
+  if (draft.name != null) return draft.name
+  return formatPersonName(student.name)
+}
+
+function draftToPatch(student, draft) {
+  const patch = {
     manualTotalAbsences:
       draft.manualTotalAbsences === '' ? null : Number(draft.manualTotalAbsences),
     manualConsecutiveAbsences:
@@ -34,11 +41,16 @@ function draftToPatch(draft) {
         : Number(draft.manualConsecutiveAbsences),
     manualNoPriorNotice: Boolean(draft.manualNoPriorNotice),
   }
+  if (draft.name != null && normalizeName(draft.name) !== normalizeName(student.name)) {
+    patch.name = draft.name
+  }
+  return patch
 }
 
 function draftChanged(student, draft) {
   const base = emptyDraft(student)
   return (
+    (draft.name != null && normalizeName(draft.name) !== normalizeName(student.name)) ||
     String(draft.manualTotalAbsences) !== String(base.manualTotalAbsences) ||
     String(draft.manualConsecutiveAbsences) !== String(base.manualConsecutiveAbsences) ||
     Boolean(draft.manualNoPriorNotice) !== base.manualNoPriorNotice
@@ -111,7 +123,7 @@ export default function AbsenceBulkEditor({
       .map((student) => {
         const counts = getEffectiveAbsenceCounts(student, classAttendance)
         const draft = drafts[student.id] ?? emptyDraft(student)
-        const previewPatch = draftToPatch(draft)
+        const previewPatch = draftToPatch(student, draft)
         const previewCounts = {
           total:
             previewPatch.manualTotalAbsences != null
@@ -220,7 +232,7 @@ export default function AbsenceBulkEditor({
         .filter(({ changed }) => changed)
         .map(({ student, draft }) => ({
           studentId: student.id,
-          patch: draftToPatch(draft),
+          patch: draftToPatch(student, draft),
         }))
       await bulkUpdateStudents(classId, updates)
       recordActivity?.(
@@ -324,11 +336,18 @@ export default function AbsenceBulkEditor({
     () => [
       {
         title: UI.learningPartner,
-        dataIndex: ['student', 'name'],
         key: 'name',
         fixed: 'left',
-        width: 220,
-        ellipsis: true,
+        width: 260,
+        render: (_, record) => (
+          <Input
+            disabled={busy}
+            value={draftName(record.student, record.draft)}
+            onChange={(e) => updateDraft(record.student.id, { name: e.target.value })}
+            className="bulk-student-name-input"
+            aria-label={`Edit name for ${record.student.name}`}
+          />
+        ),
       },
       {
         title: UI.status,
