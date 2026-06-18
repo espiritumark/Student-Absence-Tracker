@@ -22,6 +22,7 @@ import AbsenceBulkEditor from './AbsenceBulkEditor'
 import ClassStudentPanel from './ClassStudentPanel'
 import ConfirmDialog from './ConfirmDialog'
 import ModuleSearchSelect from './ModuleSearchSelect'
+import SearchableSelect from './SearchableSelect'
 import FormField from './FormField'
 import PanelChrome from './PanelChrome'
 import WorkspaceSectionTitle from './WorkspaceSectionTitle'
@@ -50,7 +51,6 @@ export default function ClassManager({
   const [bulkEditorDraftCount, setBulkEditorDraftCount] = useState(0)
   const [panelActivity, setPanelActivity] = useState({ processing: false, draft: false })
   const [selectedModule, setSelectedModule] = useState('')
-  const [searchQuery, setSearchQuery] = useState('')
   const [selectedClassId, setSelectedClassId] = useState('')
   const [bulkEditMode, setBulkEditMode] = useState(false)
   const [bulkEditClassId, setBulkEditClassId] = useState('')
@@ -117,11 +117,14 @@ export default function ClassManager({
     return sortedClasses.filter((cls) => idSet.has(cls.id))
   }, [browseMode, selectedModule, sortedClasses, allModules])
 
-  const filteredClasses = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase()
-    if (!q) return classesForBrowse
-    return classesForBrowse.filter((cls) => formatClassLabel(cls).toLowerCase().includes(q))
-  }, [classesForBrowse, searchQuery])
+  const classBrowseOptions = useMemo(
+    () =>
+      classesForBrowse.map((cls) => ({
+        value: cls.id,
+        label: formatClassLabel(cls),
+      })),
+    [classesForBrowse],
+  )
 
   const moduleClassIds = useMemo(
     () => classesForBrowse.map((c) => c.id),
@@ -130,7 +133,7 @@ export default function ClassManager({
 
   const [masterTableRef, masterTableHeight] = useScrollRegionHeight(200)
 
-  const classTableData = filteredClasses.map((cls) => ({
+  const classTableData = classesForBrowse.map((cls) => ({
     key: cls.id,
     id: cls.id,
     name: formatClassLabel(cls),
@@ -175,10 +178,10 @@ export default function ClassManager({
   useReportTabActivity('classes', classesTabActivity, onTabActivityChange)
 
   useEffect(() => {
-    if (selectedClassId && !filteredClasses.some((cls) => cls.id === selectedClassId)) {
+    if (selectedClassId && !classesForBrowse.some((cls) => cls.id === selectedClassId)) {
       setSelectedClassId('')
     }
-  }, [filteredClasses, selectedClassId])
+  }, [classesForBrowse, selectedClassId])
 
   function handleBrowseModeChange(mode) {
     if (mode === browseMode) return
@@ -381,14 +384,18 @@ export default function ClassManager({
                 />
               )}
 
-              <FormField label="Search Classes" grow>
-                <Input
-                  allowClear
-                  placeholder="Intake, group, qualification…"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </FormField>
+              <SearchableSelect
+                options={classBrowseOptions}
+                value={selectedClassId}
+                onChange={setSelectedClassId}
+                allowEmpty
+                emptyLabel="All Classes"
+                placeholder={
+                  classBrowseOptions.length ? 'Search class…' : 'No classes recorded yet'
+                }
+                label="Search Classes"
+                disabled={classBrowseOptions.length === 0}
+              />
 
               {browseMode === 'module' && moduleClassIds.length > 1 && (
                 <Button block onClick={openModuleBulkEdit}>
@@ -398,7 +405,7 @@ export default function ClassManager({
             </div>
 
             <Typography.Text type="secondary" className="master-pane-hint">
-              {filteredClasses.length} class{filteredClasses.length === 1 ? '' : 'es'}
+              {classesForBrowse.length} class{classesForBrowse.length === 1 ? '' : 'es'}
               {browseMode === 'module' && selectedModule
                 ? ` · ${formatModuleLabel(selectedModule)}`
                 : ''}
@@ -411,8 +418,8 @@ export default function ClassManager({
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
                 description="No modules yet — import attendance with a module name, or use By Class."
               />
-            ) : filteredClasses.length === 0 ? (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No classes match this filter." />
+            ) : classesForBrowse.length === 0 ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No classes in this module." />
             ) : (
               <div className="table-scroll-region master-list-scroll" ref={masterTableRef}>
                 <Table
