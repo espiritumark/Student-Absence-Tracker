@@ -48,6 +48,7 @@ export const UI = {
   signOut: 'Sign Out',
   createAccount: 'Create Account',
   generateFeedback: 'Generate Feedback',
+  generateFeedbackAndRefine: 'Generate Feedback & Refine',
   traitsAndNotes: 'Traits & Notes',
   generatedFeedback: 'Generated Feedback',
   saveFeedback: 'Save Feedback',

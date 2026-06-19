@@ -11,7 +11,12 @@ import {
 } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { useAppNotifier } from '../hooks/useAppNotifier'
-import { useScrollRegionHeight } from '../hooks/useScrollRegionHeight'
+import {
+  ANT_TABLE_HEADER_OFFSET,
+  ANT_TABLE_PAGINATION_OFFSET,
+  ANT_TABLE_ROW_SMALL,
+  useAdaptiveTableScroll,
+} from '../hooks/useScrollRegionHeight'
 import ConfirmDialog from './ConfirmDialog'
 import ModuleSearchSelect from './ModuleSearchSelect'
 import SaveFieldOverlay from './SaveFieldOverlay'
@@ -98,8 +103,6 @@ export default function ClassStudentPanel({
     [cls.students],
   )
 
-  const [studentTableRef, studentTableHeight] = useScrollRegionHeight(200)
-
   const panelBusy =
     syncing || addStudentBusy || bulkBusy || removeModuleBusy || Boolean(removingStudentId) || Boolean(renamingStudentId)
 
@@ -143,6 +146,21 @@ export default function ClassStudentPanel({
     () => filterByNameSearch(studentTableData, nameSearch, (row) => row.student.name),
     [studentTableData, nameSearch],
   )
+
+  const studentListPageSize = 25
+  const showStudentPagination = filteredStudentTableData.length > studentListPageSize
+  const {
+    ref: studentTableRef,
+    scrollY: studentTableScrollY,
+    needsScroll: studentTableNeedsScroll,
+  } = useAdaptiveTableScroll({
+    rowCount: filteredStudentTableData.length,
+    rowHeight: ANT_TABLE_ROW_SMALL,
+    headerOffset: ANT_TABLE_HEADER_OFFSET,
+    paginationOffset: showStudentPagination ? ANT_TABLE_PAGINATION_OFFSET : 0,
+    defaultHeight: 200,
+    remeasureKey: `${cls.id}:${filteredStudentTableData.length}:${showStudentPagination ? 1 : 0}`,
+  })
 
   useEffect(() => {
     setNameSearch('')
@@ -486,24 +504,31 @@ export default function ClassStudentPanel({
             description={`No ${UI.learningPartners} in this class.`}
           />
         ) : (
-          <div className="table-scroll-region table-scroll-region-with-search student-list-scroll">
-            <TableNameSearch
-              value={nameSearch}
-              onChange={setNameSearch}
-              matchCount={filteredStudentTableData.length}
-              totalCount={studentTableData.length}
-            />
-            <div className="table-scroll-region student-list-scroll-inner" ref={studentTableRef}>
-              {filteredStudentTableData.length === 0 ? (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description="No names match this search."
-                />
-              ) : (
-                <Table
-                  size="small"
-                  pagination={{ pageSize: 25, showSizeChanger: false, hideOnSinglePage: true }}
-                  scroll={{ y: studentTableHeight }}
+            <div className="table-scroll-region table-scroll-region-with-search student-list-scroll">
+              <TableNameSearch
+                value={nameSearch}
+                onChange={setNameSearch}
+                matchCount={filteredStudentTableData.length}
+                totalCount={studentTableData.length}
+              />
+              <div
+                className={`table-scroll-region student-list-scroll-inner${studentTableNeedsScroll ? '' : ' table-scroll-region-fits'}`}
+                ref={studentTableRef}
+              >
+                {filteredStudentTableData.length === 0 ? (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description="No names match this search."
+                  />
+                ) : (
+                  <Table
+                    size="small"
+                    pagination={{
+                      pageSize: studentListPageSize,
+                      showSizeChanger: false,
+                      hideOnSinglePage: true,
+                    }}
+                    scroll={studentTableScrollY ? { y: studentTableScrollY } : undefined}
                   dataSource={filteredStudentTableData}
                   columns={studentColumns}
                 />

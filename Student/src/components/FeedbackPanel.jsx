@@ -5,7 +5,8 @@ import { useAppNotifier } from '../hooks/useAppNotifier'
 import {
   ANT_TABLE_HEADER_OFFSET,
   ANT_TABLE_PAGINATION_OFFSET,
-  useScrollRegionHeight,
+  ANT_TABLE_ROW_SMALL,
+  useAdaptiveTableScroll,
 } from '../hooks/useScrollRegionHeight'
 import { formatClassLabel } from '../utils/classFormat'
 import { formatDbError, isFeedbackColumnMissingError, isFeedbackNotesColumnMissingError } from '../lib/database'
@@ -104,11 +105,20 @@ export default function FeedbackPanel({
     setNameSearch('')
   }, [classId])
 
-  const showTablePagination = filteredRows.length > 40
-  const tableChromeOffset =
-    ANT_TABLE_HEADER_OFFSET + (showTablePagination ? ANT_TABLE_PAGINATION_OFFSET : 0)
-  const tableRemeasureKey = `${selectedClass?.id ?? ''}:${filteredRows.length}:${showTablePagination ? 1 : 0}`
-  const [tableRef, tableHeight] = useScrollRegionHeight(320, tableChromeOffset, tableRemeasureKey)
+  const rosterTablePageSize = 40
+  const showTablePagination = filteredRows.length > rosterTablePageSize
+  const {
+    ref: tableRef,
+    scrollY: rosterTableScrollY,
+    needsScroll: rosterTableNeedsScroll,
+  } = useAdaptiveTableScroll({
+    rowCount: filteredRows.length,
+    rowHeight: ANT_TABLE_ROW_SMALL,
+    headerOffset: ANT_TABLE_HEADER_OFFSET,
+    paginationOffset: showTablePagination ? ANT_TABLE_PAGINATION_OFFSET : 0,
+    defaultHeight: 320,
+    remeasureKey: `${selectedClass?.id ?? ''}:${filteredRows.length}:${showTablePagination ? 1 : 0}`,
+  })
 
   function handleExportCsv() {
     if (!selectedClass || filteredRows.length === 0) return
@@ -274,7 +284,10 @@ export default function FeedbackPanel({
                 Export CSV
               </Button>
             </div>
-            <div className="feedback-roster-table-wrap" ref={tableRef}>
+            <div
+              className={`feedback-roster-table-wrap${rosterTableNeedsScroll ? '' : ' table-scroll-region-fits'}`}
+              ref={tableRef}
+            >
               {filteredRows.length === 0 ? (
                 <Empty
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -283,8 +296,12 @@ export default function FeedbackPanel({
               ) : (
                 <Table
                   size="small"
-                  pagination={{ pageSize: 40, showSizeChanger: false, hideOnSinglePage: true }}
-                  scroll={{ y: tableHeight }}
+                  pagination={{
+                    pageSize: rosterTablePageSize,
+                    showSizeChanger: false,
+                    hideOnSinglePage: true,
+                  }}
+                  scroll={rosterTableScrollY ? { y: rosterTableScrollY } : undefined}
                   rowClassName={(row) =>
                     row.feedback ? 'feedback-roster-row-has-feedback' : 'feedback-roster-row-empty'
                   }

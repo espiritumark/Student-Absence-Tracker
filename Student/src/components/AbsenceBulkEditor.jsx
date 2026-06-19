@@ -1,8 +1,12 @@
-import { Button, Checkbox, Empty, Input, InputNumber, Space, Table, Tag, Typography } from 'antd'
+import { Button, Checkbox, Empty, Input, InputNumber, Table, Tag, Typography } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { useAppNotifier } from '../hooks/useAppNotifier'
 import { NOTIFIER_KEYS } from '../utils/appNotifications'
-import { useScrollRegionHeight } from '../hooks/useScrollRegionHeight'
+import {
+  useAdaptiveTableScroll,
+  ANT_TABLE_HEADER_OFFSET,
+  ANT_TABLE_PAGINATION_OFFSET,
+} from '../hooks/useScrollRegionHeight'
 import { RISK_META, getOverallAbsenceRisk } from '../utils/absenceRisk'
 import { getEffectiveAbsenceCounts } from '../utils/attendanceStats'
 import { buildActivityEntry } from '../utils/activityLog'
@@ -81,12 +85,16 @@ function commitStreakDraft(record, value) {
   return { manualConsecutiveAbsences: value }
 }
 
+/** Bulk edit rows include inputs — slightly taller than plain small-table rows. */
+const BULK_TABLE_ROW_HEIGHT = 48
+
 export default function AbsenceBulkEditor({
   classes,
   attendance,
   initialClassId,
   onClose,
   bulkUpdateStudents,
+  removeStudent,
   recordActivity,
   restrictToClassIds = null,
   onActivityChange,
@@ -108,10 +116,13 @@ export default function AbsenceBulkEditor({
   const [drafts, setDrafts] = useState({})
   const [showAll, setShowAll] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [busyAction, setBusyAction] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [confirmClear, setConfirmClear] = useState(false)
   const [confirmSaveOpen, setConfirmSaveOpen] = useState(false)
+  const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false)
+  const [selectedRowKeys, setSelectedRowKeys] = useState([])
   const notify = useAppNotifier()
 
   const selectedClass = sortedClasses.find((c) => c.id === classId)
@@ -163,12 +174,36 @@ export default function AbsenceBulkEditor({
 
   const changedCount = students.filter(({ changed }) => changed).length
   const [nameSearch, setNameSearch] = useState('')
-  const [tableRegionRef, tableHeight] = useScrollRegionHeight(320)
 
   const filteredVisibleStudents = useMemo(
     () => filterByNameSearch(visibleStudents, nameSearch, (row) => row.student.name),
     [visibleStudents, nameSearch],
   )
+
+  const bulkTablePageSize = 30
+  const showBulkPagination = filteredVisibleStudents.length > bulkTablePageSize
+  const {
+    ref: tableRegionRef,
+    scrollY: bulkTableScrollY,
+    needsScroll: bulkTableNeedsScroll,
+  } = useAdaptiveTableScroll({
+    rowCount: filteredVisibleStudents.length,
+    rowHeight: BULK_TABLE_ROW_HEIGHT,
+    headerOffset: ANT_TABLE_HEADER_OFFSET,
+    paginationOffset: showBulkPagination ? ANT_TABLE_PAGINATION_OFFSET : 0,
+    defaultHeight: 320,
+    remeasureKey: `${classId}:${filteredVisibleStudents.length}:${showBulkPagination ? 1 : 0}`,
+  })
+
+  const selectedStudents = useMemo(
+    () =>
+      students
+        .filter((row) => selectedRowKeys.includes(row.key))
+        .map((row) => row.student),
+    [students, selectedRowKeys],
+  )
+
+  const selectedRemoveCount = selectedStudents.length
 
   useEffect(() => {
     onActivityChange?.({ busy, draftCount: changedCount })
@@ -206,6 +241,7 @@ export default function AbsenceBulkEditor({
     setMessage('')
     setError('')
     setNameSearch('')
+    setSelectedRowKeys([])
   }, [classId])
 
   function updateDraft(studentId, patch) {
@@ -224,6 +260,7 @@ export default function AbsenceBulkEditor({
   async function handleSave() {
     if (!classId || busy || changedCount === 0) return
     setConfirmSaveOpen(false)
+    setBusyAction('save')
     setBusy(true)
     setError('')
     setMessage('')
@@ -266,11 +303,13 @@ export default function AbsenceBulkEditor({
       )
     } finally {
       setBusy(false)
+      setBusyAction('')
     }
   }
 
   async function handleClearAll() {
     if (!classId || busy) return
+    setBusyAction('clear')
     setBusy(true)
     setError('')
     setMessage('')
@@ -329,8 +368,78 @@ export default function AbsenceBulkEditor({
       )
     } finally {
       setBusy(false)
+      setBusyAction('')
     }
   }
+
+  async function handleRemoveSelected() {
+    if (!classId || busy || !removeStudent || selectedRemoveCount === 0) return
+    setConfirmRemoveOpen(false)
+    setBusyAction('remove')
+    setBusy(true)
+    setError('')
+    setMessage('')
+    const idsToRemove = selectedStudents.map((student) => student.id)
+    try {
+      for (const studentId of idsToRemove) {
+        await removeStudent(classId, studentId)
+      }
+      setSelectedRowKeys([])
+      setDrafts((prev) => {
+        const next = { ...prev }
+        for (const id of idsToRemove) delete next[id]
+        return next
+      })
+      recordActivity?.(
+        buildActivityEntry({
+          category: 'roster',
+          verb: 'removed',
+          title: `${UI.bulkEditAbsenceCounts} — ${formatClassLabel(selectedClass)}`,
+          lines: [formatLpCount(idsToRemove.length)],
+        }),
+      )
+      notify.success({
+        key: NOTIFIER_KEYS.absenceBulk,
+        title: `Removed ${formatLpCount(idsToRemove.length)} from ${formatClassLabel(selectedClass)}.`,
+      })
+    } catch (err) {
+      const message = err.message || `Failed to remove ${UI.learningPartners}.`
+      setError(message)
+      notify.error({ key: 'absence-bulk-error', title: message, duration: 8 })
+      recordActivity?.(
+        buildActivityEntry({
+          category: 'roster',
+          verb: 'removed',
+          title: `${UI.bulkEditAbsenceCounts} — ${formatClassLabel(selectedClass)}`,
+          success: false,
+          error: message,
+        }),
+      )
+    } finally {
+      setBusy(false)
+      setBusyAction('')
+    }
+  }
+
+  const busyOverlayLabel =
+    busyAction === 'remove'
+      ? `Removing ${UI.learningPartners}…`
+      : busyAction === 'clear'
+        ? 'Clearing overrides…'
+        : 'Saving changes…'
+
+  const rowSelection = useMemo(
+    () =>
+      removeStudent
+        ? {
+            selectedRowKeys,
+            preserveSelectedRowKeys: true,
+            onChange: (keys) => setSelectedRowKeys(keys),
+            getCheckboxProps: () => ({ disabled: busy }),
+          }
+        : undefined,
+    [removeStudent, selectedRowKeys, busy],
+  )
 
   const columns = useMemo(
     () => [
@@ -449,7 +558,7 @@ export default function AbsenceBulkEditor({
         description={`Adjust total and streak for each ${UI.learningPartner} in the selected class. Values match ${UI.classesAndRosters} until you change them; confirm before saving.`}
       />
 
-      <SaveFieldOverlay busy={busy} label="Saving changes…">
+      <SaveFieldOverlay busy={busy} label={busyOverlayLabel}>
         <div className="workspace-body">
           <div className="bulk-absence-toolbar filter-toolbar">
             <SearchableSelect
@@ -479,7 +588,10 @@ export default function AbsenceBulkEditor({
                 matchCount={filteredVisibleStudents.length}
                 totalCount={visibleStudents.length}
               />
-              <div className="bulk-table-scroll-inner" ref={tableRegionRef}>
+              <div
+                className={`bulk-table-scroll-inner${bulkTableNeedsScroll ? '' : ' table-scroll-region-fits'}`}
+                ref={tableRegionRef}
+              >
               {filteredVisibleStudents.length === 0 ? (
                 <Empty
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -490,8 +602,16 @@ export default function AbsenceBulkEditor({
                 size="small"
                 columns={columns}
                 dataSource={filteredVisibleStudents}
-                pagination={{ pageSize: 30, showSizeChanger: false, hideOnSinglePage: true }}
-                scroll={{ x: 980, y: tableHeight }}
+                rowSelection={rowSelection}
+                pagination={{
+                  pageSize: bulkTablePageSize,
+                  showSizeChanger: false,
+                  hideOnSinglePage: true,
+                }}
+                scroll={{
+                  x: 980,
+                  ...(bulkTableScrollY ? { y: bulkTableScrollY } : {}),
+                }}
                 rowClassName={(record) => (record.changed ? 'bulk-row-changed' : '')}
               />
               )}
@@ -499,7 +619,7 @@ export default function AbsenceBulkEditor({
             </div>
           )}
 
-          <Space wrap style={{ marginTop: '0.75rem' }}>
+          <div className="bulk-absence-actions" style={{ marginTop: '0.75rem' }}>
             <Button
               type="primary"
               disabled={busy || changedCount === 0}
@@ -509,6 +629,17 @@ export default function AbsenceBulkEditor({
                 ? 'Save Changes'
                 : `Save ${changedCount} Change${changedCount === 1 ? '' : 's'}`}
             </Button>
+            {removeStudent && (
+              <Button
+                danger
+                disabled={busy || selectedRemoveCount === 0}
+                onClick={() => setConfirmRemoveOpen(true)}
+              >
+                {selectedRemoveCount === 0
+                  ? 'Remove Selected'
+                  : `Remove ${selectedRemoveCount} Selected`}
+              </Button>
+            )}
             <Button
               type="link"
               danger
@@ -518,7 +649,7 @@ export default function AbsenceBulkEditor({
             >
               {UI.clearAllOverrides}
             </Button>
-          </Space>
+          </div>
         </div>
       </SaveFieldOverlay>
 
@@ -536,6 +667,51 @@ export default function AbsenceBulkEditor({
           {UI.learningPartner}
           {changedCount === 1 ? '' : 's'} in <strong>{formatClassLabel(selectedClass)}</strong>?
         </Typography.Paragraph>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={confirmRemoveOpen}
+        title={
+          selectedRemoveCount === 1
+            ? `Remove ${UI.learningPartner}?`
+            : `Remove ${selectedRemoveCount} ${UI.learningPartners}?`
+        }
+        confirmLabel={
+          selectedRemoveCount === 1
+            ? `Remove ${UI.learningPartner}`
+            : `Remove ${selectedRemoveCount}`
+        }
+        cancelLabel={
+          selectedRemoveCount === 1
+            ? `Keep ${UI.learningPartner}`
+            : 'Keep Selected'
+        }
+        danger
+        busy={busy}
+        onCancel={() => !busy && setConfirmRemoveOpen(false)}
+        onConfirm={handleRemoveSelected}
+      >
+        <Typography.Paragraph>
+          Remove{' '}
+          {selectedRemoveCount === 1 ? (
+            <>
+              <strong>{selectedStudents[0]?.name}</strong>
+            </>
+          ) : (
+            <>
+              <strong>{selectedRemoveCount}</strong> {UI.learningPartners}
+            </>
+          )}{' '}
+          from <strong>{formatClassLabel(selectedClass)}</strong>? Their attendance records for
+          this class will be deleted.
+        </Typography.Paragraph>
+        {selectedRemoveCount > 1 && selectedRemoveCount <= 8 && (
+          <ul className="bulk-remove-name-list">
+            {selectedStudents.map((student) => (
+              <li key={student.id}>{student.name}</li>
+            ))}
+          </ul>
+        )}
       </ConfirmDialog>
 
       <ConfirmDialog

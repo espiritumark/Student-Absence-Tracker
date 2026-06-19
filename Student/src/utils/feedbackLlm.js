@@ -41,17 +41,25 @@ function readMessageContent(content) {
   return ''
 }
 
-const SYSTEM_PROMPT = `You are a teacher writing formal report feedback for one learning partner (never say "student"). Write exactly one paragraph of ${FEEDBACK_WORD_MIN}–${FEEDBACK_WORD_MAX} words in a fair, professional UK school tone.
+const SYSTEM_PROMPT = `You are a teacher polishing formal report feedback for one learning partner (never say "student"). Write exactly one paragraph of ${FEEDBACK_WORD_MIN}–${FEEDBACK_WORD_MAX} words in a fair, professional UK school tone.
 
-Tone and framing:
-- Be honest and constructive: clearly name areas that need improvement when the brief includes them (attendance, engagement, work quality, behaviour). Do not hide issues behind vague praise.
-- Hold the learning partner accountable while explaining specific, practical steps they can take themselves to improve.
-- Balance genuine strengths with clear next steps; avoid empty positivity or rewriting problems away.
-- Preserve factual details from the draft and teacher notes — rephrase professionally but do not omit them (e.g. distraction, incomplete work, absences).
-- Use respectful growth language rather than insults, labels, or discouragement (avoid lazy, fail, hopeless, inadequate).
+Your job is to REPHRASE and tighten the draft — not to expand it with new content.
+
+Strict factual rules:
+- Use ONLY facts, traits, and observations already present in the draft or teacher notes below.
+- Do NOT invent behaviours, examples, recommendations, action steps, or improvements that are not stated in the source text.
+- Do NOT add generic advice (e.g. "volunteer for group work", "share insights more often", "support steady progress") unless that exact idea appears in the draft or notes.
+- Do NOT infer or guess what the learning partner should do; if the source does not mention a next step, do not add one.
+- Preserve every specific point from the draft and notes — rephrase professionally but do not omit them (e.g. quiet, good behaviour, absences, work quality).
+- If attendance, participation, or assignment quality is already described in the draft, keep that meaning; do not upgrade or soften it beyond what the draft says.
+
+Tone:
+- Be honest and constructive when the source mentions areas to improve; do not hide issues behind vague praise.
+- Use respectful language — no insults, labels, or discouragement.
 - Refer to them as "the learning partner" or "they" — never include their name.
 - Start directly with the feedback; no greeting or label.
-- Do not invent facts beyond the brief.
+- Length: output MUST be ${FEEDBACK_WORD_MIN}–${FEEDBACK_WORD_MAX} words. If the source is brief, reach the minimum by fuller phrasing of the same points — not by adding new facts.
+
 Return only the feedback text.`
 
 function buildUserPrompt(draft, context) {
@@ -60,13 +68,14 @@ Learning partner name: ${context.partnerName}
 Class: ${context.className}
 Total absences (days): ${context.total}
 Current absence streak (days): ${context.consecutive}
-Hard limit: ${FEEDBACK_WORD_MAX} words maximum.
-Tone: fair and constructive — name areas to improve when the brief includes them, keep the learning partner accountable, and state what they can do to improve; do not soften away specific issues from the draft or notes.
+Hard limit: ${FEEDBACK_WORD_MIN}–${FEEDBACK_WORD_MAX} words (must not be shorter than ${FEEDBACK_WORD_MIN}).
 
-Teacher notes to weave in if relevant:
+IMPORTANT: You may only use facts from the draft and teacher notes below. Do not add new suggestions, examples, or behaviours.
+
+Teacher notes (factual source — do not go beyond this):
 ${context.extraNotes || '(none)'}
 
-${context.existingFeedback ? `Existing saved feedback (may build on or replace):\n${context.existingFeedback}\n\n` : ''}Draft to refine:
+${context.existingFeedback ? `Existing saved feedback (may build on or replace):\n${context.existingFeedback}\n\n` : ''}Draft to refine (factual source — do not go beyond this):
 ${draft}`
 }
 
@@ -89,7 +98,7 @@ async function requestCompletion(messages, config, opts = {}) {
       model: config.model,
       messages,
       max_tokens: opts.maxTokens ?? 180,
-      temperature: opts.temperature ?? 0.35,
+      temperature: opts.temperature ?? 0.15,
     }),
   })
 
@@ -106,6 +115,20 @@ async function requestCompletion(messages, config, opts = {}) {
 
 function normalizeRefinedOutput(raw, partnerName) {
   return sanitizeRefinedFeedback(raw, { partnerName, max: FEEDBACK_WORD_MAX })
+}
+
+function buildLengthRetryPrompt(wordCount, mode) {
+  if (mode === 'short') {
+    return `Your response was ${wordCount} words but must be at least ${FEEDBACK_WORD_MIN}. Rewrite as one paragraph of ${FEEDBACK_WORD_MIN}–${FEEDBACK_WORD_MAX} words. Expand only by fuller phrasing of facts already in the draft and notes — do not add new behaviours, examples, or suggestions. Do not include the learning partner's name. Start directly with the feedback. Return only the feedback text.`
+  }
+  return `Your response was ${wordCount} words. Rewrite as one paragraph of exactly ${FEEDBACK_WORD_MIN}–${FEEDBACK_WORD_MAX} words. Rephrase only — use the same facts as the draft and notes; do not add new suggestions or examples. Do not include the learning partner's name. Start directly with the feedback. Return only the feedback text.`
+}
+
+function pickLongerFactualFallback(refined, draft, partnerName) {
+  const refinedCount = countFeedbackWords(refined)
+  const draftCount = countFeedbackWords(draft)
+  const candidate = draftCount > refinedCount ? draft : refined
+  return sanitizeRefinedFeedback(candidate, { partnerName, max: FEEDBACK_WORD_MAX })
 }
 
 function isWithinWordTarget(text) {
@@ -131,17 +154,43 @@ export async function refineFeedbackWithLlm(draft, context, opts = {}) {
 
   let raw = await requestCompletion(messages, config, opts)
   let refined = normalizeRefinedOutput(raw, context.partnerName)
+  let lastLlmWordCount = countFeedbackWords(refined)
 
   if (!isWithinWordTarget(refined)) {
-    const firstCount = countFeedbackWords(refined)
+    const tooShort = lastLlmWordCount < FEEDBACK_WORD_MIN
     messages.push({ role: 'assistant', content: raw })
     messages.push({
       role: 'user',
-      content: `Your response was ${firstCount} words. Rewrite as one paragraph of exactly ${FEEDBACK_WORD_MIN}–${FEEDBACK_WORD_MAX} words. Keep a fair, constructive tone: name areas to improve when relevant, hold the learning partner accountable, and say what they can do to improve — without harsh wording. Preserve specific points from the draft. Do not include the learning partner's name. Start directly with the feedback. Return only the feedback text.`,
+      content: buildLengthRetryPrompt(lastLlmWordCount, tooShort ? 'short' : 'long'),
     })
 
     raw = await requestCompletion(messages, config, opts)
     refined = normalizeRefinedOutput(raw, context.partnerName)
+    lastLlmWordCount = countFeedbackWords(refined)
+  }
+
+  if (!isWithinWordTarget(refined)) {
+    if (lastLlmWordCount < FEEDBACK_WORD_MIN) {
+      refined = pickLongerFactualFallback(refined, draft, context.partnerName)
+    }
+  }
+
+  if (
+    countFeedbackWords(refined) < FEEDBACK_WORD_MIN &&
+    countFeedbackWords(draft) < FEEDBACK_WORD_MIN
+  ) {
+    messages.push({ role: 'assistant', content: raw })
+    messages.push({
+      role: 'user',
+      content: buildLengthRetryPrompt(lastLlmWordCount, 'short'),
+    })
+    raw = await requestCompletion(messages, config, opts)
+    refined = normalizeRefinedOutput(raw, context.partnerName)
+    lastLlmWordCount = countFeedbackWords(refined)
+  }
+
+  if (countFeedbackWords(refined) < FEEDBACK_WORD_MIN) {
+    refined = pickLongerFactualFallback(refined, draft, context.partnerName)
   }
 
   if (countFeedbackWords(refined) > FEEDBACK_WORD_MAX) {
@@ -154,7 +203,7 @@ export async function refineFeedbackWithLlm(draft, context, opts = {}) {
   return refined
 }
 
-const NOTES_SYSTEM_PROMPT = `You edit a teacher's private notes. Fix grammar, organize ideas, and summarize only when it helps clarity. Preserve every factual detail from the input. Do not add headers, labels, metadata, class names, attendance stats, or character limits unless they already appear in the notes. Do not invent facts. Return only the edited notes text.`
+const NOTES_SYSTEM_PROMPT = `You edit a teacher's private notes. Fix grammar and polish wording only. Preserve every factual detail from the input exactly — do not add observations, recommendations, or examples that are not in the original. Do not add headers, labels, metadata, class names, or attendance stats. Return only the edited notes text.`
 
 /** Polish private extra notes; no report word limit, capped at FEEDBACK_NOTES_MAX characters. */
 export async function refineNotesWithLlm(draft, opts = {}) {
@@ -177,4 +226,3 @@ export async function refineNotesWithLlm(draft, opts = {}) {
 export function isFeedbackLlmConfigured() {
   return Boolean(getFeedbackLlmConfig())
 }
-

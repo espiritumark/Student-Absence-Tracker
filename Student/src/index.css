@@ -1263,6 +1263,43 @@ body {
   overflow: hidden;
 }
 
+.table-scroll-region-fits {
+  flex: 0 1 auto;
+  min-height: auto;
+  overflow: visible;
+}
+
+.master-list-scroll.table-scroll-region-fits {
+  flex: 0 1 auto;
+}
+
+.bulk-table-scroll-inner.table-scroll-region-fits {
+  flex: 0 1 auto;
+  overflow: visible;
+}
+
+.feedback-roster-table-wrap.table-scroll-region-fits {
+  flex: 0 1 auto;
+  overflow: visible;
+}
+
+.feedback-roster-table-wrap.table-scroll-region-fits .ant-table-body {
+  overflow: visible !important;
+  max-height: none !important;
+}
+
+.bulk-remove-name-list {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.class-student-panel .table-scroll-region-fits.student-list-scroll-inner {
+  flex: 0 1 auto;
+  max-height: none;
+}
+
 .table-name-search-bar {
   flex-shrink: 0;
   margin-bottom: 0.35rem;
@@ -5827,6 +5864,37 @@ details[open] .collapsible-summary::before {
   display: inline-flex;
   align-items: center;
   gap: 0.1rem;
+  flex-shrink: 0;
+}
+
+.feedback-panel-card .ant-card-head {
+  overflow: visible;
+}
+
+.feedback-panel-card .ant-card-head-wrapper {
+  overflow: visible;
+}
+
+.feedback-panel-card .ant-card-extra {
+  overflow: visible;
+  flex-shrink: 0;
+  margin-inline-start: 0.5rem;
+}
+
+.feedback-generate-workspace-overlay {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.feedback-generate-workspace-overlay.ant-spin-nested-loading,
+.feedback-generate-workspace-overlay .ant-spin-container,
+.feedback-generate-workspace-overlay .save-field-overlay-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .feedback-refine-btn.ant-btn {
@@ -5872,6 +5940,14 @@ details[open] .collapsible-summary::before {
   justify-content: space-between;
   gap: 0.5rem;
   width: 100%;
+}
+
+.feedback-generate-refine-btn {
+  margin-top: 0.65rem;
+}
+
+.feedback-compose-notes-field .feedback-generate-refine-btn {
+  margin-top: 0.5rem;
 }
 
 .feedback-panel-card.ant-card-small > .ant-card-head .ant-card-head-wrapper {
@@ -6069,12 +6145,43 @@ details[open] .collapsible-summary::before {
   color: var(--critical);
 }
 
+.feedback-student-modal-wrap {
+  overflow: hidden !important;
+}
+
+.feedback-student-modal-wrap .ant-modal {
+  top: 0;
+  max-width: calc(100vw - 1rem);
+  padding-bottom: 0;
+}
+
+.feedback-student-modal .ant-modal-content {
+  display: flex;
+  flex-direction: column;
+  height: min(84dvh, 760px);
+  max-height: min(84dvh, 760px);
+  overflow: hidden;
+}
+
+.feedback-student-modal .ant-modal-header {
+  flex-shrink: 0;
+}
+
+.feedback-student-modal .ant-modal-footer {
+  flex-shrink: 0;
+  margin-top: 0;
+  padding: 0.75rem 1.25rem 1rem;
+  border-top: 1px solid var(--border);
+}
+
 .feedback-student-modal .ant-modal-body {
-  max-height: min(78vh, 720px);
+  flex: 1;
+  min-height: 0;
+  max-height: none;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  padding-top: 0.65rem;
+  padding: 0.65rem 1.25rem 0.75rem;
 }
 
 .feedback-modal-body {
@@ -6088,11 +6195,46 @@ details[open] .collapsible-summary::before {
 
 .feedback-student-modal .feedback-workspace-split {
   flex: 1;
-  min-height: min(52vh, 520px);
+  min-height: 0;
+}
+
+.feedback-student-modal .feedback-details-pane {
+  overflow: hidden;
+  gap: 0.5rem;
+}
+
+.feedback-student-modal .feedback-details-pane-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-bottom: 0.15rem;
+}
+
+.feedback-student-modal .feedback-details-pane-actions {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.15rem;
+}
+
+.feedback-student-modal .feedback-generate-refine-btn.ant-btn {
+  width: 100%;
+  height: auto;
+  min-height: 2.25rem;
+  white-space: normal;
+  line-height: 1.35;
+  padding-block: 0.4rem;
 }
 
 .feedback-student-modal .feedback-output-pane.feedback-modal-output-stack {
-  gap: 0.75rem;
+  flex: 1;
+  min-height: 0;
+  gap: 0.65rem;
   overflow-x: hidden;
   overflow-y: auto;
 }
@@ -6111,44 +6253,78 @@ details[open] .collapsible-summary::before {
 }
 
 .feedback-student-modal .feedback-output-pane .feedback-panel-output-card {
-  flex: 0 0 auto;
-  min-height: 0;
+  flex: 1 1 auto;
+  min-height: 7.5rem;
 }
 
 .feedback-student-modal .feedback-output-pane .feedback-panel-output-card > .ant-card-body {
-  overflow: visible;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .feedback-student-modal .feedback-output-spin .save-field-overlay-content {
-  overflow: visible;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .feedback-student-modal .feedback-output-pane .feedback-output-area,
 .feedback-student-modal .feedback-output-field .feedback-output-area {
-  flex: none;
+  flex: 1;
   width: 100%;
-  min-height: 7.5rem;
+  min-height: 5.5rem;
+  max-height: none;
   height: auto;
-  resize: vertical;
+  resize: none;
 }
 
-@media (max-width: 900px) {
-  .feedback-student-modal .feedback-workspace-split {
-    grid-template-columns: 1fr;
-    overflow: auto;
-  }
-
-  .feedback-student-modal .feedback-details-pane {
-    overflow: visible;
-  }
-
-  .feedback-student-modal .feedback-output-pane .feedback-output-area {
-    min-height: 6.5rem;
-  }
+.feedback-student-modal .feedback-output-field {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .feedback-student-modal .feedback-output-spin,
-.feedback-student-modal .feedback-output-spin .ant-spin-container,
+.feedback-student-modal .feedback-output-spin .ant-spin-container {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 900px) {
+  .feedback-student-modal .ant-modal-content {
+    height: min(92dvh, 760px);
+    max-height: 92dvh;
+  }
+
+  .feedback-student-modal .feedback-workspace-split {
+    grid-template-columns: 1fr;
+    overflow: hidden;
+  }
+
+  .feedback-student-modal .feedback-details-pane {
+    flex: 0 1 auto;
+    max-height: 42%;
+    overflow: hidden;
+  }
+
+  .feedback-student-modal .feedback-details-pane-scroll {
+    max-height: none;
+  }
+
+  .feedback-student-modal .feedback-output-pane.feedback-modal-output-stack {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .feedback-student-modal .feedback-output-pane .feedback-output-area {
+    min-height: 4.5rem;
+  }
+}
+
 .feedback-student-modal .feedback-output-spin .save-field-overlay-content,
 .feedback-student-modal .feedback-output-spin .feedback-output-field {
   display: flex;
@@ -6156,8 +6332,19 @@ details[open] .collapsible-summary::before {
 }
 
 .feedback-student-modal .feedback-output-area {
-  min-height: 7.5rem;
+  min-height: 5.5rem;
+  resize: none;
+}
+
+.feedback-student-modal .feedback-modal-notes-area {
+  min-height: 4.5rem;
+  max-height: 8rem;
   resize: vertical;
+}
+
+.feedback-student-modal .feedback-modal-saved-placeholder.ant-input[disabled] {
+  min-height: 4.5rem;
+  max-height: 6rem;
 }
 
 .feedback-panel .workspace-body {

@@ -54,6 +54,10 @@ function wordCountClass(status) {
   return 'feedback-word-count-empty'
 }
 
+function generateActionLabel(aiReady) {
+  return aiReady ? UI.generateFeedbackAndRefine : UI.generateFeedback
+}
+
 export default function FeedbackStudentModal({
   open,
   classId,
@@ -76,6 +80,7 @@ export default function FeedbackStudentModal({
   const [notesDraft, setNotesDraft] = useState('')
   const [saveMode, setSaveMode] = useState(SAVE_MODES.replace)
   const [refiningField, setRefiningField] = useState(null)
+  const [generating, setGenerating] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
 
@@ -105,7 +110,7 @@ export default function FeedbackStudentModal({
   const draftWordStatus = feedbackWordCountStatus(draft)
   const aiReady = isFeedbackLlmConfigured()
   const refining = refiningField !== null
-  const busy = saving || refining || renaming
+  const busy = saving || refining || renaming || generating
 
   const suggestedEmphasis = suggestAttendanceEmphasis({
     total: counts.total,
@@ -116,6 +121,63 @@ export default function FeedbackStudentModal({
     suggestedEmphasis
 
   async function handleGenerate() {
+    if (!partner || !classMeta) return
+
+    let notesForCompose = composeNotes
+
+    if (aiReady) {
+      setGenerating(true)
+      try {
+        if (composeNotes.trim()) {
+          try {
+            notesForCompose = await refineNotesWithLlm(composeNotes)
+            setComposeNotes(notesForCompose)
+          } catch (err) {
+            notify.warning({
+              title: 'Could not refine compose notes.',
+              description: err.message || 'Using your notes as written.',
+            })
+          }
+        }
+
+        const generated = composeFeedback({
+          counts: { total: counts.total, consecutive: counts.consecutive },
+          attendanceEmphasis,
+          participation,
+          assignmentQuality,
+          extraNotes: notesForCompose,
+          includeAttendance,
+        })
+
+        setDraft(generated)
+        try {
+          const refined = await refineFeedbackWithLlm(generated, {
+            partnerName: partner.name,
+            className: formatClassLabel(classMeta),
+            total: counts.total,
+            consecutive: counts.consecutive,
+            extraNotes: notesForCompose,
+            existingFeedback: hasSaved && saveMode === SAVE_MODES.build ? savedFeedback : '',
+          })
+          setDraft(refined)
+          if (!isValidFeedbackWordCount(refined)) {
+            notify.warning({
+              title: `Generated feedback is ${countFeedbackWords(refined)} words.`,
+              description: `Adjust to ${FEEDBACK_WORD_MIN}–${FEEDBACK_WORD_MAX} words before saving.`,
+            })
+          }
+        } catch (err) {
+          notify.error({
+            title: err.message || 'Could not refine feedback.',
+            description: 'The template draft is still available to edit on the right.',
+          })
+        }
+      } finally {
+        setGenerating(false)
+      }
+      return
+    }
+
     const generated = composeFeedback({
       counts: { total: counts.total, consecutive: counts.consecutive },
       attendanceEmphasis,
@@ -124,38 +186,7 @@ export default function FeedbackStudentModal({
       extraNotes: composeNotes,
       includeAttendance,
     })
-
-    if (!aiReady) {
-      setDraft(generated)
-      return
-    }
-
     setDraft(generated)
-    setRefiningField('feedback')
-    try {
-      const refined = await refineFeedbackWithLlm(generated, {
-        partnerName: partner.name,
-        className: formatClassLabel(classMeta),
-        total: counts.total,
-        consecutive: counts.consecutive,
-        extraNotes: composeNotes,
-        existingFeedback: hasSaved && saveMode === SAVE_MODES.build ? savedFeedback : '',
-      })
-      setDraft(refined)
-      if (!isValidFeedbackWordCount(refined)) {
-        notify.warning({
-          title: `Generated feedback is ${countFeedbackWords(refined)} words.`,
-          description: `Adjust to ${FEEDBACK_WORD_MIN}–${FEEDBACK_WORD_MAX} words before saving.`,
-        })
-      }
-    } catch (err) {
-      notify.error({
-        title: err.message || 'Could not refine feedback.',
-        description: 'The template draft is still available to edit on the right.',
-      })
-    } finally {
-      setRefiningField(null)
-    }
   }
 
   async function handleRefine() {
@@ -195,7 +226,6 @@ export default function FeedbackStudentModal({
       notify.warning({ title: 'Type extra notes first, then refine with AI.' })
       return
     }
-    if (!partner || !classMeta) return
     setRefiningField('notes')
     try {
       const refined = await refineNotesWithLlm(notesDraft)
@@ -353,6 +383,8 @@ export default function FeedbackStudentModal({
         title={modalTitle}
         onCancel={busy ? undefined : onClose}
         width="min(1080px, 96vw)"
+        centered
+        wrapClassName="feedback-student-modal-wrap"
         className="feedback-student-modal"
         destroyOnHidden
         closable={!busy}
@@ -402,8 +434,14 @@ export default function FeedbackStudentModal({
               : 'Generate or write feedback, add optional extra notes, then save everything with Save Feedback (30–50 words for feedback).'}
           </Typography.Text>
 
+          <SaveFieldOverlay
+            busy={generating}
+            label="Generating and refining feedback…"
+            className="feedback-generate-workspace-overlay"
+          >
           <div className="feedback-workspace-split">
             <div className="feedback-details-pane">
+              <div className="feedback-details-pane-scroll">
               <Card size="small" title="Context" className="feedback-panel-card">
                 <div className="feedback-stats-row">
                   <Typography.Text type="secondary">From attendance records</Typography.Text>
@@ -481,7 +519,7 @@ export default function FeedbackStudentModal({
                     }
                   >
                     <SaveFieldOverlay
-                      busy={refiningField === 'compose'}
+                      busy={refiningField === 'compose' && !generating}
                       label="Refining compose notes with AI…"
                       className="feedback-compose-notes-spin"
                     >
@@ -495,24 +533,29 @@ export default function FeedbackStudentModal({
                       />
                     </SaveFieldOverlay>
                   </FormField>
-                  <Button
-                    type="primary"
-                    onClick={handleGenerate}
-                    disabled={busy}
-                    loading={refiningField === 'feedback'}
-                  >
-                    {aiReady ? `${UI.generateFeedback} & Refine` : UI.generateFeedback}
-                  </Button>
-                  {!aiReady && (
-                    <Alert
-                      type="info"
-                      showIcon
-                      title="AI Refine Optional"
-                      description="Templates work offline. Configure Ollama or VITE_VISION_LLM_API_KEY for Refine with AI."
-                    />
-                  )}
                 </Space>
               </Card>
+              </div>
+              <div className="feedback-details-pane-actions">
+                <Button
+                  type="primary"
+                  block
+                  className="feedback-generate-refine-btn"
+                  onClick={handleGenerate}
+                  disabled={busy}
+                  loading={generating}
+                >
+                  {generateActionLabel(aiReady)}
+                </Button>
+                {!aiReady && (
+                  <Alert
+                    type="info"
+                    showIcon
+                    title="AI Refine Optional"
+                    description="Templates work offline. Configure Ollama or VITE_VISION_LLM_API_KEY for Refine with AI."
+                  />
+                )}
+              </div>
             </div>
 
             <div className="feedback-output-pane feedback-modal-output-stack">
@@ -579,18 +622,16 @@ export default function FeedbackStudentModal({
                 size="small"
                 title={hasSaved ? 'New Draft' : UI.generatedFeedback}
                 className="feedback-panel-card feedback-panel-output-card"
-                extra={
-                  renderFieldHeaderActions({
-                    copyText: draft,
-                    onRefine: handleRefine,
-                    refineLoading: refiningField === 'feedback',
-                    refineCanRun: Boolean(draft.trim()),
-                    refineEmptyTooltip: 'Generate or type feedback first',
-                  })
-                }
+                extra={renderFieldHeaderActions({
+                  copyText: draft,
+                  onRefine: handleRefine,
+                  refineLoading: refiningField === 'feedback' && !generating,
+                  refineCanRun: Boolean(draft.trim()),
+                  refineEmptyTooltip: 'Generate or type feedback first',
+                })}
               >
                 <SaveFieldOverlay
-                  busy={refiningField === 'feedback'}
+                  busy={refiningField === 'feedback' && !generating}
                   label="Refining feedback with AI…"
                   className="feedback-output-spin"
                 >
@@ -622,22 +663,20 @@ export default function FeedbackStudentModal({
                 size="small"
                 title={UI.feedbackExtraNotes}
                 className="feedback-panel-card feedback-modal-notes-card"
-                extra={
-                  renderFieldHeaderActions({
-                    copyText: notesDraft,
-                    onRefine: handleRefineNotes,
-                    refineLoading: refiningField === 'notes',
-                    refineCanRun: Boolean(notesDraft.trim()),
-                    refineEmptyTooltip: 'Add extra notes first',
-                  })
-                }
+                extra={renderFieldHeaderActions({
+                  copyText: notesDraft,
+                  onRefine: handleRefineNotes,
+                  refineLoading: refiningField === 'notes' && !generating,
+                  refineCanRun: Boolean(notesDraft.trim()),
+                  refineEmptyTooltip: 'Add extra notes first',
+                })}
               >
                 <Typography.Text type="secondary" className="feedback-modal-notes-lead">
                   Private notes for your reference — saved with feedback (up to{' '}
                   {FEEDBACK_NOTES_MAX.toLocaleString()} characters).
                 </Typography.Text>
                 <SaveFieldOverlay
-                  busy={refiningField === 'notes'}
+                  busy={refiningField === 'notes' && !generating}
                   label="Refining extra notes with AI…"
                   className="feedback-notes-spin"
                 >
@@ -655,6 +694,7 @@ export default function FeedbackStudentModal({
               </Card>
             </div>
           </div>
+          </SaveFieldOverlay>
         </div>
       </Modal>
 

@@ -15,7 +15,7 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { useAutoDismiss } from '../hooks/useAutoDismiss'
 import { useReportTabActivity } from '../hooks/useReportTabActivity'
-import { useScrollRegionHeight } from '../hooks/useScrollRegionHeight'
+import { useAdaptiveTableScroll, ANT_TABLE_ROW_SMALL_TALL } from '../hooks/useScrollRegionHeight'
 import { formatClassLabel } from '../utils/classFormat'
 import { formatModuleLabel, listModulesAcrossClasses } from '../utils/sessionKeys'
 import AbsenceBulkEditor from './AbsenceBulkEditor'
@@ -132,14 +132,24 @@ export default function ClassManager({
     [classesForBrowse],
   )
 
-  const [masterTableRef, masterTableHeight] = useScrollRegionHeight(200)
-
   const classTableData = classesForBrowse.map((cls) => ({
     key: cls.id,
     id: cls.id,
     name: formatClassLabel(cls),
     count: cls.students?.length ?? 0,
   }))
+
+  const {
+    ref: masterTableRef,
+    scrollY: masterTableScrollY,
+    needsScroll: masterTableNeedsScroll,
+  } = useAdaptiveTableScroll({
+    rowCount: classTableData.length,
+    rowHeight: ANT_TABLE_ROW_SMALL_TALL,
+    defaultHeight: 200,
+    remeasureKey: `${browseMode}:${selectedModule}:${classTableData.length}`,
+  })
+
   const selectedClass = classes.find((c) => c.id === selectedClassId)
   const deleteTargetClass = classes.find((c) => c.id === deleteTargetClassId)
   const addClassLocked = addClassBusy || syncing
@@ -258,6 +268,7 @@ export default function ClassManager({
         initialClassId={bulkEditClassId || sortedClasses[0]?.id || ''}
         restrictToClassIds={bulkEditClassIds}
         bulkUpdateStudents={bulkUpdateStudents}
+        removeStudent={removeStudent}
         recordActivity={recordActivity}
         onActivityChange={({ busy, draftCount }) => {
           setBulkEditorBusy(busy)
@@ -422,12 +433,15 @@ export default function ClassManager({
             ) : classesForBrowse.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No classes in this module." />
             ) : (
-              <div className="table-scroll-region master-list-scroll" ref={masterTableRef}>
+              <div
+                className={`table-scroll-region master-list-scroll${masterTableNeedsScroll ? '' : ' table-scroll-region-fits'}`}
+                ref={masterTableRef}
+              >
                 <Table
                   size="small"
                   showHeader={false}
                   pagination={{ pageSize: 30, showSizeChanger: false, hideOnSinglePage: true }}
-                  scroll={{ y: masterTableHeight }}
+                  scroll={masterTableScrollY ? { y: masterTableScrollY } : undefined}
                   dataSource={classTableData}
                   columns={[
                     {
