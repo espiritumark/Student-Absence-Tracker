@@ -9,6 +9,7 @@ export default function ConfirmDialog({
   danger = false,
   busy = false,
   error = '',
+  zIndex,
   onCancel,
   onConfirm,
 }) {
@@ -25,6 +26,7 @@ export default function ConfirmDialog({
       onOk={onConfirm}
       destroyOnHidden
       centered
+      zIndex={zIndex}
     >
       {children}
       {error && (

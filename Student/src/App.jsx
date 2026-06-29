@@ -275,6 +275,11 @@ function AppContent() {
               importStudentsBulk={store.importStudentsBulk}
               bulkUpdateStudents={store.bulkUpdateStudents}
               recordActivity={store.recordActivity}
+              linkPortalClasses={store.linkPortalClasses}
+              applyPortalHubMonitoringSync={store.applyPortalHubMonitoringSync}
+              syncRosterFromPortal={store.syncRosterFromPortal}
+              previewPortalAttendance={store.previewPortalAttendance}
+              applyPortalAttendance={store.applyPortalAttendance}
               initialFocus={classesFocus}
               onFocusApplied={() => setClassesFocus(null)}
               onTabActivityChange={handleTabActivityChange}

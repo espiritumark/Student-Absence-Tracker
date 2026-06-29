@@ -1,4 +1,4 @@
-import { PlusOutlined } from '@ant-design/icons'
+import { PlusOutlined, LinkOutlined } from '@ant-design/icons'
 import {
   Button,
   Empty,
@@ -28,6 +28,7 @@ import PanelChrome from './PanelChrome'
 import WorkspaceSectionTitle from './WorkspaceSectionTitle'
 import { UI, formatLpCount } from '../utils/uiCopy'
 import SaveFieldOverlay from './SaveFieldOverlay'
+import PortalHubSyncModal from './PortalHubSyncModal'
 
 export default function ClassManager({
   classes,
@@ -42,6 +43,11 @@ export default function ClassManager({
   importStudentsBulk,
   bulkUpdateStudents,
   recordActivity,
+  linkPortalClasses,
+  applyPortalHubMonitoringSync,
+  syncRosterFromPortal,
+  previewPortalAttendance,
+  applyPortalAttendance,
   initialFocus = null,
   onFocusApplied,
   onTabActivityChange,
@@ -65,6 +71,7 @@ export default function ClassManager({
   const [addClassBusy, setAddClassBusy] = useState(false)
   const [addClassMessage, setAddClassMessage] = useState('')
   const [addClassError, setAddClassError] = useState('')
+  const [portalSyncOpen, setPortalSyncOpen] = useState(false)
   const [form, setForm] = useState({
     intake: '',
     level: '',
@@ -292,10 +299,24 @@ export default function ClassManager({
         title={UI.classesAndRosters}
         description="Browse by module to see every intake and group in a subject, or switch to all classes for per-class bulk edits."
         actions={
-          <Button type="default" icon={<PlusOutlined />} onClick={() => setAddClassOpen(true)}>
-            Add Class Manually
-          </Button>
+          <Space wrap>
+            <Button type="default" icon={<LinkOutlined />} onClick={() => setPortalSyncOpen(true)}>
+              {UI.syncPortalClasses}
+            </Button>
+            <Button type="default" icon={<PlusOutlined />} onClick={() => setAddClassOpen(true)}>
+              Add Class Manually
+            </Button>
+          </Space>
         }
+      />
+
+      <PortalHubSyncModal
+        open={portalSyncOpen}
+        onClose={() => setPortalSyncOpen(false)}
+        classes={classes}
+        attendance={attendance}
+        applyPortalHubMonitoringSync={applyPortalHubMonitoringSync}
+        busy={syncing}
       />
 
       <Modal
@@ -499,6 +520,9 @@ export default function ClassManager({
                     removeStudent={removeStudent}
                     updateStudent={updateStudent}
                     importStudentsBulk={importStudentsBulk}
+                    syncRosterFromPortal={syncRosterFromPortal}
+                    previewPortalAttendance={previewPortalAttendance}
+                    applyPortalAttendance={applyPortalAttendance}
                     onActivityChange={setPanelActivity}
                   />
                 </div>

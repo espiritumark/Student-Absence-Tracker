@@ -80,7 +80,7 @@ export default function BulkQueueAdvancePrompt({
           percent={percent}
           showInfo={false}
           size="small"
-          strokeColor="#0d9488"
+          strokeColor="#202959"
           className="bulk-queue-advance-modal-bar"
         />
       </div>

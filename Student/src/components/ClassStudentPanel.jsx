@@ -7,8 +7,10 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd'
+import { LinkOutlined } from '@ant-design/icons'
 import { useEffect, useMemo, useState } from 'react'
 import { useAppNotifier } from '../hooks/useAppNotifier'
 import {
@@ -18,6 +20,7 @@ import {
   useAdaptiveTableScroll,
 } from '../hooks/useScrollRegionHeight'
 import ConfirmDialog from './ConfirmDialog'
+import PortalAttendanceReviewModal from './PortalAttendanceReviewModal'
 import ModuleSearchSelect from './ModuleSearchSelect'
 import SaveFieldOverlay from './SaveFieldOverlay'
 import { RISK_META, getOverallAbsenceRisk } from '../utils/absenceRisk'
@@ -31,6 +34,7 @@ import {
 } from '../utils/sessionKeys'
 import { filterByNameSearch } from '../utils/tableNameSearch'
 import { UI, formatLpCount } from '../utils/uiCopy'
+import { NOTIFIER_KEYS } from '../utils/appNotifications'
 import TableNameSearch from './TableNameSearch'
 import StudentNameCell from './StudentNameCell'
 
@@ -55,6 +59,9 @@ export default function ClassStudentPanel({
   removeStudent,
   updateStudent,
   importStudentsBulk,
+  syncRosterFromPortal,
+  previewPortalAttendance,
+  applyPortalAttendance,
   onActivityChange,
 }) {
   const [studentInput, setStudentInput] = useState('')
@@ -64,6 +71,11 @@ export default function ClassStudentPanel({
   const notify = useAppNotifier()
   const [addStudentBusy, setAddStudentBusy] = useState(false)
   const [bulkBusy, setBulkBusy] = useState(false)
+  const [portalRosterBusy, setPortalRosterBusy] = useState(false)
+  const [portalAttendanceBusy, setPortalAttendanceBusy] = useState(false)
+  const [attendanceReviewOpen, setAttendanceReviewOpen] = useState(false)
+  const [attendanceReviewDraft, setAttendanceReviewDraft] = useState(null)
+  const [attendanceReviewError, setAttendanceReviewError] = useState('')
   const [removingStudentId, setRemovingStudentId] = useState('')
   const [removedStudents, setRemovedStudents] = useState([])
   const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false)
@@ -104,7 +116,14 @@ export default function ClassStudentPanel({
   )
 
   const panelBusy =
-    syncing || addStudentBusy || bulkBusy || removeModuleBusy || Boolean(removingStudentId) || Boolean(renamingStudentId)
+    syncing ||
+    addStudentBusy ||
+    bulkBusy ||
+    portalRosterBusy ||
+    portalAttendanceBusy ||
+    removeModuleBusy ||
+    Boolean(removingStudentId) ||
+    Boolean(renamingStudentId)
 
   async function handleConfirmRemoveFromModule() {
     if (!deleteModuleSessions || !moduleFilter || removeModuleBusy) return
@@ -227,6 +246,82 @@ export default function ClassStudentPanel({
       notify.error({ key: 'roster-bulk-error', title, duration: 8 })
     } finally {
       setBulkBusy(false)
+    }
+  }
+
+  async function handlePullPortalRoster() {
+    if (panelBusy || !syncRosterFromPortal) return
+    if (!cls.portalClassId) {
+      notify.warning({
+        key: NOTIFIER_KEYS.portalSyncError,
+        title: UI.portalRosterNotLinked,
+        duration: 8,
+      })
+      return
+    }
+
+    setPortalRosterBusy(true)
+    try {
+      const result = await syncRosterFromPortal(cls.id)
+      const title = UI.portalRosterPulled
+      const description =
+        result.added > 0
+          ? `Added ${formatLpCount(result.added)} from ${result.portalCount} on the college portal (${result.alreadyPresent} already in hub).`
+          : `All ${result.portalCount} ${result.portalCount === 1 ? 'name was' : 'names were'} already in this class.`
+      notify.success({ key: NOTIFIER_KEYS.portalSync, title, description })
+    } catch (err) {
+      const title = err.message || 'Failed to pull roster from the college portal.'
+      notify.error({ key: NOTIFIER_KEYS.portalSyncError, title, duration: 8 })
+    } finally {
+      setPortalRosterBusy(false)
+    }
+  }
+
+  async function handlePullPortalAttendance() {
+    if (panelBusy || !previewPortalAttendance) return
+    if (!cls.portalClassId) {
+      notify.warning({
+        key: NOTIFIER_KEYS.portalSyncError,
+        title: UI.portalAttendanceNotLinked,
+        duration: 8,
+      })
+      return
+    }
+
+    setPortalAttendanceBusy(true)
+    setAttendanceReviewError('')
+    try {
+      const preview = await previewPortalAttendance(cls.id)
+      setAttendanceReviewDraft(preview.reviewDraft)
+      setAttendanceReviewOpen(true)
+    } catch (err) {
+      const title = err.message || 'Failed to pull attendance from the college portal.'
+      notify.error({ key: NOTIFIER_KEYS.portalSyncError, title, duration: 10 })
+    } finally {
+      setPortalAttendanceBusy(false)
+    }
+  }
+
+  async function handleConfirmPortalAttendance(confirmedDraft) {
+    if (!applyPortalAttendance || portalAttendanceBusy) return
+    setPortalAttendanceBusy(true)
+    setAttendanceReviewError('')
+    try {
+      const result = await applyPortalAttendance(confirmedDraft)
+      setAttendanceReviewOpen(false)
+      setAttendanceReviewDraft(null)
+      notify.success({
+        key: NOTIFIER_KEYS.portalSync,
+        title: UI.portalAttendancePulled,
+        description: `${result.module || 'Session'} on ${result.date}: ${result.presentCount} present, ${result.absentCount} absent merged (${result.matchedCount} matched).`,
+      })
+      onActivityChange?.()
+    } catch (err) {
+      const title = err.message || 'Failed to merge portal attendance.'
+      setAttendanceReviewError(title)
+      notify.error({ key: NOTIFIER_KEYS.portalSyncError, title, duration: 10 })
+    } finally {
+      setPortalAttendanceBusy(false)
     }
   }
 
@@ -365,7 +460,9 @@ export default function ClassStudentPanel({
     [panelBusy, removingStudentId, renamingStudentId, updateStudent, cls.id, notify],
   )
 
-  const overlayLabel = bulkBusy
+  const overlayLabel = portalRosterBusy
+    ? 'Pulling portal roster…'
+    : bulkBusy
     ? `Importing ${UI.learningPartners}…`
     : addStudentBusy
       ? `Adding ${UI.learningPartner}…`
@@ -409,6 +506,44 @@ export default function ClassStudentPanel({
           <Button disabled={panelBusy} onClick={onBulkEdit}>
             Bulk Edit This Class
           </Button>
+          {syncRosterFromPortal ? (
+            <Tooltip
+              title={
+                cls.portalClassId
+                  ? 'Add Learning Partners from the college portal roster for this linked class.'
+                  : UI.portalRosterNotLinked
+              }
+            >
+              <Button
+                type="default"
+                icon={<LinkOutlined />}
+                disabled={panelBusy || !cls.portalClassId}
+                loading={portalRosterBusy}
+                onClick={handlePullPortalRoster}
+              >
+                {UI.pullPortalRoster}
+              </Button>
+            </Tooltip>
+          ) : null}
+          {previewPortalAttendance && applyPortalAttendance ? (
+            <Tooltip
+              title={
+                cls.portalClassId
+                  ? 'Import today’s present/absent marks from the college portal for this linked class.'
+                  : UI.portalAttendanceNotLinked
+              }
+            >
+              <Button
+                type="default"
+                icon={<LinkOutlined />}
+                disabled={panelBusy || !cls.portalClassId}
+                loading={portalAttendanceBusy}
+                onClick={handlePullPortalAttendance}
+              >
+                {UI.pullPortalAttendance}
+              </Button>
+            </Tooltip>
+          ) : null}
           {lockModuleFilter && moduleFilter && deleteModuleSessions ? (
             <Button
               type="link"
@@ -623,6 +758,20 @@ export default function ClassStudentPanel({
             <strong>{formatClassLabel(cls)}</strong>? Names already in the class will be skipped.
           </p>
         </ConfirmDialog>
+
+        <PortalAttendanceReviewModal
+          open={attendanceReviewOpen}
+          draft={attendanceReviewDraft}
+          busy={portalAttendanceBusy}
+          error={attendanceReviewError}
+          onCancel={() => {
+            if (portalAttendanceBusy) return
+            setAttendanceReviewOpen(false)
+            setAttendanceReviewDraft(null)
+            setAttendanceReviewError('')
+          }}
+          onConfirm={handleConfirmPortalAttendance}
+        />
       </div>
     </SaveFieldOverlay>
   )

@@ -60,11 +60,13 @@ function shouldShowStudentInConfirm({ existingId, nextStatus, impact, prevStatus
 }
 
 function prepareImportSummaryContext(
-  { classMeta, date, module, startTime, duration, students: incoming },
+  { classId: payloadClassId, classMeta, date, module, startTime, duration, students: incoming },
   classes,
   attendance,
 ) {
-  const cls = findMatchingClass(classes, classMeta)
+  const cls =
+    (payloadClassId ? classes.find((row) => row.id === payloadClassId) : null) ||
+    findMatchingClass(classes, classMeta)
   const classId = cls?.id ?? null
   const classAttendance = classId ? attendance?.[classId] || {} : {}
   const sessionKey = classId

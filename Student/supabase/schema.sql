@@ -12,6 +12,7 @@ create table if not exists public.classes (
   class_group integer,
   qualification text not null default '',
   name text not null default '',
+  portal_class_id integer,
   created_at timestamptz not null default now()
 );
 

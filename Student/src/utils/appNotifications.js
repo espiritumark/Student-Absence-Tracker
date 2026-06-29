@@ -36,6 +36,8 @@ export const NOTIFIER_KEYS = {
   attendanceDraft: 'attendance-draft',
   rosterBulk: 'roster-bulk',
   absenceBulk: 'absence-bulk',
+  portalSync: 'portal-sync',
+  portalSyncError: 'portal-sync-error',
 }
 
 let registeredApi = null

@@ -83,6 +83,31 @@ export const UI = {
   tableNameSearchFuzzyHint: 'Includes close name matches (90%+ similarity)',
   dashboardSearchPlaceholder: 'Name, class, or module…',
   bulkScreenshotsBeta: 'Bulk Screenshots (beta)',
+  syncPortalClasses: 'Sync from College Portal',
+  portalMonitoringTitle: 'Sync from College Portal',
+  portalMonitoringPull: 'Pull from portal',
+  portalMonitoringRefresh: 'Refresh from portal',
+  portalMonitoringCacheHint: 'Showing cached portal data',
+  portalMonitoringPulled: 'Portal data pulled',
+  portalMonitoringSaved: 'Hub updated from portal',
+  portalMonitoringDescription:
+    'Pull uses your .env portal login. Pick a class (programme shown once per class) — the Learning Partner list is shared across all modules — then switch subjects to review P/A and session imports.',
+  portalClassSyncTitle: 'Link College Portal Classes',
+  portalClassSyncPull: 'Pull Class List',
+  portalClassSyncSave: 'Review sync',
+  portalClassSyncConfirm: 'Confirm sync',
+  portalClassSyncConfirmTitle: 'Confirm college portal sync',
+  portalClassSyncSaved: 'Portal sync saved',
+  portalClassSyncPulled: 'Class list pulled successfully',
+  portalClassSyncDescription:
+    'Pull classes from the college portal, link each row to a hub class (or create a new one), then expand a class to choose modules. Matched modules are checked by default. Review sync loads portal rosters and attendance, then opens a student-by-student preview per selected module before anything is saved.',
+  pullPortalRoster: 'Pull Portal Roster',
+  portalRosterPulled: 'Portal roster pulled successfully',
+  portalRosterNotLinked: 'Link this class to the college portal before pulling its roster.',
+  pullPortalAttendance: 'Pull Portal Attendance',
+  portalAttendancePulled: 'Portal attendance applied',
+  portalAttendanceNotLinked:
+    'Link this class to the college portal before pulling attendance.',
 }
 
 /** e.g. "3 Learning Partners" */

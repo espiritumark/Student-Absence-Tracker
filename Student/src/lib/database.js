@@ -15,6 +15,11 @@ export function isFeedbackNotesColumnMissingError(error) {
   return /'feedback_notes' column of 'students'/i.test(message)
 }
 
+export function isPortalClassIdColumnMissingError(error) {
+  const message = String(error?.message ?? error ?? '')
+  return /'portal_class_id' column of 'classes'/i.test(message)
+}
+
 export function formatDbError(error) {
   const message = String(error?.message ?? error ?? 'Unknown error')
   if (isFeedbackNotesColumnMissingError(message)) {
@@ -25,6 +30,11 @@ export function formatDbError(error) {
   if (isFeedbackColumnMissingError(message)) {
     return (
       'Cloud database is missing the feedback column. Run supabase/migrate-feedback.sql in the Supabase SQL Editor, then try again.'
+    )
+  }
+  if (isPortalClassIdColumnMissingError(message)) {
+    return (
+      'Cloud database is missing the portal_class_id column. Run supabase/migrate-portal-class-id.sql in the Supabase SQL Editor, then try again.'
     )
   }
   return message
@@ -54,6 +64,7 @@ function mapClass(row, students) {
     group: row.class_group,
     qualification: row.qualification,
     name: row.name,
+    portalClassId: row.portal_class_id ?? null,
     students: students.filter((s) => s.class_id === row.id).map(mapStudent),
   }
 }
@@ -128,6 +139,19 @@ export async function dbAddClass(userId, fields) {
 export async function dbRemoveClass(classId) {
   const { error } = await supabase.from('classes').delete().eq('id', classId)
   if (error) throw error
+}
+
+/** Attach college portal class IDs to existing hub classes (no new classes created). */
+export async function dbLinkPortalClasses(links) {
+  for (const link of links || []) {
+    const { classId, portalClassId } = link
+    if (!classId || portalClassId == null) continue
+    const { error } = await supabase
+      .from('classes')
+      .update({ portal_class_id: portalClassId })
+      .eq('id', classId)
+    if (error) throw error
+  }
 }
 
 export async function dbAddStudent(userId, classId, name) {
@@ -324,7 +348,8 @@ export async function dbSetSessionMeta(userId, classId, sessionKey, meta) {
 }
 
 export async function dbImportPortalSession(userId, payload) {
-  const { classMeta, date, module, startTime, duration, students } = payload
+  const { classId: targetClassId, classMeta, date, module, startTime, duration, students } =
+    payload
 
   const { data: existingClasses } = await supabase
     .from('classes')
@@ -336,7 +361,9 @@ export async function dbImportPortalSession(userId, payload) {
     group: c.class_group,
   }))
 
-  let cls = findMatchingClass(mappedClasses, classMeta)
+  let cls = targetClassId
+    ? mappedClasses.find((row) => row.id === targetClassId)
+    : findMatchingClass(mappedClasses, classMeta)
   if (!cls) {
     cls = await dbAddClass(userId, classMeta)
   }

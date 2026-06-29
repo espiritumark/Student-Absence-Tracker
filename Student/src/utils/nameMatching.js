@@ -1,7 +1,12 @@
 export function normalizeName(name) {
   if (name == null) return ''
   const text = typeof name === 'string' ? name : String(name)
-  return text.trim().replace(/\s+/g, ' ').toUpperCase()
+  return text
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\s*[-–—]\s*$/g, '')
+    .trim()
+    .toUpperCase()
 }
 
 /** Same spelling, ignoring case and extra spaces — used for roster and import matching. */

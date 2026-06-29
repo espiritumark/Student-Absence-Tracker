@@ -1,4 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { fetchPortalClassRoster } from '../lib/portalBridgeClient'
+import {
+  buildApplyPayloadFromAttendanceReview,
+  buildPortalAttendancePreview,
+  buildPortalAttendanceReviewDraft,
+} from '../utils/portalAttendanceReview'
 import { useAuth } from '../contexts/AuthContext'
 import {
   dbAddClass,
@@ -7,6 +13,7 @@ import {
   dbDeleteModuleSessions,
   dbImportPortalSession,
   dbImportStudentsBulk,
+  dbLinkPortalClasses,
   dbRemoveClass,
   dbRemoveStudent,
   dbSetAttendance,
@@ -218,7 +225,7 @@ export function useStore() {
 
       if (useCloud) {
         try {
-          await dbAddClass(user.id, fields)
+          const created = await dbAddClass(user.id, fields)
           await refreshFromCloud({ silent: true })
           recordActivity(
             buildActivityEntry({
@@ -227,6 +234,7 @@ export function useStore() {
               title: `Added Class — ${classLabel}`,
             }),
           )
+          return created?.id ?? null
         } catch (e) {
           recordActivity(
             buildActivityEntry({
@@ -240,7 +248,6 @@ export function useStore() {
           setSyncError(formatDbError(e))
           throw e
         }
-        return null
       }
 
       const id = createId()
@@ -685,9 +692,10 @@ export function useStore() {
         return
       }
       runLocal((s) => {
-        const { classMeta, date, module, startTime, duration, students } = payload
+        const { classId: targetClassId, classMeta, date, module, startTime, duration, students } =
+          payload
         let classes = s.classes.map(normalizeClass)
-        let classId = findMatchingClass(classes, classMeta)?.id
+        let classId = targetClassId || findMatchingClass(classes, classMeta)?.id
 
         if (!classId) {
           classId = createId()
@@ -781,7 +789,8 @@ export function useStore() {
   )
 
   const importStudentsBulk = useCallback(
-    async (classId, namesText) => {
+    async (classId, namesText, options = {}) => {
+      const { skipActivity = false } = options
       const classLabel = getClassLabel(classId)
 
       if (useCloud) {
@@ -789,26 +798,30 @@ export function useStore() {
           const count = await dbImportStudentsBulk(user.id, classId, namesText)
           await refreshFromCloud({ silent: true })
           if (count > 0) {
+            if (!skipActivity) {
+              recordActivity(
+                buildActivityEntry({
+                  category: 'student',
+                  verb: 'imported',
+                  title: `Bulk import — ${classLabel}`,
+                  lines: [`${count} ${count === 1 ? 'Learning Partner' : 'Learning Partners'} added`],
+                }),
+              )
+            }
+          }
+          return count
+        } catch (e) {
+          if (!skipActivity) {
             recordActivity(
               buildActivityEntry({
                 category: 'student',
                 verb: 'imported',
                 title: `Bulk import — ${classLabel}`,
-                lines: [`${count} ${count === 1 ? 'Learning Partner' : 'Learning Partners'} added`],
+                success: false,
+                error: e.message,
               }),
             )
           }
-          return count
-        } catch (e) {
-          recordActivity(
-            buildActivityEntry({
-              category: 'student',
-              verb: 'imported',
-              title: `Bulk import — ${classLabel}`,
-              success: false,
-              error: e.message,
-            }),
-          )
           setSyncError(formatDbError(e))
           throw e
         }
@@ -829,18 +842,514 @@ export function useStore() {
         }),
       }))
       if (addedCount > 0) {
-        recordActivity(
-          buildActivityEntry({
-            category: 'student',
-            verb: 'imported',
-            title: `Bulk import — ${classLabel}`,
-            lines: [`${addedCount} ${addedCount === 1 ? 'Learning Partner' : 'Learning Partners'} added`],
-          }),
-        )
+        if (!skipActivity) {
+          recordActivity(
+            buildActivityEntry({
+              category: 'student',
+              verb: 'imported',
+              title: `Bulk import — ${classLabel}`,
+              lines: [`${addedCount} ${addedCount === 1 ? 'Learning Partner' : 'Learning Partners'} added`],
+            }),
+          )
+        }
       }
       return addedCount
     },
     [useCloud, user, refreshFromCloud, runLocal, recordActivity, getClassLabel],
+  )
+
+  const syncRosterFromPortal = useCallback(
+    async (classId) => {
+      const cls = state.classes.find((c) => c.id === classId)
+      if (!cls?.portalClassId) {
+        throw new Error(
+          'This class is not linked to the college portal. Use Sync College Portal Classes first.',
+        )
+      }
+
+      const classLabel = getClassLabel(classId)
+      const { roster } = await fetchPortalClassRoster(cls.portalClassId)
+      const portalStudents = roster?.students ?? []
+      if (!portalStudents.length) {
+        throw new Error('The college portal returned an empty roster for this class.')
+      }
+
+      const existing = new Set((cls.students ?? []).map((st) => normalizeName(st.name)))
+      const alreadyPresent = portalStudents.filter((row) =>
+        existing.has(normalizeName(row.name)),
+      ).length
+      const namesText = portalStudents.map((row) => row.name).join('\n')
+
+      let added = 0
+      try {
+        added = await importStudentsBulk(classId, namesText, { skipActivity: true })
+      } catch (e) {
+        setSyncError(formatDbError(e))
+        throw e
+      }
+
+      recordActivity(
+        buildActivityEntry({
+          category: 'student',
+          verb: 'imported',
+          title: `Portal roster — ${classLabel}`,
+          lines: [
+            `${portalStudents.length} on college portal`,
+            `${added} new ${added === 1 ? 'Learning Partner' : 'Learning Partners'} added`,
+            `${alreadyPresent} already in hub`,
+          ],
+        }),
+      )
+
+      return {
+        portalCount: portalStudents.length,
+        added,
+        alreadyPresent,
+        portalClassLabel: roster?.classLabel || '',
+      }
+    },
+    [state.classes, getClassLabel, importStudentsBulk, recordActivity],
+  )
+
+  const previewPortalAttendance = useCallback(
+    async (classId) => {
+      const cls = state.classes.find((c) => c.id === classId)
+      if (!cls?.portalClassId) {
+        throw new Error(
+          'This class is not linked to the college portal. Use Sync College Portal Classes first.',
+        )
+      }
+
+      const { roster } = await fetchPortalClassRoster(cls.portalClassId)
+      const preview = buildPortalAttendancePreview(cls, roster, state.classes, state.attendance)
+
+      if (!preview.payload.hasAttendance) {
+        throw new Error(
+          'The portal page did not include attendance checkboxes for this session. Open the class on attendance.ccct.edu.bn for today’s session, then try again.',
+        )
+      }
+
+      return {
+        ...preview,
+        reviewDraft: buildPortalAttendanceReviewDraft(preview),
+        classLabel: getClassLabel(classId),
+      }
+    },
+    [state.classes, state.attendance, getClassLabel],
+  )
+
+  const applyPortalAttendance = useCallback(
+    async (reviewDraft) => {
+      const payload = buildApplyPayloadFromAttendanceReview(reviewDraft)
+      const classLabel = getClassLabel(payload.classId)
+
+      await importPortalSession(payload)
+
+      recordActivity(
+        buildActivityEntry({
+          category: 'attendance',
+          verb: 'imported',
+          title: `Portal attendance — ${classLabel}`,
+          lines: [
+            payload.module || 'General session',
+            payload.date,
+            `${payload.presentCount} present · ${payload.absentCount} absent merged`,
+            payload.unmatched?.length
+              ? `${payload.unmatched.length} portal name${payload.unmatched.length === 1 ? '' : 's'} not in hub roster`
+              : 'All selected portal names matched hub roster',
+          ],
+        }),
+      )
+
+      return {
+        date: payload.date,
+        module: payload.module,
+        presentCount: payload.presentCount,
+        absentCount: payload.absentCount,
+        matchedCount: payload.students.length,
+        unmatchedCount: payload.unmatched?.length ?? 0,
+      }
+    },
+    [getClassLabel, importPortalSession, recordActivity],
+  )
+
+  const syncAttendanceFromPortal = useCallback(
+    async (classId) => {
+      const preview = await previewPortalAttendance(classId)
+      const result = await applyPortalAttendance(preview.reviewDraft)
+      return result
+    },
+    [previewPortalAttendance, applyPortalAttendance],
+  )
+
+  const linkPortalClasses = useCallback(
+    async (links) => {
+      const payload = (links || []).filter(
+        (link) => link?.classId && link.portalClassId != null,
+      )
+      if (!payload.length) return 0
+
+      if (useCloud) {
+        try {
+          await dbLinkPortalClasses(payload)
+          await refreshFromCloud({ silent: true })
+        } catch (e) {
+          setSyncError(formatDbError(e))
+          throw e
+        }
+      } else {
+        runLocal((s) => ({
+          ...s,
+          classes: s.classes.map((cls) => {
+            const link = payload.find((row) => row.classId === cls.id)
+            return link ? { ...cls, portalClassId: link.portalClassId } : cls
+          }),
+        }))
+      }
+
+      recordActivity(
+        buildActivityEntry({
+          category: 'class',
+          verb: 'linked',
+          title: `Linked ${payload.length} class${payload.length === 1 ? '' : 'es'} to college portal`,
+        }),
+      )
+      return payload.length
+    },
+    [useCloud, refreshFromCloud, runLocal, recordActivity],
+  )
+
+  const applyPortalClassSync = useCallback(
+    async ({
+      links = [],
+      rosterAdds = [],
+      updates = [],
+      removes = [],
+      attendanceUpdates = [],
+    } = {}) => {
+      const linkPayload = (links || []).filter(
+        (link) => link?.classId && link.portalClassId != null,
+      )
+      const rosterPayload = (rosterAdds || []).filter(
+        (row) => row?.classId && String(row.namesText || '').trim(),
+      )
+      const updatePayload = (updates || []).filter(
+        (row) => row?.classId && row?.studentId && String(row.name || '').trim(),
+      )
+      const removePayload = (removes || []).filter((row) => row?.classId && row?.studentId)
+      const attendancePayload = (attendanceUpdates || []).filter(
+        (row) => row?.classId && row?.studentId && row?.patch,
+      )
+
+      if (
+        !linkPayload.length &&
+        !rosterPayload.length &&
+        !updatePayload.length &&
+        !removePayload.length &&
+        !attendancePayload.length
+      ) {
+        return {
+          linksSaved: 0,
+          studentsAdded: 0,
+          studentsUpdated: 0,
+          studentsRemoved: 0,
+          attendanceUpdated: 0,
+        }
+      }
+
+      try {
+        if (linkPayload.length) {
+          if (useCloud) {
+            await dbLinkPortalClasses(linkPayload)
+          } else {
+            runLocal((s) => ({
+              ...s,
+              classes: s.classes.map((cls) => {
+                const link = linkPayload.find((row) => row.classId === cls.id)
+                return link ? { ...cls, portalClassId: link.portalClassId } : cls
+              }),
+            }))
+          }
+        }
+
+        const updatesByClass = new Map()
+        for (const row of updatePayload) {
+          const list = updatesByClass.get(row.classId) ?? []
+          list.push({ studentId: row.studentId, patch: { name: row.name } })
+          updatesByClass.set(row.classId, list)
+        }
+        for (const [classId, classUpdates] of updatesByClass) {
+          await bulkUpdateStudents(classId, classUpdates)
+        }
+
+        let studentsAdded = 0
+        for (const row of rosterPayload) {
+          const added = await importStudentsBulk(row.classId, row.namesText, {
+            skipActivity: true,
+          })
+          studentsAdded += added
+        }
+
+        if (removePayload.length) {
+          if (useCloud) {
+            for (const row of removePayload) {
+              await dbRemoveStudent(row.studentId)
+            }
+          } else {
+            runLocal((s) => {
+              let nextAttendance = s.attendance
+              const classesNext = s.classes.map((cls) => {
+                const removeIds = new Set(
+                  removePayload.filter((row) => row.classId === cls.id).map((row) => row.studentId),
+                )
+                if (!removeIds.size) return cls
+
+                let classAttendance = nextAttendance[cls.id]
+                if (classAttendance) {
+                  const nextClassAttendance = {}
+                  for (const [day, session] of Object.entries(classAttendance)) {
+                    const nextRecords = { ...(session.records || {}) }
+                    for (const studentId of removeIds) {
+                      delete nextRecords[studentId]
+                    }
+                    if (Object.keys(nextRecords).length) {
+                      nextClassAttendance[day] = { ...session, records: nextRecords }
+                    }
+                  }
+                  nextAttendance = { ...nextAttendance, [cls.id]: nextClassAttendance }
+                  if (!Object.keys(nextClassAttendance).length) {
+                    const { [cls.id]: _, ...restAtt } = nextAttendance
+                    nextAttendance = restAtt
+                  }
+                }
+
+                return {
+                  ...cls,
+                  students: cls.students.filter((student) => !removeIds.has(student.id)),
+                }
+              })
+
+              return { ...s, classes: classesNext, attendance: nextAttendance }
+            })
+          }
+        }
+
+        const attendanceByClass = new Map()
+        for (const row of attendancePayload) {
+          const list = attendanceByClass.get(row.classId) ?? []
+          list.push({ studentId: row.studentId, patch: row.patch })
+          attendanceByClass.set(row.classId, list)
+        }
+        let attendanceUpdated = 0
+        for (const [classId, classAttendanceUpdates] of attendanceByClass) {
+          await bulkUpdateStudents(classId, classAttendanceUpdates)
+          attendanceUpdated += classAttendanceUpdates.length
+        }
+
+        if (
+          useCloud &&
+          (linkPayload.length ||
+            studentsAdded > 0 ||
+            updatePayload.length > 0 ||
+            removePayload.length ||
+            attendanceUpdated > 0)
+        ) {
+          await refreshFromCloud({ silent: true })
+        }
+
+        const lines = []
+        if (linkPayload.length) {
+          lines.push(
+            `${linkPayload.length} class link${linkPayload.length === 1 ? '' : 's'} saved`,
+          )
+        }
+        if (updatePayload.length > 0) {
+          lines.push(
+            `${updatePayload.length} ${updatePayload.length === 1 ? 'name' : 'names'} updated to match portal`,
+          )
+        }
+        if (studentsAdded > 0) {
+          lines.push(
+            `${studentsAdded} new ${studentsAdded === 1 ? 'Learning Partner' : 'Learning Partners'} added from portal`,
+          )
+        }
+        if (removePayload.length > 0) {
+          lines.push(
+            `${removePayload.length} hub-only ${removePayload.length === 1 ? 'name' : 'names'} removed`,
+          )
+        }
+        if (attendanceUpdated > 0) {
+          lines.push(
+            `${attendanceUpdated} absence count${attendanceUpdated === 1 ? '' : 's'} overwritten from portal`,
+          )
+        }
+
+        recordActivity(
+          buildActivityEntry({
+            category: 'class',
+            verb: 'linked',
+            title: 'College portal sync',
+            lines,
+          }),
+        )
+
+        return {
+          linksSaved: linkPayload.length,
+          studentsAdded,
+          studentsUpdated: updatePayload.length,
+          studentsRemoved: removePayload.length,
+          attendanceUpdated,
+        }
+      } catch (e) {
+        setSyncError(formatDbError(e))
+        throw e
+      }
+    },
+    [useCloud, refreshFromCloud, runLocal, importStudentsBulk, bulkUpdateStudents, recordActivity],
+  )
+
+  const applyPortalHubMonitoringSync = useCallback(
+    async ({
+      links = [],
+      classCreates = [],
+      rosterAdds = [],
+      updates = [],
+      sessionImports = [],
+    } = {}) => {
+      const classIdByPortal = new Map()
+      for (const link of links || []) {
+        if (link?.classId && link.portalClassId != null) {
+          classIdByPortal.set(link.portalClassId, link.classId)
+        }
+      }
+
+      let classesCreated = 0
+      for (const row of classCreates || []) {
+        const classId = await addClass(row.fields)
+        if (classId && row.portalClassId != null) {
+          classIdByPortal.set(row.portalClassId, classId)
+          classesCreated += 1
+        }
+      }
+
+      const resolveClassId = (classId, portalClassId) =>
+        classId ?? (portalClassId != null ? classIdByPortal.get(portalClassId) : null)
+
+      const linkPayload = [
+        ...(links || []).map((link) => ({
+          classId: resolveClassId(link.classId, link.portalClassId),
+          portalClassId: link.portalClassId,
+        })),
+        ...[...classIdByPortal.entries()].map(([portalClassId, classId]) => ({
+          classId,
+          portalClassId,
+        })),
+      ].filter((link) => link.classId && link.portalClassId != null)
+
+      const uniqueLinks = []
+      const seenLink = new Set()
+      for (const link of linkPayload) {
+        const key = `${link.classId}:${link.portalClassId}`
+        if (seenLink.has(key)) continue
+        seenLink.add(key)
+        uniqueLinks.push(link)
+      }
+
+      if (uniqueLinks.length) {
+        if (useCloud) {
+          await dbLinkPortalClasses(uniqueLinks)
+        } else {
+          runLocal((s) => ({
+            ...s,
+            classes: s.classes.map((cls) => {
+              const link = uniqueLinks.find((row) => row.classId === cls.id)
+              return link ? { ...cls, portalClassId: link.portalClassId } : cls
+            }),
+          }))
+        }
+      }
+
+      const updatesByClass = new Map()
+      for (const row of updates || []) {
+        const classId = resolveClassId(row.classId, row.portalClassId)
+        if (!classId || !row.studentId) continue
+        const list = updatesByClass.get(classId) ?? []
+        list.push({ studentId: row.studentId, patch: { name: row.name } })
+        updatesByClass.set(classId, list)
+      }
+      for (const [classId, classUpdates] of updatesByClass) {
+        await bulkUpdateStudents(classId, classUpdates)
+      }
+
+      let studentsAdded = 0
+      for (const row of rosterAdds || []) {
+        const classId = resolveClassId(row.classId, row.portalClassId)
+        if (!classId || !String(row.namesText || '').trim()) continue
+        const added = await importStudentsBulk(classId, row.namesText, { skipActivity: true })
+        studentsAdded += added
+      }
+
+      let sessionsImported = 0
+      for (const payload of sessionImports || []) {
+        const classId = resolveClassId(payload.classId, payload.portalClassId)
+        if (!classId || !payload.students?.length) continue
+        await importPortalSession({
+          classId,
+          classMeta: {},
+          date: payload.date,
+          module: payload.module || '',
+          startTime: '',
+          duration: '',
+          students: payload.students,
+        })
+        sessionsImported += 1
+      }
+
+      if (useCloud && (uniqueLinks.length || studentsAdded || updates.length || sessionsImported)) {
+        await refreshFromCloud({ silent: true })
+      }
+
+      const lines = []
+      if (uniqueLinks.length) {
+        lines.push(`${uniqueLinks.length} class link${uniqueLinks.length === 1 ? '' : 's'} saved`)
+      }
+      if (classesCreated > 0) {
+        lines.push(`${classesCreated} new class${classesCreated === 1 ? '' : 'es'} created from portal`)
+      }
+      if (studentsAdded > 0) {
+        lines.push(
+          `${studentsAdded} new Learning Partner${studentsAdded === 1 ? '' : 's'} added from portal`,
+        )
+      }
+      if (updates.length > 0) {
+        lines.push(`${updates.length} name${updates.length === 1 ? '' : 's'} updated to match portal`)
+      }
+      if (sessionsImported > 0) {
+        lines.push(
+          `${sessionsImported} session${sessionsImported === 1 ? '' : 's'} imported from portal grids`,
+        )
+      }
+
+      if (lines.length) {
+        recordActivity(
+          buildActivityEntry({
+            category: 'class',
+            verb: 'linked',
+            title: 'College portal monitoring sync',
+            lines,
+          }),
+        )
+      }
+
+      return {
+        linksSaved: uniqueLinks.length,
+        classesCreated,
+        studentsAdded,
+        studentsUpdated: updates.length,
+        sessionsImported,
+      }
+    },
+    [useCloud, refreshFromCloud, runLocal, addClass, importStudentsBulk, bulkUpdateStudents, importPortalSession, recordActivity],
   )
 
   const clearSyncError = useCallback(() => setSyncError(''), [])
@@ -875,5 +1384,12 @@ export function useStore() {
     deleteModuleSessions,
     importPortalSession,
     importStudentsBulk,
+    linkPortalClasses,
+    applyPortalClassSync,
+    applyPortalHubMonitoringSync,
+    syncRosterFromPortal,
+    previewPortalAttendance,
+    applyPortalAttendance,
+    syncAttendanceFromPortal,
   }
 }
